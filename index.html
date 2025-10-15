@@ -2060,7 +2060,19 @@ function buildRequestByType(requestType) {
       }
       break;
   }
-  console.log('→ mDL Request:', baseRequest)
+  console.log('→ mDL Request:', baseRequest);
+  
+  // Per ISO 18013-5, itemsRequest must be tag(24, bstr .cbor ItemsRequest)
+  // We need to encode itemsRequest separately and wrap it
+  const itemsRequest = baseRequest.docRequests[0].itemsRequest;
+  const itemsRequestCbor = CBOR.encode(itemsRequest);
+  
+  // Create CBOR tag 24 for itemsRequest
+  const taggedItemsRequest = new CBOR.Tagged(24, itemsRequestCbor);
+  
+  // Replace the plain object with the tagged version
+  baseRequest.docRequests[0].itemsRequest = taggedItemsRequest;
+  
   return CBOR.encode(baseRequest);
 }
 
