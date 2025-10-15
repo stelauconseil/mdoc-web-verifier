@@ -75,59 +75,34 @@
 </head>
 <body>
   <header class="page-header">
-    <h1>ISO 18013-5 Web Reader</h1>
+    <h1>ISO 18013-5 Web Companion</h1>
     <p>Scan an mDL device engagement QR, connect over Web Bluetooth, and explore request templates without leaving the browser.</p>
   </header>
   <main>
     <section class="card" id="requestSection">
-      <h2>1. Request Documents</h2>
-      <p class="muted">Select one or more document templates. You can request multiple documents (e.g., mDL + PID) in a single session.</p>
-      
-      <div style="margin-bottom: 15px;">
-        <strong>US mDL (Mobile Driver's License)</strong>
-      </div>
+      <h2>1. Request Templates</h2>
+      <p class="muted">Pick a template to auto-build a device request before sending. Options cover US mDL and EU PID scenarios.</p>
       <div class="radio-group request-type">
         <label class="radio-chip small">
-          <input type="checkbox" name="requestType" value="basic"> mDL Basic
+          <input type="radio" name="requestType" value="basic"> mDL Basic
         </label>
         <label class="radio-chip small">
-          <input type="checkbox" name="requestType" value="age"> mDL Age Check
+          <input type="radio" name="requestType" value="age"> mDL Age Check
         </label>
         <label class="radio-chip small">
-          <input type="checkbox" name="requestType" value="driving"> mDL Driving
+          <input type="radio" name="requestType" value="driving"> mDL Driving
         </label>
         <label class="radio-chip small">
-          <input type="checkbox" name="requestType" value="full" checked> mDL Full
-        </label>
-      </div>
-      
-      <div style="margin: 15px 0 15px 0;">
-        <strong>EU PID (Personal Identity Document)</strong>
-      </div>
-      <div class="radio-group request-type">
-        <label class="radio-chip small">
-          <input type="checkbox" name="requestType" value="pid_basic"> EU PID Basic
+          <input type="radio" name="requestType" value="full" checked> mDL Full
         </label>
         <label class="radio-chip small">
-          <input type="checkbox" name="requestType" value="pid_age"> EU PID Age Check
+          <input type="radio" name="requestType" value="pid_basic"> EU PID Basic
         </label>
         <label class="radio-chip small">
-          <input type="checkbox" name="requestType" value="pid_full"> EU PID Full
-        </label>
-      </div>
-      
-      <div style="margin: 15px 0 15px 0;">
-        <strong>EU Age Verification (Proof of Age)</strong>
-      </div>
-      <div class="radio-group request-type">
-        <label class="radio-chip small">
-          <input type="checkbox" name="requestType" value="age_verify_18"> Age 18+
+          <input type="radio" name="requestType" value="pid_age"> EU PID Age Check
         </label>
         <label class="radio-chip small">
-          <input type="checkbox" name="requestType" value="age_verify_21"> Age 21+
-        </label>
-        <label class="radio-chip small">
-          <input type="checkbox" name="requestType" value="age_verify_full"> Age Full
+          <input type="radio" name="requestType" value="pid_full"> EU PID Full
         </label>
       </div>
     </section>
@@ -172,7 +147,7 @@
     </section>
 
     <section class="card" id="responseSection" style="display: none;">
-      <h2>Wallet Response</h2>
+      <h2>mDL Response</h2>
       <div id="responseDisplay"></div>
     </section>
 
@@ -225,18 +200,9 @@ const btnUseOverride = document.getElementById('btnUseOverride');
 const btnAdvertise = null;
 const btnStopAdvertise = null;
 const btnCompatMode = null;
-const btnConnect = null;
-const btnStart = null;
-const btnEstablish = null;
-const btnEstablishAlt = null;
-const btnTestRequest = null;
-const btnDiagnose = null;
-const btnEnd = null;
-const btnQuickReconnect = null;
-const btnDisc = null;
 
-// Request type elements (now checkboxes for multi-document selection)
-const requestTypeCheckboxes = document.querySelectorAll('input[name="requestType"]');
+// Request type elements
+const requestTypeRadios = document.querySelectorAll('input[name="requestType"]');
 
 // ==== State ====
 let scanRunning = false;
@@ -451,77 +417,6 @@ async function aesGcmDecrypt(ciphertextWithTag, keyBytes, iv, aad) {
   }
 }
 
-// Helper: Convert CBOR structures to plain JSON
-function convertToJSON(obj) {
-  if (obj === null || obj === undefined) {
-    return obj;
-  }
-  
-  // Handle CBOR.Tagged values
-  if (obj instanceof CBOR.Tagged) {
-    if (obj.tag === 1004) {
-      // full-date
-      return { _type: 'full-date', value: obj.value };
-    } else if (obj.tag === 0) {
-      // date-time string
-      return { _type: 'date-time', value: obj.value };
-    } else if (obj.tag === 1) {
-      // epoch timestamp
-      return { _type: 'epoch', value: obj.value };
-    } else if (obj.tag === 24) {
-      // Encoded CBOR data item
-      try {
-        const decoded = CBOR.decode(new Uint8Array(obj.value).buffer);
-        return convertToJSON(decoded);
-      } catch (e) {
-        return { _type: 'encoded-cbor', _tag: obj.tag, value: Array.from(new Uint8Array(obj.value)) };
-      }
-    } else {
-      return { _tag: obj.tag, value: convertToJSON(obj.value) };
-    }
-  }
-  
-  // Handle Map
-  if (obj instanceof Map) {
-    const result = {};
-    for (const [key, value] of obj.entries()) {
-      result[String(key)] = convertToJSON(value);
-    }
-    return result;
-  }
-  
-  // Handle Uint8Array and other ArrayBuffer views
-  if (obj instanceof Uint8Array || ArrayBuffer.isView(obj)) {
-    return {
-      _type: 'bytes',
-      _length: obj.length,
-      _base64: btoa(String.fromCharCode(...new Uint8Array(obj)))
-    };
-  }
-  
-  // Handle Array
-  if (Array.isArray(obj)) {
-    return obj.map(item => convertToJSON(item));
-  }
-  
-  // Handle Date
-  if (obj instanceof Date) {
-    return obj.toISOString();
-  }
-  
-  // Handle plain objects
-  if (typeof obj === 'object') {
-    const result = {};
-    for (const [key, value] of Object.entries(obj)) {
-      result[key] = convertToJSON(value);
-    }
-    return result;
-  }
-  
-  // Primitives
-  return obj;
-}
-
 // Display DeviceResponse in a nice format
 function displayDeviceResponse(deviceResponse) {
   console.log('=== DISPLAYING DEVICE RESPONSE ===');
@@ -562,9 +457,6 @@ function displayDeviceResponse(deviceResponse) {
     <div class="response-header">
       <h3>🎉 mDL Response Received</h3>
       <div class="response-meta">Version: ${version} • ${documents.length} document(s)</div>
-      <button id="btnCopyResponse" class="copy-btn" style="margin-top: 10px; padding: 8px 16px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
-        📋 Copy as JSON
-      </button>
     </div>
   `;
   
@@ -630,41 +522,8 @@ function displayDeviceResponse(deviceResponse) {
           if (elementIdentifier && elementValue !== undefined) {
             // Format the value based on type
             let valueHtml;
-            let rawValue = elementValue;
             
-            // Handle CBOR tagged values
-            if (elementValue instanceof CBOR.Tagged) {
-              if (elementValue.tag === 1004) {
-                // Tag 1004 = full-date (tdate) - ISO 8601 date string
-                const dateStr = elementValue.value;
-                try {
-                  const date = new Date(dateStr);
-                  const formatted = date.toLocaleDateString('en-US', { 
-                    year: 'numeric', 
-                    month: 'long', 
-                    day: 'numeric' 
-                  });
-                  valueHtml = `<div class="data-value">📅 ${formatted} <span class="binary" style="font-size:0.85em">(${dateStr})</span></div>`;
-                  rawValue = dateStr;
-                } catch (e) {
-                  valueHtml = `<div class="data-value">${escapeHtml(String(elementValue.value))}</div>`;
-                  rawValue = elementValue.value;
-                }
-              } else if (elementValue.tag === 0) {
-                // Tag 0 = date-time string
-                valueHtml = `<div class="data-value">🕐 ${escapeHtml(elementValue.value)}</div>`;
-                rawValue = elementValue.value;
-              } else if (elementValue.tag === 1) {
-                // Tag 1 = epoch timestamp
-                const date = new Date(elementValue.value * 1000);
-                valueHtml = `<div class="data-value">🕐 ${date.toLocaleString()}</div>`;
-                rawValue = elementValue.value;
-              } else {
-                // Other tagged values
-                valueHtml = `<div class="data-value">Tag(${elementValue.tag}): ${escapeHtml(String(elementValue.value))}</div>`;
-                rawValue = elementValue.value;
-              }
-            } else if (elementValue instanceof Uint8Array || ArrayBuffer.isView(elementValue)) {
+            if (elementValue instanceof Uint8Array || ArrayBuffer.isView(elementValue)) {
               // Binary data (like portrait)
               const byteLength = elementValue.length;
               
@@ -728,74 +587,7 @@ function displayDeviceResponse(deviceResponse) {
   
   responseDisplayEl.innerHTML = html;
   
-  // Add copy button event listener
-  setTimeout(() => {
-    const btnCopy = document.getElementById('btnCopyResponse');
-    if (btnCopy) {
-      btnCopy.addEventListener('click', async () => {
-        try {
-          // Convert deviceResponse to a clean JSON object
-          const jsonData = convertToJSON(deviceResponse);
-          const jsonString = JSON.stringify(jsonData, null, 2);
-          
-          await navigator.clipboard.writeText(jsonString);
-          
-          // Visual feedback
-          const originalText = btnCopy.textContent;
-          btnCopy.textContent = '✅ Copied!';
-          btnCopy.style.background = '#218838';
-          
-          setTimeout(() => {
-            btnCopy.textContent = originalText;
-            btnCopy.style.background = '#28a745';
-          }, 2000);
-          
-          log('📋 Response copied to clipboard as JSON');
-        } catch (err) {
-          console.error('Copy failed:', err);
-          log('❌ Failed to copy: ' + err.message);
-        }
-      });
-    }
-  }, 100);
-  
   log('✅ Response decrypted and displayed successfully!');
-  
-  // Automatic cleanup: Send END state and close connection
-  setTimeout(async () => {
-    try {
-      // Check if still connected and characteristic is valid
-      if (device?.gatt?.connected && chState) {
-        try {
-          log('🔚 Sending END state (0x02) to wallet...');
-          await writeState(0x02);
-          log('✅ END state sent');
-          
-          // Give wallet time to process, then disconnect
-          setTimeout(() => {
-            if (device?.gatt?.connected) {
-              log('🔌 Closing BLE connection...');
-              device.gatt.disconnect();
-              log('✅ Connection closed - ready for next scan');
-            }
-          }, 500);
-        } catch (stateError) {
-          // Wallet already disconnected or GATT service gone
-          console.log('State write skipped (wallet disconnected):', stateError.message);
-          if (device?.gatt?.connected) {
-            device.gatt.disconnect();
-          }
-          log('✅ Connection closed - ready for next scan');
-        }
-      } else {
-        // Already disconnected by wallet
-        log('✅ Wallet disconnected - ready for next scan');
-      }
-    } catch (cleanupError) {
-      console.error('Cleanup error:', cleanupError);
-      log('✅ Session ended - ready for next scan');
-    }
-  }, 1000); // Wait 1 second before cleanup
 }
 
 // Helper: Escape HTML
@@ -803,72 +595,6 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
-}
-
-// Decrypt SessionEstablishment response data field (raw AES-GCM format)
-async function decryptSessionEstablishmentData(encryptedData) {
-  console.log('=== DECRYPTING SESSION ESTABLISHMENT DATA ===');
-  console.log('Encrypted data length:', encryptedData.length);
-  console.log('Encrypted data hex (first 64 bytes):', hex(encryptedData.slice(0, 64)));
-  
-  // Per ISO 18013-5: SessionEstablishment data field is RAW encrypted data
-  // Format: ciphertext || 16-byte auth tag
-  // Encrypted with SKDevice, counter starts at 1
-  // IV = mdoc_identifier(8 bytes) || counter(4 bytes)
-  
-  // Mdoc identifier: 8 bytes, last byte is 0x01
-  const mdocIdentifier = new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01]);
-  const counter = 1; // First message from mdoc
-  
-  // Build IV: identifier || counter (big-endian)
-  const iv = new Uint8Array(12);
-  iv.set(mdocIdentifier, 0);
-  const dv = new DataView(iv.buffer, 8, 4);
-  dv.setUint32(0, counter, false); // Big-endian
-  
-  console.log('IV for decryption:', hex(iv));
-  console.log('  - Mdoc identifier (8 bytes):', hex(mdocIdentifier));
-  console.log('  - Counter (4 bytes BE):', counter);
-  console.log('Using SKDevice for decryption:', hex(skDevice));
-  
-  // Decrypt with AES-256-GCM
-  const key = await crypto.subtle.importKey(
-    'raw',
-    skDevice,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['decrypt']
-  );
-  
-  try {
-    const decrypted = await crypto.subtle.decrypt(
-      { 
-        name: 'AES-GCM', 
-        iv, 
-        additionalData: new Uint8Array(0), // Empty AAD per spec
-        tagLength: 128 
-      },
-      key,
-      encryptedData
-    );
-    
-    const plaintext = new Uint8Array(decrypted);
-    console.log('✅ Decryption successful!');
-    console.log('Plaintext length:', plaintext.length);
-    console.log('Plaintext hex (first 64 bytes):', hex(plaintext.slice(0, 64)));
-    
-    // Decode the DeviceResponse
-    const deviceResponse = CBOR.decode(plaintext.buffer);
-    console.log('Decoded DeviceResponse:', deviceResponse);
-    
-    // Display the response
-    displayDeviceResponse(deviceResponse);
-    
-  } catch (decryptError) {
-    console.error('❌ Decryption failed:', decryptError);
-    log('❌ Decryption failed - may be wrong key or IV');
-    throw decryptError;
-  }
 }
 
 // Helper: Format field names to be more readable
@@ -1012,15 +738,14 @@ async function processSessionResponse(assembled) {
   // Now decrypt and display the documents from the 'data' field
   log('🔓 Decrypting wallet response to extract documents...');
   
-  // Get the 'data' field from the response (decodedMap already declared above)
+  // Get the 'data' field from the response
+  const decodedMap = toMap(decoded);
   const responseData = decodedMap ? (decodedMap.get('data') || decodedMap.get(4)) : null;
   
   if (responseData && responseData.length > 0) {
     try {
-      // The 'data' field contains RAW encrypted DeviceResponse (not COSE_Encrypt0)
-      // Per ISO 18013-5: SessionEstablishment response uses same format as request
-      // Format: ciphertext || 16-byte auth tag (encrypted with SKDevice)
-      await decryptSessionEstablishmentData(responseData);
+      // The 'data' field contains encrypted DeviceResponse
+      await decryptAndDisplayResponse(responseData);
     } catch (decryptError) {
       console.error('Failed to decrypt documents:', decryptError);
       log('❌ Failed to decrypt documents: ' + decryptError.message);
@@ -1028,6 +753,11 @@ async function processSessionResponse(assembled) {
   } else {
     log('⚠️ No document data found in wallet response');
   }
+}
+async function writeState(byte) {
+  await chState.writeValueWithoutResponse(Uint8Array.of(byte));
+  log('� Session established! Waiting for wallet to send documents...');
+  log('� Check your wallet to approve sharing the requested data');
 }
 async function writeState(byte) {
   await chState.writeValueWithoutResponse(Uint8Array.of(byte));
@@ -1111,14 +841,14 @@ async function handleQrPayload(raw, sourceLabel) {
     
     // Show message to user about clicking to connect
     log('');
-    log('🚀 Ready to connect! Click "Connect & Request Documents" below to continue...');
+    log('🚀 Ready to connect! Click "Connect & Start" below to continue...');
     log('');
     
     // Enable and show a connect button
     if (!document.getElementById('btnAutoConnect')) {
       const connectBtn = document.createElement('button');
       connectBtn.id = 'btnAutoConnect';
-      connectBtn.textContent = '🚀 Connect & Request Documents';
+      connectBtn.textContent = '🚀 Connect & Start Session';
       connectBtn.style.cssText = 'margin: 1rem 0; padding: 0.75rem 1.5rem; font-size: 1.1em; background: #4CAF50; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;';
       connectBtn.onclick = async () => {
         connectBtn.disabled = true;
@@ -2706,82 +2436,47 @@ function buildDeviceRequestCBOR() {
 }
 
 // Build different request types for common use cases
-// Can now accept array of request types to create multiple docRequests
-function buildRequestByType(requestTypes) {
-  // Get selected request types if not provided
-  if (!requestTypes) {
-    requestTypes = Array.from(document.querySelectorAll('input[name="requestType"]:checked'))
-      .map(cb => cb.value);
-  }
-  
-  // If single value provided, convert to array
-  if (!Array.isArray(requestTypes)) {
-    requestTypes = [requestTypes];
-  }
-  
-  // If no types selected, default to mDL Full
-  if (requestTypes.length === 0) {
-    requestTypes = ['full'];
-  }
-  
-  console.log('Building request for types:', requestTypes);
-  
-  // Build base request structure
-  const deviceRequest = {
+function buildRequestByType(requestType) {
+  const baseRequest = {
     version: "1.0",
-    docRequests: []
+    docRequests: [{
+      itemsRequest: {
+        docType: "org.iso.18013.5.1.mDL",  // FIXED: Removed .mDL suffix - must match exact docType from wallet
+        nameSpaces: {
+          "org.iso.18013.5.1": {}
+        },
+        // Add requestInfo for better wallet compatibility
+        requestInfo: {}
+      }
+      // Note: Removed readerAuth for compatibility
+    }]
   };
-  
-  // Build each document request
-  requestTypes.forEach(requestType => {
-    const docRequest = buildSingleDocRequest(requestType);
-    if (docRequest) {
-      deviceRequest.docRequests.push(docRequest);
-    }
-  });
-  
-  console.log('→ Device Request with', deviceRequest.docRequests.length, 'document(s):', deviceRequest);
-  
-  return CBOR.encode(deviceRequest);
-}
 
-// Helper: Build a single document request based on type
-function buildSingleDocRequest(requestType) {
-  let docType, namespace, fields;
-  
-  // Determine document type and namespace
-  if (requestType.startsWith('pid_')) {
-    docType = "eu.europa.ec.eudi.pid.1";
-    namespace = "eu.europa.ec.eudi.pid.1";
-  } else if (requestType.startsWith('age_verify_')) {
-    docType = "eu.europa.ec.av.1";
-    namespace = "eu.europa.ec.av.1";
-  } else {
-    docType = "org.iso.18013.5.1.mDL";
-    namespace = "org.iso.18013.5.1";
-  }
-  
-  // Build fields based on request type
+  const ns = baseRequest.docRequests[0].itemsRequest.nameSpaces["org.iso.18013.5.1"];
+
   switch (requestType) {
     case 'basic':
-      fields = {
-        "family_name": true,
-        "given_name": true,
-        "birth_date": true,
-        "portrait": true
-      };
+      // Basic identity verification
+      Object.assign(ns, {
+        "family_name": true,      // Changed from false to true
+        "given_name": true,       // Changed from false to true
+        "birth_date": true,       // Changed from false to true
+        "portrait": true          // Changed from false to true
+      });
       break;
 
     case 'age':
-      fields = {
-        "age_over_18": true,
-        "age_over_21": true,
-        "birth_date": true
-      };
+      // Age verification only
+      Object.assign(ns, {
+        "age_over_18": true,      // Changed from false to true
+        "age_over_21": true,      // Changed from false to true
+        "birth_date": true        // Changed from false to true
+      });
       break;
 
     case 'driving':
-      fields = {
+      // Driving privileges verification
+      Object.assign(ns, {
         "family_name": true,
         "given_name": true,
         "birth_date": true,
@@ -2790,11 +2485,13 @@ function buildSingleDocRequest(requestType) {
         "expiry_date": true,
         "document_number": true,
         "portrait": true
-      };
+      });
       break;
 
     case 'full':
-      fields = {
+    default:
+      // Full mDL request (all available fields)
+      Object.assign(ns, {
         "family_name": true,
         "given_name": true,
         "birth_date": true,
@@ -2818,108 +2515,84 @@ function buildSingleDocRequest(requestType) {
         "resident_country": true,
         "portrait": true,
         "signature_usual_mark": true
-      };
+      });
       break;
 
+    // EU PID cases
     case 'pid_basic':
-      fields = {
-        "family_name": true,
-        "given_name": true,
-        "birth_date": true,
-        "portrait": true
-      };
-      break;
-
     case 'pid_age':
-      fields = {
-        "age_over_18": true,
-        "age_over_21": true,
-        "birth_date": true
-      };
-      break;
-
     case 'pid_full':
-      fields = {
-        "family_name": true,
-        "given_name": true,
-        "birth_date": true,
-        "birth_place": true,
-        "birth_country": true,
-        "birth_state": true,
-        "birth_city": true,
-        "resident_address": true,
-        "resident_country": true,
-        "resident_state": true,
-        "resident_city": true,
-        "resident_postal_code": true,
-        "resident_street": true,
-        "resident_house_number": true,
-        "gender": true,
-        "nationality": true,
-        "age_over_18": true,
-        "age_over_21": true,
-        "age_in_years": true,
-        "age_birth_year": true,
-        "family_name_birth": true,
-        "given_name_birth": true,
-        "portrait": true,
-        "issuing_authority": true,
-        "issuing_country": true,
-        "issuance_date": true,
-        "expiry_date": true,
-        "document_number": true
+      // Switch to EU PID document type and namespace
+      baseRequest.docRequests[0].itemsRequest.docType = "eu.europa.ec.eudi.pid.1";
+      baseRequest.docRequests[0].itemsRequest.nameSpaces = {
+        "eu.europa.ec.eudi.pid.1": {}
       };
+      const pidNs = baseRequest.docRequests[0].itemsRequest.nameSpaces["eu.europa.ec.eudi.pid.1"];
+      
+      if (requestType === 'pid_basic') {
+        // Basic EU PID identity verification
+        Object.assign(pidNs, {
+          "family_name": true,
+          "given_name": true,
+          "birth_date": true,
+          "portrait": true
+        });
+      } else if (requestType === 'pid_age') {
+        // EU PID age verification
+        Object.assign(pidNs, {
+          "age_over_18": true,
+          "age_over_21": true,
+          "birth_date": true
+        });
+      } else { // pid_full
+        // Full EU PID request
+        Object.assign(pidNs, {
+          "family_name": true,
+          "given_name": true,
+          "birth_date": true,
+          "birth_place": true,
+          "birth_country": true,
+          "birth_state": true,
+          "birth_city": true,
+          "resident_address": true,
+          "resident_country": true,
+          "resident_state": true,
+          "resident_city": true,
+          "resident_postal_code": true,
+          "resident_street": true,
+          "resident_house_number": true,
+          "gender": true,
+          "nationality": true,
+          "age_over_18": true,
+          "age_over_21": true,
+          "age_in_years": true,
+          "age_birth_year": true,
+          "family_name_birth": true,
+          "given_name_birth": true,
+          "portrait": true,
+          "issuing_authority": true,
+          "issuing_country": true,
+          "issuance_date": true,
+          "expiry_date": true,
+          "document_number": true
+        });
+      }
       break;
-
-    // EU Age Verification (Proof of Age) cases
-    case 'age_verify_18':
-      fields = {
-        "age_over_18": true
-      };
-      break;
-
-    case 'age_verify_21':
-      fields = {
-        "age_over_18": true,
-        "age_over_21": true
-      };
-      break;
-
-    case 'age_verify_full':
-      fields = {
-        "age_over_18": true,
-        "age_over_21": true,
-        "age_in_years": true,
-        "age_birth_year": true,
-        "birth_date": true,
-        "issuing_country": true,
-        "issuance_date": true,
-        "expiry_date": true
-      };
-      break;
-
-    default:
-      console.warn('Unknown request type:', requestType);
-      return null;
   }
-  
-  // Build the itemsRequest
-  const itemsRequest = {
-    docType: docType,
-    nameSpaces: {
-      [namespace]: fields
-    },
-    requestInfo: {}
-  };
+  console.log('→ mDL Request:', baseRequest);
   
   // Per ISO 18013-5, itemsRequest must be tag(24, bstr .cbor ItemsRequest)
+  // We need to encode itemsRequest separately and wrap it
+  const itemsRequest = baseRequest.docRequests[0].itemsRequest;
   const itemsRequestCbor = CBOR.encode(itemsRequest);
+  
+  // Create CBOR tag 24 for itemsRequest
   const taggedItemsRequest = new CBOR.Tagged(24, itemsRequestCbor);
   
-  return {
-    itemsRequest: taggedItemsRequest
-    // Note: No readerAuth for this demo
-  };
+  // Replace the plain object with the tagged version
+  baseRequest.docRequests[0].itemsRequest = taggedItemsRequest;
+  
+  return CBOR.encode(baseRequest);
 }
 
 // ==== Mode switching ====
@@ -2928,16 +2601,11 @@ function updateBleRoleUI() {
   // Requests are sent automatically after session establishment
 }
 
-// Handle request type changes (now supports multiple selections)
-requestTypeCheckboxes.forEach(checkbox => {
-  checkbox.addEventListener('change', (e) => {
-    const selected = Array.from(document.querySelectorAll('input[name="requestType"]:checked'))
-      .map(cb => cb.value);
-    
-    if (selected.length === 0) {
-      log('⚠️ No document types selected - will default to mDL Full');
-    } else if (selected.length === 1) {
-      const type = selected[0];
+// Handle request type changes
+requestTypeRadios.forEach(radio => {
+  radio.addEventListener('change', (e) => {
+    if (e.target.checked) {
+      const type = e.target.value;
       let description = '';
       switch(type) {
         case 'basic':
@@ -2961,26 +2629,8 @@ requestTypeCheckboxes.forEach(checkbox => {
         case 'pid_full':
           description = 'Full EU PID: all available fields including address, nationality, birth details';
           break;
-        case 'age_verify_18':
-          description = 'Age Verification 18+: age_over_18 only';
-          break;
-        case 'age_verify_21':
-          description = 'Age Verification 21+: age_over_18, age_over_21';
-          break;
-        case 'age_verify_full':
-          description = 'Age Verification Full: age checks, birth_date, age_in_years, issuing info';
-          break;
       }
       log(`Selected request type: ${type.toUpperCase()} - ${description}`);
-    } else {
-      // Multiple documents selected
-      const docTypes = selected.map(t => {
-        if (t.startsWith('pid_')) return 'EU PID';
-        if (t.startsWith('age_verify_')) return 'Age Verification';
-        return 'mDL';
-      });
-      const uniqueTypes = [...new Set(docTypes)];
-      log(`📋 Multi-document request: ${selected.length} document(s) selected (${uniqueTypes.join(' + ')})`);
     }
   });
 });
