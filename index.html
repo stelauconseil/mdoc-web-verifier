@@ -1145,9 +1145,11 @@ async function deriveSharedSecretBits(privKey, pubKey) {
   return sharedSecret;
 }
 async function hkdfExtract(saltBytes, ikmBytes) {
-  const key = await crypto.subtle.importKey('raw', ikmBytes, { name:'HKDF' }, false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits({ name:'HKDF', salt: saltBytes, info: new Uint8Array(), hash:'SHA-256' }, key, 256);
-  return new Uint8Array(bits);
+  // HKDF-Extract: PRK = HMAC-Hash(salt, IKM)
+  // Use HMAC directly, not WebCrypto's HKDF (which does extract+expand together)
+  const key = await crypto.subtle.importKey('raw', saltBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const prk = await crypto.subtle.sign('HMAC', key, ikmBytes);
+  return new Uint8Array(prk);
 }
 async function hkdfExpand(prkBytes, infoBytes, length) {
   const prk = await crypto.subtle.importKey('raw', prkBytes, { name:'HMAC', hash:'SHA-256' }, false, ['sign']);
@@ -1222,24 +1224,38 @@ async function buildTranscriptAAD() {
   // Manually build the transcript array to avoid any CBOR library issues
   // SessionTranscript = [DeviceEngagementBytes, Handover, EReaderKeyBytes]
   // NOTE: Wallet puts Handover BEFORE EReaderKey, not after!
+  
+  // 🔍 MULTIPAZ CONFIRMED: Uses tag(24) wrapped COSE_Keys inside SessionTranscript
+  // Then wraps the whole thing in tag(24, bstr(...)) before hashing
+  const useUnwrappedKeys = false;  // Keep tag(24) wrappers on COSE_Keys
+  
   const result = [];
   
   // Array with 3 items
   result.push(0x83);
   
-  // Item 1: tag(24, DeviceEngagementBytes)
-  result.push(0xD8, 0x18);  // tag 24
-  if (deBytes.length < 24) {
-    result.push(0x40 + deBytes.length);
-  } else if (deBytes.length < 256) {
-    result.push(0x58, deBytes.length);
+  if (useUnwrappedKeys) {
+    // Item 1: DeviceEngagement COSE_Key (unwrapped - no tag 24)
+    result.push(...deBytes);
+    
+    // Item 2: EReaderKey COSE_Key (unwrapped - no tag 24)
+    result.push(...coseKeyEncoded);
   } else {
-    result.push(0x59, deBytes.length >> 8, deBytes.length & 0xFF);
+    // Original: tag(24) wrapped versions
+    // Item 1: tag(24, DeviceEngagementBytes)
+    result.push(0xD8, 0x18);  // tag 24
+    if (deBytes.length < 24) {
+      result.push(0x40 + deBytes.length);
+    } else if (deBytes.length < 256) {
+      result.push(0x58, deBytes.length);
+    } else {
+      result.push(0x59, deBytes.length >> 8, deBytes.length & 0xFF);
+    }
+    result.push(...deBytes);
+    
+    // Item 2: EReaderKeyBytes (already contains tag 24)
+    result.push(...eReaderKeyBytes);
   }
-  result.push(...deBytes);
-  
-  // Item 2: EReaderKeyBytes (already contains tag 24)
-  result.push(...eReaderKeyBytes);
   
   // Item 3: Handover per ISO 18013-5 Section 9.1.5.1
   // Per spec: "If device engagement using QR code was used, the contents shall be QRHandover"
@@ -1248,11 +1264,12 @@ async function buildTranscriptAAD() {
   console.log('🔐 Using QRHandover (null) - engagement was via QR code');
   result.push(0xF6);  // CBOR null
   
-  console.log('SessionTranscript: [DeviceEngagement, EReaderKey, null]');
+  console.log(useUnwrappedKeys ? '🧪 SessionTranscript: [DeviceEngagement (unwrapped), EReaderKey (unwrapped), null]' : 'SessionTranscript: [DeviceEngagement, EReaderKey, null]');
   
   const trCbor = new Uint8Array(result);
   console.log('Transcript CBOR length (unwrapped):', trCbor.length);
   console.log('Transcript CBOR (full):', hex(trCbor));
+  console.log('🔍 Using unwrapped COSE_Keys (no tag 24):', useUnwrappedKeys);
   
   // Verify by decoding
   try {
@@ -1262,29 +1279,39 @@ async function buildTranscriptAAD() {
     console.error('Failed to decode transcript:', e);
   }
   
-  // CRITICAL FIX: Wrap SessionTranscript in tag(24, bstr(...)) for hashing
-  // Some wallet implementations expect this wrapper
-  const wrappedResult = [];
-  wrappedResult.push(0xD8, 0x18);  // tag(24)
-  if (trCbor.length < 256) {
-    wrappedResult.push(0x58, trCbor.length);
-  } else {
-    wrappedResult.push(0x59, trCbor.length >> 8, trCbor.length & 0xFF);
-  }
-  wrappedResult.push(...trCbor);
+  // Per ISO 18013-5 Section 9.1.5.2:
+  // SessionTranscriptBytes is the CBOR encoding of SessionTranscript
+  // Salt = SHA-256(SessionTranscriptBytes)
   
-  const wrappedTranscript = new Uint8Array(wrappedResult);
-  console.log('Wrapped Transcript CBOR length:', wrappedTranscript.length);
-  console.log('Wrapped Transcript CBOR (first 50 bytes):', hex(wrappedTranscript.slice(0, 50)));
+  // 🔍 MULTIPAZ EXPECTS: tag(24, bstr(SessionTranscript)) before hashing!
+  // This is what Multipaz does: Cbor.encode(Tagged(24, Bstr(encodedSessionTranscript)))
+  const wrappedTranscript = encodeTag24ByteString(trCbor);
   
-  // LOG COMPLETE WRAPPED TRANSCRIPT FOR COMPARISON
-  console.log('🔍 COMPLETE Wrapped SessionTranscript (for wallet comparison):');
-  console.log(hex(wrappedTranscript));
-  console.log('📊 As base64 for easy copying:', btoa(String.fromCharCode(...wrappedTranscript)));
+  console.log('🔍 SessionTranscript for hashing (WRAPPED in tag 24 bstr):');
+  console.log('Unwrapped length:', trCbor.length);
+  console.log('Unwrapped hex:', hex(trCbor));
+  console.log('Unwrapped base64:', btoa(String.fromCharCode(...trCbor)));
+  console.log('Wrapped length:', wrappedTranscript.length);
+  console.log('Wrapped hex:', hex(wrappedTranscript));
+  console.log('Wrapped base64:', btoa(String.fromCharCode(...wrappedTranscript)));
+  
+  // Store for debugging
+  window.sessionDebug = window.sessionDebug || {};
+  window.sessionDebug.sessionTranscript = trCbor;
+  window.sessionDebug.sessionTranscriptWrapped = wrappedTranscript;
+  window.sessionDebug.deviceEngagement = deBytes;
+  window.sessionDebug.eReaderKey = useUnwrappedKeys ? coseKeyEncoded : eReaderKeyBytes;
+  window.sessionDebug.useUnwrappedKeys = useUnwrappedKeys;
   
   const aad = await sha256(wrappedTranscript);
-  console.log('Transcript AAD (SHA-256 of wrapped):', hex(aad));
+  console.log('Transcript AAD (SHA-256 of tag(24, bstr(SessionTranscript))):', hex(aad));
   console.log('✅ Transcript AAD built successfully');
+  console.log('✅ Using Multipaz approach: hash(tag(24, bstr(SessionTranscript)))');
+  console.log('');
+  console.log('🔍 DEBUG: Copy this data to compare with Multipaz:');
+  console.log('  SessionTranscript unwrapped (base64):', btoa(String.fromCharCode(...trCbor)));
+  console.log('  SessionTranscript wrapped tag(24,bstr) (base64):', btoa(String.fromCharCode(...wrappedTranscript)));
+  console.log('  Transcript Hash (hex):', hex(aad));
   
   return aad;
 }
@@ -1336,6 +1363,53 @@ async function deriveSessionKey(sharedSecret, transcriptHash) {
   // Reader encrypts requests with SKReader
   // Reader decrypts responses with SKDevice
   return { readerKey, deviceKey };
+}
+
+// ==== Raw AES-256-GCM Encryption (for SessionEstablishment.data field) ====
+// Per ISO 18013-5 Section 9.1.1.4, SessionEstablishment.data field is:
+// "concatenation of the ciphertext and all 16 bytes of the authentication tag"
+// This is RAW output from AES-GCM, NOT wrapped in COSE_Encrypt0 structure
+//
+// CRITICAL: AAD must be EMPTY per ISO 18013-5 Section 9.1.5.2:
+// "The AAD used with the AES-GCM function shall be an empty string"
+async function aesGcmEncryptRaw(plaintext, keyBytes, identifier8, messageCounter = 1) {
+  console.log('=== RAW AES-256-GCM ENCRYPTION (for SessionEstablishment.data) ===');
+  console.log('Plaintext length:', plaintext.length);
+  console.log('Key length:', keyBytes.length, 'bytes (should be 32 for A256GCM)');
+  console.log('Message counter:', messageCounter);
+  
+  // Build IV per ISO 18013-5: identifier (8 bytes) || counter (4 bytes big-endian)
+  const iv = new Uint8Array(12);
+  iv.set(identifier8, 0);  // 8-byte identifier (0x00×8 for reader)
+  iv[8] = (messageCounter >> 24) & 0xFF;
+  iv[9] = (messageCounter >> 16) & 0xFF;
+  iv[10] = (messageCounter >> 8) & 0xFF;
+  iv[11] = messageCounter & 0xFF;
+  
+  console.log('IV (identifier || counter):', hex(iv));
+  console.log('  - Identifier (8 bytes):', hex(identifier8));
+  console.log('  - Counter (4 bytes BE):', hex(iv.slice(8, 12)), '=', messageCounter);
+  
+  // AAD for GCM shall be EMPTY per ISO 18013-5 Section 9.1.5.2
+  // "The AAD used with the AES-GCM function shall be an empty string"
+  const aad = new Uint8Array(0);
+  console.log('AAD for AES-GCM: <EMPTY> (per ISO 18013-5 Section 9.1.5.2)');
+  console.log('⚠️ Note: This is DIFFERENT from COSE_Encrypt0 which uses Enc_structure');
+  
+  const key = await crypto.subtle.importKey('raw', keyBytes, 
+    { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+  
+  const encrypted = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv, additionalData: aad, tagLength: 128 },
+    key, plaintext
+  );
+  
+  const result = new Uint8Array(encrypted);
+  console.log('Raw encrypted length:', result.length, '(plaintext + 16-byte auth tag)');
+  console.log('Raw encrypted (first 32 bytes):', hex(result.slice(0, 32)));
+  console.log('✅ Returns: ciphertext || 16-byte authentication_tag (no COSE wrapper, no Enc_structure AAD)');
+  
+  return result;
 }
 
 // ==== COSE_Encrypt0 (AES-256-GCM per ISO 18013-5) ====
@@ -1670,6 +1744,19 @@ async function buildSessionEstablishment() {
 // ISO 18013-5 compliant SessionEstablishment with manual CBOR encoding
 // This version uses fully manual encoding to avoid tag 64 issues from cbor-web library
 async function buildLegacySessionEstablishmentWithData() {
+  console.warn('========================================');
+  console.warn('⚠️ ALTERNATE SESSION ESTABLISHMENT');
+  console.warn('========================================');
+  console.warn('Per ISO 18013-5 spec Section 9.1.1.4:');
+  console.warn('- Reader generates EReaderKey');
+  console.warn('- Both sides derive session keys independently');
+  console.warn('- Reader sends {eReaderKey, data: <encrypted>} together');
+  console.warn('');
+  console.warn('✅ FIX APPLIED: Using RAW AES-GCM output for data field');
+  console.warn('   data = ciphertext || 16-byte auth_tag (no COSE_Encrypt0 wrapper)');
+  console.warn('   Per spec: "concatenation of the ciphertext and all 16 bytes of the authentication tag"');
+  console.warn('========================================');
+  
   const readerCoseKey = buildReaderCoseKey();
   
   // LOG: Verify which key we're using
@@ -1690,9 +1777,11 @@ async function buildLegacySessionEstablishmentWithData() {
   
   // Derive session keys if needed
   if (!skReader || !transcriptAAD) {
-    console.log('Deriving session keys for encryption...');
+    console.log('Deriving session keys per ISO 18013-5 (independent derivation)...');
+    console.log('Using eSenderKey from DeviceEngagement (field 33) for ECDH');
     const mdocPub = await importMdocPubKeyXY(mdocPubKey.x, mdocPubKey.y);
     const shared = await deriveSharedSecretBits(readerKeyPair.privateKey, mdocPub);
+    console.log('Building SessionTranscript for key derivation...');
     transcriptAAD = await buildTranscriptAAD();
     
     // Derive both session keys
@@ -1706,11 +1795,17 @@ async function buildLegacySessionEstablishmentWithData() {
   
   // Encrypt the request WITH SKReader (not SKDevice!)
   // Per ISO 18013-5: "The mdoc reader shall encrypt its mdoc requests with SKReader"
-  // NOTE: mdlRequest is already CBOR-encoded by buildRequestByType()
-  console.log('🔐 Encrypting request with SKReader...');
+  // CRITICAL: SessionEstablishment.data field uses RAW AES-GCM output (not COSE_Encrypt0!)
+  // Spec Section 9.1.1.4: "concatenation of the ciphertext and all 16 bytes of the authentication tag"
+  // AAD: EMPTY per ISO 18013-5 Section 9.1.5.2
+  console.log('🔐 Encrypting request with SKReader (raw AES-GCM for SessionEstablishment.data)...');
   console.log(' Request CBOR length:', mdlRequest.length, 'bytes');
   console.log('📦 Request CBOR (first 64 bytes):', hex(mdlRequest.slice(0, 64)));
-  const encryptedRequest = await coseEncrypt0_AESGCM_Enc0(mdlRequest, transcriptAAD, skReader);
+  console.log('📝 AAD: EMPTY (per ISO 18013-5)');
+  
+  // Use reader identifier: 8 zero bytes
+  const readerIdentifier = new Uint8Array(8); // 0x00 × 8
+  const encryptedRequest = await aesGcmEncryptRaw(mdlRequest, skReader, readerIdentifier, 1);
   
   // Manually build SessionEstablishment - just a plain map, no outer tag 24
   const result = [];
@@ -2479,7 +2574,17 @@ btnEstablish.addEventListener('click', async () => {
 // Alternative SessionEstablishment with "publicKey" field  
 btnEstablishAlt.addEventListener('click', async () => {
   try {
-    log('🔐 Legacy SessionEstablishment: sending public key + encrypted request in one message...');
+    log('🔐 Alternate SessionEstablishment: ISO 18013-5 compliant flow');
+    log('📋 Sending {eReaderKey, data: <encrypted>} in one message');
+    log('⚠️ Note: Multipaz reports decryption error with this method');
+    log('');
+    log('🔬 Investigating possible causes:');
+    log('   - SessionTranscript structure/ordering');
+    log('   - COSE_Encrypt0 format expectations');  
+    log('   - Key derivation parameters (HKDF)');
+    log('   - AAD usage in AES-GCM');
+    log('');
+    log('📊 Full debugging details will be logged to console');
 
     // Reset session state to avoid mixing handshakes
     _readerCoseKeyCached = null;
@@ -2494,17 +2599,36 @@ btnEstablishAlt.addEventListener('click', async () => {
     readerKeyPair = await makeReaderEphemeralKeyPair();
     await exportReaderPublicToCoseKey();
     log('✅ Generated ephemeral key pair');
+    
+    console.log('========================================');
+    console.log('MULTIPAZ DEBUGGING - ALTERNATE SESSION ESTABLISHMENT');
+    console.log('========================================');
+    console.log('Per ISO 18013-5 Section 9.1.1.4:');
+    console.log('  "The mdoc reader encrypts the mdoc request with the');
+    console.log('   appropriate session key and sends it to the mdoc');
+    console.log('   together with EReaderKey.Pub in a session establishment message."');
+    console.log('');
+    console.log('This implementation follows the spec, but Multipaz rejects it.');
+    console.log('');
+    console.log('Debug checklist for Multipaz comparison:');
+    console.log('1. Compare SessionTranscript construction (check console below)');
+    console.log('2. Compare session key derivation (SKReader/SKDevice)');
+    console.log('3. Compare COSE_Encrypt0 structure');
+    console.log('4. Compare IV construction and AAD usage');
+    console.log('========================================');
 
     const legacyMessage = await buildLegacySessionEstablishmentWithData();
-    console.log('Legacy SessionEstablishment length:', legacyMessage.length);
-    console.log('Legacy SessionEstablishment hex (first 120 bytes):', hex(legacyMessage.slice(0, 120)));
+    console.log('SessionEstablishment message length:', legacyMessage.length);
+    console.log('SessionEstablishment hex (first 120 bytes):', hex(legacyMessage.slice(0, 120)));
 
     await sendFragmented(legacyMessage);
 
     sessionEstablished = true;
     window.sessionEstablished = true;
-    log('📤 Legacy SessionEstablishment sent. Wallets that expect combined message should prompt now.');
-    log('💡 If the wallet replies with its own SessionEstablishment, it will be processed automatically.');
+    log('📤 SessionEstablishment sent with encrypted request');
+    log('⏳ Waiting for wallet response...');
+    log('⚠️ Known issue: Multipaz will likely return "Error decrypting"');
+    log('💡 Use standard "Send SessionEstablishment" as workaround');
 
     btnSend.disabled = false;
     btnCompatMode.disabled = false;
