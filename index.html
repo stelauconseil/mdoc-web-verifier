@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ISO 18013-5 Web Companion</title>
+  <title>ISO 18013-5 Web Proximity Reader</title>
   <style>
     :root { color-scheme: light dark; font-family: "Inter", "Segoe UI", sans-serif; line-height: 1.5; }
     body { margin: 0; background: #F2F4F8; color: #111827; }
@@ -75,16 +75,16 @@
 </head>
 <body>
   <header class="page-header">
-    <h1>ISO 18013-5 Web Reader</h1>
-    <p>Scan an mDL device engagement QR, connect over Web Bluetooth, and explore request templates without leaving the browser.</p>
+    <h1>ISO 18013-5 Web Proximity Reader</h1>
+    <p>Scan an mDL/mDoc device engagement QR, connect over Web Bluetooth, and request digital credentials.</p>
   </header>
   <main>
     <section class="card" id="requestSection">
-      <h2>1. Request Documents</h2>
-      <p class="muted">Select one or more document templates. You can request multiple documents (e.g., mDL + PID) in a single session.</p>
+      <h2>1. Request Digital Credentials</h2>
+      <p class="muted">Select one or more digital credential. You can request multiple digital credentials (e.g., mDL + PID) in a single session.</p>
       
       <div style="margin-bottom: 15px;">
-        <strong>US mDL (Mobile Driver's License)</strong>
+        <strong>mDL (Mobile Driver's License)</strong>
       </div>
       <div class="radio-group request-type">
         <label class="radio-chip small">
@@ -182,7 +182,7 @@
     </section>
   </main>
   <footer>
-    Built for rapid ISO 18013-5 experimentation. Web Bluetooth requires HTTPS and a compatible browser.
+    Built by <a href="https://stelau.com">Stelau</a> for rapid ISO 18013-5 experimentation. Web Bluetooth requires HTTPS and a compatible browser.
   </footer>
 
 <!-- Load libs BEFORE the module -->
@@ -451,6 +451,362 @@ async function aesGcmDecrypt(ciphertextWithTag, keyBytes, iv, aad) {
   }
 }
 
+// ===== SIGNATURE VERIFICATION FUNCTIONS =====
+
+// Extract public key from X.509 certificate (DER format)
+async function extractPublicKeyFromCert(certDer) {
+  try {
+    console.log('Extracting public key from certificate, size:', certDer.length);
+    
+    // Parse the certificate to find the Subject Public Key Info
+    // X.509 structure: SEQUENCE { tbsCertificate, signatureAlgorithm, signature }
+    // We need to extract the public key from tbsCertificate
+    
+    // For now, we'll use a simple approach: look for the EC public key pattern
+    // EC public key is typically 65 bytes: 0x04 || X (32 bytes) || Y (32 bytes)
+    
+    // Better approach: Parse the SEQUENCE structure
+    const cert = new Uint8Array(certDer);
+    
+    // Find the public key (look for SEQUENCE tag followed by BIT STRING containing the key)
+    // The public key in X.509 is in SubjectPublicKeyInfo
+    // For EC keys, it's typically: BIT STRING with 0x04 prefix + 64 bytes (uncompressed point)
+    
+    let publicKeyBytes = null;
+    
+    // Look for the uncompressed EC point pattern (0x04 followed by 64 bytes)
+    for (let i = 0; i < cert.length - 65; i++) {
+      if (cert[i] === 0x04) {
+        // Check if this looks like an EC public key (uncompressed point)
+        // It should be 65 bytes total: 0x04 + 32 bytes X + 32 bytes Y
+        const candidate = cert.slice(i, i + 65);
+        
+        // Verify it's preceded by reasonable DER structure
+        // Typically: 0x03 (BIT STRING tag), length, 0x00 (no unused bits), 0x04...
+        if (i >= 2 && cert[i - 1] === 0x00 && cert[i - 2] >= 66) {
+          publicKeyBytes = candidate;
+          console.log('Found EC public key at offset', i);
+          break;
+        }
+      }
+    }
+    
+    if (!publicKeyBytes) {
+      throw new Error('Could not find EC public key in certificate');
+    }
+    
+    // Extract X and Y coordinates (skip the 0x04 prefix)
+    const x = publicKeyBytes.slice(1, 33);
+    const y = publicKeyBytes.slice(33, 65);
+    
+    console.log('Extracted X:', hex(x));
+    console.log('Extracted Y:', hex(y));
+    
+    // Import as P-256 public key for ECDSA verification
+    const jwk = {
+      kty: 'EC',
+      crv: 'P-256',
+      x: base64UrlEncode(x),
+      y: base64UrlEncode(y)
+    };
+    
+    const publicKey = await crypto.subtle.importKey(
+      'jwk',
+      jwk,
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      true,
+      ['verify']
+    );
+    
+    console.log('✅ Public key imported successfully');
+    return publicKey;
+    
+  } catch (err) {
+    console.error('Error extracting public key:', err);
+    throw err;
+  }
+}
+
+// Helper: Base64 URL encode (without padding)
+function base64UrlEncode(bytes) {
+  const base64 = btoa(String.fromCharCode(...bytes));
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+// Extract certificate information (Subject CN, Issuer CN) from X.509 DER certificate
+function extractCertInfo(certDer) {
+  try {
+    const cert = new Uint8Array(certDer);
+    
+    // Helper to parse DER length
+    function parseDerLength(bytes, offset) {
+      const firstByte = bytes[offset];
+      if (firstByte < 0x80) {
+        return { length: firstByte, bytesUsed: 1 };
+      }
+      const numBytes = firstByte & 0x7F;
+      let length = 0;
+      for (let i = 0; i < numBytes; i++) {
+        length = (length << 8) | bytes[offset + 1 + i];
+      }
+      return { length, bytesUsed: 1 + numBytes };
+    }
+    
+    // Helper to extract PrintableString or UTF8String
+    function extractString(bytes, offset) {
+      const tag = bytes[offset];
+      const lenInfo = parseDerLength(bytes, offset + 1);
+      const strStart = offset + 1 + lenInfo.bytesUsed;
+      const strEnd = strStart + lenInfo.length;
+      
+      // Tags: 0x0C = UTF8String, 0x13 = PrintableString, 0x16 = IA5String
+      if (tag === 0x0C || tag === 0x13 || tag === 0x16) {
+        const strBytes = bytes.slice(strStart, strEnd);
+        return new TextDecoder().decode(strBytes);
+      }
+      return null;
+    }
+    
+    // Find Common Name (CN) in a Name structure
+    // CN OID is 2.5.4.3 = 06 03 55 04 03
+    function findCN(bytes, start, end) {
+      const cnOid = new Uint8Array([0x06, 0x03, 0x55, 0x04, 0x03]);
+      
+      for (let i = start; i < end - 10; i++) {
+        // Check if we found the CN OID
+        if (bytes[i] === 0x06 && bytes[i + 1] === 0x03 &&
+            bytes[i + 2] === 0x55 && bytes[i + 3] === 0x04 && bytes[i + 4] === 0x03) {
+          // CN OID found, next should be the string value
+          // Skip to the string (usually right after the OID)
+          let offset = i + 5;
+          // The string is typically wrapped in a SET, then the actual string
+          if (bytes[offset] === 0x31) { // SET tag
+            offset++; // skip tag
+            const lenInfo = parseDerLength(bytes, offset);
+            offset += lenInfo.bytesUsed;
+          }
+          // Now should be the string (PrintableString, UTF8String, etc.)
+          const cn = extractString(bytes, offset);
+          if (cn) return cn;
+        }
+      }
+      return null;
+    }
+    
+    // X.509 Certificate structure:
+    // SEQUENCE {
+    //   tbsCertificate SEQUENCE {
+    //     version [0] EXPLICIT
+    //     serialNumber
+    //     signature (algorithm)
+    //     issuer Name      <-- We want CN from here
+    //     validity
+    //     subject Name     <-- We want CN from here
+    //     ...
+    //   }
+    // }
+    
+    // Start by finding the main SEQUENCE
+    let offset = 0;
+    if (cert[offset] !== 0x30) throw new Error('Not a valid DER certificate');
+    offset++;
+    
+    const certLenInfo = parseDerLength(cert, offset);
+    offset += certLenInfo.bytesUsed;
+    
+    // Now we're inside the certificate SEQUENCE
+    // Next should be tbsCertificate SEQUENCE
+    if (cert[offset] !== 0x30) throw new Error('Invalid tbsCertificate');
+    offset++;
+    
+    const tbsLenInfo = parseDerLength(cert, offset);
+    const tbsStart = offset + tbsLenInfo.bytesUsed;
+    const tbsEnd = tbsStart + tbsLenInfo.length;
+    offset = tbsStart;
+    
+    // Skip version (optional [0] EXPLICIT)
+    if (cert[offset] === 0xA0) {
+      offset++; // skip tag
+      const verLenInfo = parseDerLength(cert, offset);
+      offset += verLenInfo.bytesUsed + verLenInfo.length;
+    }
+    
+    // Skip serialNumber (INTEGER)
+    if (cert[offset] === 0x02) {
+      offset++; // skip tag
+      const snLenInfo = parseDerLength(cert, offset);
+      offset += snLenInfo.bytesUsed + snLenInfo.length;
+    }
+    
+    // Skip signature algorithm (SEQUENCE)
+    if (cert[offset] === 0x30) {
+      offset++; // skip tag
+      const algLenInfo = parseDerLength(cert, offset);
+      offset += algLenInfo.bytesUsed + algLenInfo.length;
+    }
+    
+    // Now we should be at issuer Name (SEQUENCE)
+    let issuerCN = null;
+    if (cert[offset] === 0x30) {
+      offset++; // skip tag
+      const issuerLenInfo = parseDerLength(cert, offset);
+      const issuerStart = offset + issuerLenInfo.bytesUsed;
+      const issuerEnd = issuerStart + issuerLenInfo.length;
+      
+      issuerCN = findCN(cert, issuerStart, issuerEnd);
+      
+      offset = issuerEnd;
+    }
+    
+    // Skip validity (SEQUENCE)
+    if (cert[offset] === 0x30) {
+      offset++; // skip tag
+      const valLenInfo = parseDerLength(cert, offset);
+      offset += valLenInfo.bytesUsed + valLenInfo.length;
+    }
+    
+    // Now we should be at subject Name (SEQUENCE)
+    let subjectCN = null;
+    if (cert[offset] === 0x30) {
+      offset++; // skip tag
+      const subjectLenInfo = parseDerLength(cert, offset);
+      const subjectStart = offset + subjectLenInfo.bytesUsed;
+      const subjectEnd = subjectStart + subjectLenInfo.length;
+      
+      subjectCN = findCN(cert, subjectStart, subjectEnd);
+    }
+    
+    return { subjectCN, issuerCN };
+    
+  } catch (err) {
+    console.warn('Error parsing certificate info:', err);
+    return { subjectCN: null, issuerCN: null };
+  }
+}
+
+// Verify COSE_Sign1 signature
+async function verifyCoseSign1(coseSign1, publicKey) {
+  try {
+    console.log('=== VERIFYING COSE_Sign1 SIGNATURE ===');
+    
+    // COSE_Sign1 = [protected, unprotected, payload, signature]
+    if (!Array.isArray(coseSign1) || coseSign1.length < 4) {
+      throw new Error('Invalid COSE_Sign1 structure');
+    }
+    
+    const [protectedHeader, unprotectedHeader, payload, signature] = coseSign1;
+    
+    console.log('Protected header length:', protectedHeader?.length || 0);
+    console.log('Payload length:', payload?.length || 0);
+    console.log('Signature length:', signature?.length || 0);
+    
+    // Convert protected header to Uint8Array if it's not already
+    const protectedHeaderBytes = protectedHeader instanceof Uint8Array 
+      ? protectedHeader 
+      : new Uint8Array(protectedHeader);
+    
+    const payloadBytes = payload instanceof Uint8Array 
+      ? payload 
+      : new Uint8Array(payload);
+      
+    console.log('Protected header bytes:', hex(protectedHeaderBytes));
+    console.log('Payload bytes (first 32):', hex(payloadBytes.slice(0, 32)));
+    
+    // Reconstruct Sig_structure per RFC 8152 Section 4.4
+    // Sig_structure = [
+    //   context : "Signature1",
+    //   body_protected : bstr .cbor header_map,
+    //   external_aad : bstr,
+    //   payload : bstr
+    // ]
+    // 
+    // CRITICAL: protectedHeaderBytes and payloadBytes are ALREADY CBOR-encoded,
+    // so we need to manually build the array with them as bstr, not let CBOR.encode()
+    // double-encode them.
+    
+    // Manually construct Sig_structure CBOR:
+    // 84                    # array(4)
+    //   6A 5369676E617475726531  # text(10) "Signature1"
+    //   43 <protected bytes>      # bstr(3) - protected header (already CBOR)
+    //   40                        # bstr(0) - empty AAD
+    //   59 XXXX <payload bytes>   # bstr(length) - payload (already CBOR)
+    
+    function encodeBstr(bytes) {
+      // CBOR byte string encoding
+      const len = bytes.length;
+      if (len <= 23) {
+        return new Uint8Array([0x40 + len, ...bytes]);
+      } else if (len <= 0xFF) {
+        return new Uint8Array([0x58, len, ...bytes]);
+      } else if (len <= 0xFFFF) {
+        return new Uint8Array([0x59, len >> 8, len & 0xFF, ...bytes]);
+      } else {
+        throw new Error('Payload too large for this implementation');
+      }
+    }
+    
+    const sigStructureParts = [];
+    
+    // Array header: 84 (array of 4 elements)
+    sigStructureParts.push(new Uint8Array([0x84]));
+    
+    // Element 1: "Signature1" as text string
+    const contextStr = "Signature1";
+    const contextBytes = new TextEncoder().encode(contextStr);
+    sigStructureParts.push(new Uint8Array([0x6A, ...contextBytes])); // 0x6A = text(10)
+    
+    // Element 2: protected header as bstr
+    sigStructureParts.push(encodeBstr(protectedHeaderBytes));
+    
+    // Element 3: empty AAD as bstr
+    sigStructureParts.push(new Uint8Array([0x40])); // empty byte string
+    
+    // Element 4: payload as bstr
+    sigStructureParts.push(encodeBstr(payloadBytes));
+    
+    // Concatenate all parts
+    const totalLength = sigStructureParts.reduce((sum, part) => sum + part.length, 0);
+    const sigStructureBytes = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const part of sigStructureParts) {
+      sigStructureBytes.set(part, offset);
+      offset += part.length;
+    }
+    
+    console.log('Sig_structure CBOR (manual):', hex(sigStructureBytes));
+    console.log('Sig_structure length:', sigStructureBytes.length);
+    
+    // Convert signature to the format expected by Web Crypto
+    // COSE signature is raw r||s format (64 bytes for P-256)
+    // Web Crypto expects the same format for ECDSA
+    const signatureBytes = new Uint8Array(signature);
+    console.log('Signature bytes:', hex(signatureBytes));
+    
+    if (signatureBytes.length !== 64) {
+      console.warn('⚠️ Expected 64-byte signature for ES256, got', signatureBytes.length);
+    }
+    
+    // Verify the signature
+    // Web Crypto will hash the data with SHA-256 internally for ES256
+    const isValid = await crypto.subtle.verify(
+      {
+        name: 'ECDSA',
+        hash: { name: 'SHA-256' }
+      },
+      publicKey,
+      signatureBytes,
+      sigStructureBytes // Verify against the original Sig_structure (will be hashed internally)
+    );
+    
+    console.log('Signature verification result:', isValid);
+    return isValid;
+    
+  } catch (err) {
+    console.error('❌ Signature verification error:', err);
+    throw err;
+  }
+}
+
 // Helper: Convert CBOR structures to plain JSON
 function convertToJSON(obj) {
   if (obj === null || obj === undefined) {
@@ -549,7 +905,7 @@ function displayDeviceResponse(deviceResponse) {
   if (!documents || !Array.isArray(documents) || documents.length === 0) {
     responseDisplayEl.innerHTML = `
       <div class="response-header">
-        <h3>🎉 mDL Response Received</h3>
+        <h3>🎉 Response Received</h3>
         <div class="response-meta">Version: ${version}</div>
       </div>
       <div class="no-data">No documents found in response</div>
@@ -560,7 +916,7 @@ function displayDeviceResponse(deviceResponse) {
   // Build HTML
   let html = `
     <div class="response-header">
-      <h3>🎉 mDL Response Received</h3>
+      <h3>🎉 Response Received</h3>
       <div class="response-meta">Version: ${version} • ${documents.length} document(s)</div>
       <button id="btnCopyResponse" class="copy-btn" style="margin-top: 10px; padding: 8px 16px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
         📋 Copy as JSON
@@ -722,6 +1078,222 @@ function displayDeviceResponse(deviceResponse) {
       
       html += '</div>'; // End namespace-section
     });
+    
+    // Add signer information and signature verification section
+    const issuerAuth = getField(issuerSigned, 'issuerAuth');
+    if (issuerAuth) {
+      html += `
+        <div class="signer-section" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff;">
+          <div style="font-weight: bold; margin-bottom: 10px; color: #007bff;">🔐 Issuer Signature Information</div>
+      `;
+      
+      try {
+        // issuerAuth is a COSE_Sign1 structure
+        // Decode if it's wrapped in tag(24)
+        let coseSign1 = issuerAuth;
+        
+        console.log('=== PARSING ISSUER AUTH ===');
+        console.log('issuerAuth type:', issuerAuth?.constructor?.name);
+        console.log('issuerAuth:', issuerAuth);
+        
+        if (issuerAuth instanceof CBOR.Tagged && issuerAuth.tag === 24) {
+          console.log('Unwrapping tag(24)...');
+          const coseBytes = new Uint8Array(issuerAuth.value);
+          console.log('COSE bytes length:', coseBytes.length);
+          coseSign1 = CBOR.decode(coseBytes.buffer);
+          console.log('Decoded COSE_Sign1:', coseSign1);
+        }
+        
+        // COSE_Sign1 = [protected, unprotected, payload, signature]
+        if (Array.isArray(coseSign1) && coseSign1.length >= 4) {
+          const [protectedHeader, unprotectedHeader, payload, signature] = coseSign1;
+          
+          console.log('Protected header:', protectedHeader);
+          console.log('Unprotected header:', unprotectedHeader);
+          console.log('Payload length:', payload?.length);
+          console.log('Signature length:', signature?.length);
+          
+          // Decode protected header
+          let protectedData = {};
+          if (protectedHeader && protectedHeader.length > 0) {
+            try {
+              // CRITICAL FIX: Create a new independent buffer from the view
+              // protectedHeader is a Uint8Array view, we need to copy it to decode correctly
+              const protectedHeaderCopy = new Uint8Array(protectedHeader);
+              console.log('Protected header bytes to decode:', hex(protectedHeaderCopy));
+              const decoded = CBOR.decode(protectedHeaderCopy.buffer);
+              console.log('Decoded protected header:', decoded);
+              if (decoded instanceof Map) {
+                protectedData = Object.fromEntries(decoded);
+              } else {
+                protectedData = decoded;
+              }
+              console.log('Protected data:', protectedData);
+            } catch (e) {
+              console.warn('Could not decode protected header:', e);
+            }
+          }
+          
+          // Display algorithm
+          const alg = protectedData[1] || (unprotectedHeader instanceof Map ? unprotectedHeader.get(1) : unprotectedHeader?.[1]);
+          console.log('Algorithm value:', alg);
+          console.log('Algorithm from protected:', protectedData[1]);
+          console.log('Algorithm from unprotected:', unprotectedHeader instanceof Map ? unprotectedHeader.get(1) : unprotectedHeader?.[1]);
+          
+          let algName = 'Unknown';
+          if (alg === -7) algName = 'ES256 (ECDSA with SHA-256)';
+          else if (alg === -35) algName = 'ES384 (ECDSA with SHA-384)';
+          else if (alg === -36) algName = 'ES512 (ECDSA with SHA-512)';
+          else if (alg === -8) algName = 'EdDSA';
+          else if (alg) algName = `Algorithm ${alg}`;
+          
+          console.log('Algorithm name:', algName);
+          
+          html += `
+            <div class="data-item">
+              <div class="data-label">Signature Algorithm</div>
+              <div class="data-value">${escapeHtml(algName)}</div>
+            </div>
+          `;
+          
+          // Display certificate chain if present (x5chain)
+          const x5chain = unprotectedHeader instanceof Map ? unprotectedHeader.get(33) : unprotectedHeader?.[33];
+          if (x5chain) {
+            const certCount = Array.isArray(x5chain) ? x5chain.length : 1;
+            html += `
+              <div class="data-item">
+                <div class="data-label">Certificate Chain</div>
+                <div class="data-value">✓ ${certCount} certificate(s) provided</div>
+              </div>
+            `;
+            
+            // Extract and display certificate information
+            try {
+              const cert = Array.isArray(x5chain) ? x5chain[0] : x5chain;
+              if (cert instanceof Uint8Array || ArrayBuffer.isView(cert)) {
+                html += `
+                  <div class="data-item">
+                    <div class="data-label">Certificate Size</div>
+                    <div class="data-value">${cert.length} bytes</div>
+                  </div>
+                `;
+                
+                // Extract Subject CN and Issuer CN
+                const certInfo = extractCertInfo(cert);
+                
+                if (certInfo.subjectCN) {
+                  html += `
+                    <div class="data-item">
+                      <div class="data-label">Subject CN</div>
+                      <div class="data-value">${escapeHtml(certInfo.subjectCN)}</div>
+                    </div>
+                  `;
+                }
+                
+                if (certInfo.issuerCN) {
+                  html += `
+                    <div class="data-item">
+                      <div class="data-label">Issuer CN</div>
+                      <div class="data-value">${escapeHtml(certInfo.issuerCN)}</div>
+                    </div>
+                  `;
+                }
+              }
+            } catch (certError) {
+              console.warn('Certificate parsing error:', certError);
+            }
+          }
+          
+          // Display signature
+          if (signature instanceof Uint8Array || ArrayBuffer.isView(signature)) {
+            html += `
+              <div class="data-item">
+                <div class="data-label">Signature</div>
+                <div class="data-value binary">${signature.length} bytes</div>
+              </div>
+            `;
+            
+            // Signature verification status (will be updated asynchronously)
+            const verifyId = `verify-${docIndex}`;
+            html += `
+              <div class="data-item">
+                <div class="data-label">Verification Status</div>
+                <div class="data-value" id="${verifyId}" style="color: #6c757d;">🔄 Verifying signature...</div>
+              </div>
+            `;
+            
+            // Perform verification asynchronously
+            // Capture variables in closure for async callback
+            const capturedCoseSign1 = coseSign1;
+            const capturedX5chain = x5chain;
+            
+            setTimeout(async () => {
+              const statusEl = document.getElementById(verifyId);
+              if (!statusEl) return;
+              
+              try {
+                // Extract public key from certificate
+                const cert = Array.isArray(capturedX5chain) ? capturedX5chain[0] : capturedX5chain;
+                if (!cert) {
+                  statusEl.innerHTML = '<span style="color: #ffc107;">⚠️ No certificate found for verification</span>';
+                  return;
+                }
+                
+                statusEl.innerHTML = '<span style="color: #6c757d;">🔄 Extracting public key from certificate...</span>';
+                const publicKey = await extractPublicKeyFromCert(cert);
+                
+                statusEl.innerHTML = '<span style="color: #6c757d;">🔄 Verifying ECDSA signature...</span>';
+                const isValid = await verifyCoseSign1(capturedCoseSign1, publicKey);
+                
+                if (isValid) {
+                  statusEl.innerHTML = '<span style="color: #28a745;">✅ Signature verified successfully!</span>';
+                  log(`✅ Document ${docIndex + 1} signature verified`);
+                } else {
+                  statusEl.innerHTML = '<span style="color: #dc3545;">❌ Signature verification failed</span>';
+                  log(`❌ Document ${docIndex + 1} signature verification failed`);
+                }
+              } catch (verifyError) {
+                console.error('Verification error:', verifyError);
+                statusEl.innerHTML = `<span style="color: #dc3545;">❌ Verification error: ${escapeHtml(verifyError.message)}</span>`;
+                log(`❌ Document ${docIndex + 1} verification error: ${verifyError.message}`);
+              }
+            }, 100);
+          }
+          
+          // Show payload size
+          if (payload) {
+            const payloadSize = payload instanceof Uint8Array ? payload.length : 
+                               ArrayBuffer.isView(payload) ? payload.length :
+                               JSON.stringify(payload).length;
+            html += `
+              <div class="data-item">
+                <div class="data-label">Signed Payload</div>
+                <div class="data-value">${payloadSize} bytes (MSO - Mobile Security Object)</div>
+              </div>
+            `;
+          }
+          
+        } else {
+          html += `<div class="data-value">⚠️ Unexpected COSE_Sign1 structure</div>`;
+        }
+        
+      } catch (sigError) {
+        console.error('Error parsing issuerAuth:', sigError);
+        html += `
+          <div class="data-item">
+            <div class="data-value" style="color: #dc3545;">❌ Error parsing signature: ${escapeHtml(sigError.message)}</div>
+          </div>
+        `;
+      }
+      
+      html += '</div>'; // End signer-section
+    } else {
+      html += `
+        <div class="signer-section" style="margin-top: 20px; padding: 15px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
+          <div style="color: #856404;">⚠️ No issuer signature found (issuerAuth missing)</div>
+        </div>
+      `;
+    }
     
     html += '</div>'; // End document-card
   });
@@ -1110,9 +1682,7 @@ async function handleQrPayload(raw, sourceLabel) {
     log(`✅ Parsed QR payload from ${sourceLabel}. Service UUID: ${uuid || 'n/a'}`);
     
     // Show message to user about clicking to connect
-    log('');
     log('🚀 Ready to connect! Click "Connect & Request Documents" below to continue...');
-    log('');
     
     // Enable and show a connect button
     if (!document.getElementById('btnAutoConnect')) {
