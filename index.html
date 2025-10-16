@@ -45,8 +45,8 @@
     
     /* Response Display Styles */
     #responseDisplay { background: #f8fafc; border-radius: 14px; padding: 1.5rem; border: 1px solid rgba(148,163,184,0.35); }
-    .response-header { background: linear-gradient(135deg, #0f766e, #14b8a6); color: white; padding: 1rem 1.25rem; border-radius: 12px; margin-bottom: 1.5rem; }
-    .response-header h3 { margin: 0; font-size: 1.25rem; font-weight: 600; }
+    .response-header { background: linear-gradient(135deg, #0f3d76, #1466b8); color: white; padding: 1rem 1.25rem; border-radius: 12px; margin-bottom: 1.5rem; }
+    .response-header h3 { margin: 0; font-size: 1.25rem; font-weight: 600; color: white; }
     .response-meta { color: rgba(255,255,255,0.9); font-size: 0.9rem; margin-top: 0.35rem; }
     .document-card { background: white; border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; border: 1px solid rgba(148,163,184,0.25); box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
     .document-type { font-size: 0.85rem; color: #0f766e; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.75rem; }
@@ -531,6 +531,30 @@ async function extractPublicKeyFromCert(certDer) {
 function base64UrlEncode(bytes) {
   const base64 = btoa(String.fromCharCode(...bytes));
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+// Helper: Create download link for JPEG2000 image
+function createJp2DownloadLink(jp2Bytes, portraitId) {
+  const base64 = btoa(String.fromCharCode(...jp2Bytes));
+  const dataUri = `data:image/jp2;base64,${base64}`;
+  
+  return `
+    <div style="display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start;">
+      <div style="padding: 0.75rem 1rem; background: #fef3c7; border: 1px solid #fbbf24; border-radius: 8px; font-size: 0.9rem;">
+        ⚠️ JPEG2000 format - Browser cannot display natively
+      </div>
+      <a href="${dataUri}" download="portrait.jp2" style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.9rem; background: #1d4ed8; color: white; border-radius: 8px; text-decoration: none; font-size: 0.9rem; font-weight: 600;">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+          <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+          <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+        </svg>
+        Download JPEG2000
+      </a>
+      <div style="font-size: 0.85rem; color: #64748b;">
+        Convert to JPEG using online tools or image viewer
+      </div>
+    </div>
+  `;
 }
 
 // Extract certificate information (Subject CN, Issuer CN) from X.509 DER certificate
@@ -1028,16 +1052,62 @@ function displayDeviceResponse(deviceResponse) {
               if (elementIdentifier.toLowerCase().includes('portrait') || 
                   elementIdentifier.toLowerCase().includes('image') ||
                   elementIdentifier.toLowerCase().includes('photo')) {
-                // Try to display as image
+                // Detect image format by magic bytes
+                let mimeType = 'application/octet-stream';
+                let formatLabel = 'Unknown';
+                
+                if (elementValue.length >= 2) {
+                  // JPEG: FF D8 FF
+                  if (elementValue[0] === 0xFF && elementValue[1] === 0xD8 && elementValue[2] === 0xFF) {
+                    mimeType = 'image/jpeg';
+                    formatLabel = 'JPEG';
+                  }
+                  // JPEG2000: 00 00 00 0C 6A 50 20 20 0D 0A 87 0A (JP2 signature box)
+                  else if (elementValue.length >= 12 &&
+                           elementValue[0] === 0x00 && elementValue[1] === 0x00 &&
+                           elementValue[2] === 0x00 && elementValue[3] === 0x0C &&
+                           elementValue[4] === 0x6A && elementValue[5] === 0x50 &&
+                           elementValue[6] === 0x20 && elementValue[7] === 0x20 &&
+                           elementValue[8] === 0x0D && elementValue[9] === 0x0A &&
+                           elementValue[10] === 0x87 && elementValue[11] === 0x0A) {
+                    mimeType = 'image/jp2';
+                    formatLabel = 'JPEG2000';
+                  }
+                  // Alternative JPEG2000 codestream: FF 4F FF 51
+                  else if (elementValue[0] === 0xFF && elementValue[1] === 0x4F &&
+                           elementValue.length >= 4 &&
+                           elementValue[2] === 0xFF && elementValue[3] === 0x51) {
+                    mimeType = 'image/jp2';
+                    formatLabel = 'JPEG2000';
+                  }
+                }
+                
+                // Try to display as image using base64 data URI
                 try {
-                  const blob = new Blob([elementValue], { type: 'image/jpeg' });
-                  const imageUrl = URL.createObjectURL(blob);
-                  valueHtml = `
-                    <div class="data-value portrait-preview">
-                      <img src="${imageUrl}" alt="Portrait" class="portrait-thumbnail" />
-                      <span class="binary">${byteLength.toLocaleString()} bytes (JPEG)</span>
-                    </div>
-                  `;
+                  let base64;
+                  let displayMimeType = mimeType;
+                  let displayFormat = formatLabel;
+                  
+                  if (mimeType === 'image/jp2') {
+                    // JPEG2000 - provide download link since browsers don't support it natively
+                    const portraitId = `portrait-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                    valueHtml = `
+                      <div class="data-value portrait-preview">
+                        ${createJp2DownloadLink(elementValue, portraitId)}
+                        <span class="binary" style="margin-top: 0.5rem;">${byteLength.toLocaleString()} bytes (${formatLabel})</span>
+                      </div>
+                    `;
+                  } else {
+                    // JPEG or other formats - display directly
+                    base64 = btoa(String.fromCharCode(...elementValue));
+                    const dataUri = `data:${displayMimeType};base64,${base64}`;
+                    valueHtml = `
+                      <div class="data-value portrait-preview">
+                        <img src="${dataUri}" alt="Portrait" class="portrait-thumbnail" />
+                        <span class="binary">${byteLength.toLocaleString()} bytes (${displayFormat})</span>
+                      </div>
+                    `;
+                  }
                 } catch (e) {
                   valueHtml = `<div class="data-value binary">&lt;binary data, ${byteLength.toLocaleString()} bytes&gt;</div>`;
                 }
@@ -1682,13 +1752,13 @@ async function handleQrPayload(raw, sourceLabel) {
     log(`✅ Parsed QR payload from ${sourceLabel}. Service UUID: ${uuid || 'n/a'}`);
     
     // Show message to user about clicking to connect
-    log('🚀 Ready to connect! Click "Connect & Request Documents" below to continue...');
+    log('🚀 Ready to connect! Click "Connect & Request Digital Credentials" below to continue...');
     
     // Enable and show a connect button
     if (!document.getElementById('btnAutoConnect')) {
       const connectBtn = document.createElement('button');
       connectBtn.id = 'btnAutoConnect';
-      connectBtn.textContent = '🚀 Connect & Request Documents';
+      connectBtn.textContent = '🚀 Connect & Request Digital Credentials';
       connectBtn.style.cssText = 'margin: 1rem 0; padding: 0.75rem 1.5rem; font-size: 1.1em; background: #4CAF50; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;';
       connectBtn.onclick = async () => {
         connectBtn.disabled = true;
