@@ -193,6 +193,30 @@
       <div id="responseDisplay"></div>
     </section>
 
+    <section class="card" id="iacaSection">
+      <h2>Issuer Certificate Management (IACA)</h2>
+      <p class="muted">Manage Issuer Authority Certificate Authority (IACA) certificates for signature verification. These are used to validate the mDL/mDoc issuer signatures.</p>
+      
+      <div style="margin-top: 1rem;">
+        <strong>Installed IACAs:</strong>
+        <div id="iacaList" style="margin-top: 0.75rem; font-size: 0.9rem;">
+          <div class="muted" style="font-style: italic;">Loading...</div>
+        </div>
+      </div>
+
+      <div style="margin-top: 1.5rem;">
+        <strong>Add New IACA Certificate:</strong>
+        <div style="margin-top: 0.75rem;">
+          <label class="muted" for="iacaInput">Paste PEM certificate (-----BEGIN CERTIFICATE-----)</label>
+          <textarea id="iacaInput" placeholder="-----BEGIN CERTIFICATE-----&#10;MIIDUzCCAvmgAwIBAgISESHtNjf+2KAQ0ttWtR9EhAAPMAoGCCqGSM49BAMCMIHF&#10;...&#10;-----END CERTIFICATE-----" style="width: 100%; min-height: 120px; padding: 0.75rem 0.9rem; border-radius: 12px; border: 1px solid rgba(148,163,184,0.45); font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.85rem; background: #f8fafc; resize: vertical; margin-top: 0.5rem;"></textarea>
+          <div class="row" style="margin-top: 0.5rem;">
+            <button id="btnAddIaca">Add IACA Certificate</button>
+            <button id="btnClearIacaInput" class="secondary">Clear</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="card" id="logsSection">
       <h2>3. Activity Log</h2>
       <div class="log" id="log" role="log" aria-live="polite" aria-label="Session activity log"></div>
@@ -297,6 +321,12 @@ const btnClearQr = document.getElementById('btnClearQr');
 const btnScan = document.getElementById('btnScan');
 const btnSend = document.getElementById('btnSend');
 const chunkInput = document.getElementById('chunk');
+
+// IACA management UI elements
+const iacaListEl = document.getElementById('iacaList');
+const iacaInput = document.getElementById('iacaInput');
+const btnAddIaca = document.getElementById('btnAddIaca');
+const btnClearIacaInput = document.getElementById('btnClearIacaInput');
 
 // Removed buttons (kept as null for legacy code compatibility)
 const btnAdvertise = null;
@@ -908,6 +938,630 @@ async function verifyCoseSign1(coseSign1, publicKey) {
   }
 }
 
+// ===== CERTIFICATE CHAIN VALIDATION =====
+
+/**
+ * Parse X.509 certificate and extract signature and TBS (To Be Signed) portion
+ * This is a simplified ASN.1 parser for basic certificate validation
+ */
+function parseX509Certificate(certBytes) {
+  try {
+    // X.509 Certificate structure (simplified):
+    // Certificate ::= SEQUENCE {
+    //   tbsCertificate       TBSCertificate,
+    //   signatureAlgorithm   AlgorithmIdentifier,
+    //   signatureValue       BIT STRING
+    // }
+    
+    let pos = 0;
+    
+    // Read SEQUENCE tag
+    if (certBytes[pos++] !== 0x30) {
+      throw new Error('Invalid certificate: Expected SEQUENCE');
+    }
+    
+    // Read length (can be short or long form)
+    let certLength;
+    if (certBytes[pos] & 0x80) {
+      const numLengthBytes = certBytes[pos++] & 0x7f;
+      certLength = 0;
+      for (let i = 0; i < numLengthBytes; i++) {
+        certLength = (certLength << 8) | certBytes[pos++];
+      }
+    } else {
+      certLength = certBytes[pos++];
+    }
+    
+    const certStart = pos;
+    
+    // TBSCertificate is the first SEQUENCE
+    if (certBytes[pos++] !== 0x30) {
+      throw new Error('Invalid certificate: Expected TBSCertificate SEQUENCE');
+    }
+    
+    // Read TBS length
+    let tbsLength;
+    const tbsLengthStart = pos;
+    if (certBytes[pos] & 0x80) {
+      const numLengthBytes = certBytes[pos++] & 0x7f;
+      tbsLength = 0;
+      for (let i = 0; i < numLengthBytes; i++) {
+        tbsLength = (tbsLength << 8) | certBytes[pos++];
+      }
+    } else {
+      tbsLength = certBytes[pos++];
+    }
+    
+    // TBSCertificate includes the SEQUENCE tag and length
+    const tbsStart = certStart;
+    const tbsEnd = pos + tbsLength;
+    const tbsCertificate = certBytes.slice(tbsStart, tbsEnd);
+    
+    // Skip to signature
+    pos = tbsEnd;
+    
+    // Skip signatureAlgorithm SEQUENCE
+    if (certBytes[pos++] !== 0x30) {
+      throw new Error('Invalid certificate: Expected signatureAlgorithm SEQUENCE');
+    }
+    let sigAlgLength;
+    if (certBytes[pos] & 0x80) {
+      const numLengthBytes = certBytes[pos++] & 0x7f;
+      sigAlgLength = 0;
+      for (let i = 0; i < numLengthBytes; i++) {
+        sigAlgLength = (sigAlgLength << 8) | certBytes[pos++];
+      }
+    } else {
+      sigAlgLength = certBytes[pos++];
+    }
+    pos += sigAlgLength;
+    
+    // Read signature BIT STRING
+    if (certBytes[pos++] !== 0x03) {
+      throw new Error('Invalid certificate: Expected signature BIT STRING');
+    }
+    let sigLength;
+    if (certBytes[pos] & 0x80) {
+      const numLengthBytes = certBytes[pos++] & 0x7f;
+      sigLength = 0;
+      for (let i = 0; i < numLengthBytes; i++) {
+        sigLength = (sigLength << 8) | certBytes[pos++];
+      }
+    } else {
+      sigLength = certBytes[pos++];
+    }
+    
+    // Skip the number of unused bits (first byte of BIT STRING)
+    const unusedBits = certBytes[pos++];
+    sigLength -= 1; // Subtract the unused bits byte
+    
+    const signature = certBytes.slice(pos, pos + sigLength);
+    
+    // For ECDSA, signature is DER-encoded, need to convert to raw r||s format
+    const rawSignature = convertDERSignatureToRaw(signature);
+    
+    return {
+      tbsCertificate,
+      signature: rawSignature,
+      signatureDER: signature
+    };
+  } catch (e) {
+    console.error('Failed to parse X.509 certificate:', e);
+    return null;
+  }
+}
+
+/**
+ * Convert DER-encoded ECDSA signature to raw r||s format
+ */
+function convertDERSignatureToRaw(derSig) {
+  try {
+    // DER signature: SEQUENCE { r INTEGER, s INTEGER }
+    let pos = 0;
+    
+    if (derSig[pos++] !== 0x30) {
+      throw new Error('Invalid DER signature: Expected SEQUENCE');
+    }
+    
+    let seqLength;
+    if (derSig[pos] & 0x80) {
+      const numBytes = derSig[pos++] & 0x7f;
+      seqLength = 0;
+      for (let i = 0; i < numBytes; i++) {
+        seqLength = (seqLength << 8) | derSig[pos++];
+      }
+    } else {
+      seqLength = derSig[pos++];
+    }
+    
+    // Read r
+    if (derSig[pos++] !== 0x02) {
+      throw new Error('Invalid DER signature: Expected INTEGER for r');
+    }
+    let rLength = derSig[pos++];
+    let r = derSig.slice(pos, pos + rLength);
+    pos += rLength;
+    
+    // Remove leading zero if present (DER encoding adds it for positive numbers with high bit set)
+    if (r[0] === 0x00 && r.length > 32) {
+      r = r.slice(1);
+    }
+    
+    // Read s
+    if (derSig[pos++] !== 0x02) {
+      throw new Error('Invalid DER signature: Expected INTEGER for s');
+    }
+    let sLength = derSig[pos++];
+    let s = derSig.slice(pos, pos + sLength);
+    
+    // Remove leading zero if present
+    if (s[0] === 0x00 && s.length > 32) {
+      s = s.slice(1);
+    }
+    
+    // Pad to 32 bytes if needed (for P-256)
+    const rPadded = new Uint8Array(32);
+    const sPadded = new Uint8Array(32);
+    rPadded.set(r, 32 - r.length);
+    sPadded.set(s, 32 - s.length);
+    
+    // Concatenate r || s
+    const rawSig = new Uint8Array(64);
+    rawSig.set(rPadded, 0);
+    rawSig.set(sPadded, 32);
+    
+    return rawSig;
+  } catch (e) {
+    console.error('Failed to convert DER signature:', e);
+    return derSig; // Return as-is if conversion fails
+  }
+}
+
+/**
+ * Validate that the mDoc issuer certificate is signed by one of our IACA root certificates
+ * This establishes the trust chain: mDoc data → Issuer Certificate → IACA Root
+ * 
+ * @param {Uint8Array} issuerCertBytes - The issuer certificate from the mDoc's COSE signature header
+ * @returns {Object} Validation result with { valid, matchedIACA, chain, errors }
+ */
+async function validateCertificateChain(issuerCertBytes) {
+  const result = {
+    valid: false,
+    matchedIACA: null,
+    chain: [],
+    errors: []
+  };
+  
+  try {
+    console.log('=== VALIDATING ISSUER CERTIFICATE AGAINST IACA ROOTS ===');
+    
+    // Get active IACAs
+    const activeIACAs = getActiveIACAs();
+    
+    if (activeIACAs.length === 0) {
+      result.errors.push('No active IACA certificates available for validation');
+      return result;
+    }
+    
+    console.log(`Testing issuer certificate against ${activeIACAs.length} active IACA(s)`);
+    
+    // Parse the issuer certificate to extract signature and TBS
+    console.log('Parsing issuer certificate...');
+    const parsedCert = parseX509Certificate(issuerCertBytes);
+    
+    if (!parsedCert) {
+      result.errors.push('Failed to parse issuer certificate (invalid X.509 format)');
+      return result;
+    }
+    
+    console.log('✓ Parsed issuer certificate');
+    console.log('  TBS length:', parsedCert.tbsCertificate.length, 'bytes');
+    console.log('  Signature length:', parsedCert.signature.length, 'bytes');
+    
+    // For each active IACA, attempt to verify the issuer certificate was signed by it
+    for (const iaca of activeIACAs) {
+      console.log(`Testing IACA: ${iaca.name}`);
+      
+      try {
+        // Extract IACA public key from PEM
+        const iacaPublicKey = await pemToCryptoKey(iaca.pem);
+        
+        if (!iacaPublicKey) {
+          console.log(`  ✗ Failed to import IACA public key`);
+          result.errors.push(`${iaca.name}: Failed to import public key`);
+          continue;
+        }
+        
+        console.log('  ✓ Imported IACA public key');
+        
+        // Verify that the issuer certificate's signature was created by this IACA
+        // This proves the issuer certificate was signed by the IACA
+        const isValid = await crypto.subtle.verify(
+          {
+            name: 'ECDSA',
+            hash: { name: 'SHA-256' }
+          },
+          iacaPublicKey,
+          parsedCert.signature,
+          parsedCert.tbsCertificate
+        );
+        
+        if (isValid) {
+          console.log(`  ✅ Issuer certificate is signed by this IACA!`);
+          
+          result.valid = true;
+          result.matchedIACA = {
+            name: iaca.name,
+            issuer: iaca.issuer
+          };
+          result.chain = [
+            'mDoc Issuer Certificate',
+            `↓ signed by`,
+            `IACA Root: ${iaca.name}`
+          ];
+          
+          console.log(`✅ Issuer certificate validated with IACA: ${iaca.name}`);
+          return result;
+        } else {
+          console.log(`  ✗ Signature does not match this IACA`);
+        }
+        
+      } catch (e) {
+        console.log(`  ✗ Verification failed with this IACA:`, e.message);
+        result.errors.push(`${iaca.name}: ${e.message}`);
+      }
+    }
+    
+    // No IACA matched
+    if (!result.valid) {
+      result.errors.push('Issuer certificate is not signed by any active IACA root certificate');
+    }
+    
+  } catch (err) {
+    console.error('Issuer certificate validation error:', err);
+    result.errors.push(`Validation error: ${err.message}`);
+  }
+  
+  return result;
+}
+
+/**
+ * Enhanced signature verification with issuer certificate validation
+ * Verifies the COSE signature and validates that the issuer certificate is signed by an IACA
+ */
+async function verifyCOSESign1SignatureWithChain(coseSign1) {
+  const result = {
+    signatureValid: false,
+    chainValid: false,
+    chainInfo: null,
+    errors: []
+  };
+  
+  try {
+    // Step 1: Extract issuer certificate from unprotected header (COSE header parameter 33)
+    console.log('Step 1: Extracting issuer certificate from x5chain...');
+    
+    const unprotectedHeader = coseSign1[1] || {};
+    console.log('Unprotected header:', unprotectedHeader);
+    console.log('Unprotected header type:', Object.prototype.toString.call(unprotectedHeader));
+    
+    // Handle both Map and plain object
+    // COSE header parameter 33 (x5chain) contains the issuer certificate
+    let issuerCert;
+    if (unprotectedHeader instanceof Map) {
+      console.log('Unprotected header is a Map');
+      issuerCert = unprotectedHeader.get(33);
+      console.log('Issuer cert from Map.get(33):', issuerCert);
+    } else {
+      console.log('Unprotected header is a plain object');
+      issuerCert = unprotectedHeader[33];
+      console.log('Issuer cert from object[33]:', issuerCert);
+    }
+    
+    if (!issuerCert) {
+      result.errors.push('No issuer certificate (x5chain) found in signature header');
+      console.warn('⚠️ No x5chain (issuer certificate) found in unprotected header');
+      console.log('Available header keys:', unprotectedHeader instanceof Map ? 
+        Array.from(unprotectedHeader.keys()) : Object.keys(unprotectedHeader));
+      return result;
+    }
+    
+    // Convert to Uint8Array if needed
+    let issuerCertBytes;
+    if (issuerCert instanceof Uint8Array) {
+      issuerCertBytes = issuerCert;
+    } else if (ArrayBuffer.isView(issuerCert)) {
+      issuerCertBytes = new Uint8Array(issuerCert.buffer, issuerCert.byteOffset, issuerCert.byteLength);
+    } else if (issuerCert instanceof ArrayBuffer) {
+      issuerCertBytes = new Uint8Array(issuerCert);
+    } else {
+      result.errors.push('Issuer certificate format not recognized');
+      console.error('Issuer certificate is not a Uint8Array or ArrayBuffer:', typeof issuerCert);
+      return result;
+    }
+    
+    console.log('Issuer certificate size:', issuerCertBytes.length, 'bytes');
+    
+    // Step 2: Extract public key from issuer certificate and verify signature
+    console.log('Step 2: Extracting public key and verifying signature...');
+    try {
+      const publicKey = await extractPublicKeyFromCert(issuerCertBytes);
+      result.signatureValid = await verifyCoseSign1(coseSign1, publicKey);
+      
+      if (!result.signatureValid) {
+        result.errors.push('COSE signature verification failed');
+      }
+    } catch (sigErr) {
+      console.error('Signature verification error:', sigErr);
+      result.errors.push(`Signature verification error: ${sigErr.message}`);
+      result.signatureValid = false;
+    }
+    
+    // Step 3: Validate that issuer certificate is signed by an IACA root
+    console.log('Step 3: Validating issuer certificate against IACA roots...');
+    result.chainInfo = await validateCertificateChain(issuerCertBytes);
+    result.chainValid = result.chainInfo.valid;
+    
+    if (!result.chainValid) {
+      result.errors.push(...result.chainInfo.errors);
+    }
+    
+  } catch (err) {
+    console.error('Signature verification with chain error:', err);
+    result.errors.push(`Verification error: ${err.message}`);
+  }
+  
+  return result;
+}
+
+// ===== IACA CERTIFICATE MANAGEMENT =====
+
+// Default test IACA certificate (France Attestations)
+const DEFAULT_IACA_CERTIFICATES = [
+  {
+    name: 'France Attestations - Test IACA',
+    pem: `-----BEGIN CERTIFICATE-----
+MIIDUzCCAvmgAwIBAgISESHtNjf+2KAQ0ttWtR9EhAAPMAoGCCqGSM49BAMCMIHF
+MQswCQYDVQQGEwJGUjEwMC4GA1UECgwnQWdlbmNlIE5hdGlvbmFsZSBkZXMgVGl0
+cmVzIFPDqWN1cmlzw6lzMRcwFQYDVQQLDA4wMDAyIDEzMDAwMzI2MjEmMCQGA1UE
+CwwdUE9VUiBRVUFMSUZJQ0FUSU9OIFVOSVFVRU1FTlQxNzA1BgNVBAMMLkF1dG9y
+aXTDqSBkZSBDZXJ0aWZpY2F0aW9uIEZyYW5jZSBBdHRlc3RhdGlvbnMxCjAIBgNV
+BAUTATEwHhcNMjUwMTI5MDAwMDAwWhcNMzAwMTI5MDAwMDAwWjCBxTELMAkGA1UE
+BhMCRlIxMDAuBgNVBAoMJ0FnZW5jZSBOYXRpb25hbGUgZGVzIFRpdHJlcyBTw6lj
+dXJpc8OpczEXMBUGA1UECwwOMDAwMiAxMzAwMDMyNjIxJjAkBgNVBAsMHVBPVVIg
+UVVBTElGSUNBVElPTiBVTklRVUVNRU5UMTcwNQYDVQQDDC5BdXRvcml0w6kgZGUg
+Q2VydGlmaWNhdGlvbiBGcmFuY2UgQXR0ZXN0YXRpb25zMQowCAYDVQQFEwExMFkw
+EwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEoCYCM9LYS8zUk8I1xL2B2G9voa4yFsko
+qohrsEQkpNEeKb59J3VDHausTqFWCOfwEGUzi6yocLIbE+gfz59pnaOBxjCBwzAO
+BgNVHQ8BAf8EBAMCAQYwMAYDVR0SBCkwJ4ElZnJhbmNlLWF0dGVzdGF0aW9uc0Bp
+bnRlcmlldXIuZ291di5mcjASBgNVHRMBAf8ECDAGAQH/AgEAMEwGA1UdHwRFMEMw
+QaA/oD2GO2h0dHA6Ly9jcmwucXVhbGlmLmFudHMuZ291di5mci9hY19mcmFuY2Vf
+YXR0ZXN0YXRpb25zXzEuY3JsMB0GA1UdDgQWBBR3bIy6PB3fPAlYHOvqk7nftps4
+sDAKBggqhkjOPQQDAgNIADBFAiBrI2HGG1SZNRfEoaIwk3bjAjLBcE9tcKPi1gu0
+oah58AIhAL+KWRF8FwT4JBblyZdmuoVVXJ36LMmAUcs5YwJpMiQW
+-----END CERTIFICATE-----`,
+    issuer: 'CN=Autorité de Certification France Attestations, C=FR',
+    active: true
+  }
+];
+
+// Storage key for localStorage
+const IACA_STORAGE_KEY = 'mdoc_iaca_certificates';
+
+// Initialize IACA storage with defaults
+function initializeIACAs() {
+  let stored = localStorage.getItem(IACA_STORAGE_KEY);
+  if (!stored) {
+    // First time - store defaults
+    localStorage.setItem(IACA_STORAGE_KEY, JSON.stringify(DEFAULT_IACA_CERTIFICATES));
+    return DEFAULT_IACA_CERTIFICATES;
+  }
+  try {
+    const iacas = JSON.parse(stored);
+    // Ensure all certificates have an 'active' property (migration support)
+    iacas.forEach(iaca => {
+      if (iaca.active === undefined) {
+        iaca.active = true;
+      }
+    });
+    return iacas;
+  } catch (e) {
+    console.error('Failed to parse stored IACAs, using defaults:', e);
+    localStorage.setItem(IACA_STORAGE_KEY, JSON.stringify(DEFAULT_IACA_CERTIFICATES));
+    return DEFAULT_IACA_CERTIFICATES;
+  }
+}
+
+// Get all IACAs
+function getIACAs() {
+  return initializeIACAs();
+}
+
+// Get only active IACAs
+function getActiveIACAs() {
+  return getIACAs().filter(iaca => iaca.active !== false);
+}
+
+// Add a new IACA certificate
+function addIACA(pem, name = null) {
+  // Parse certificate to extract info
+  const certInfo = parsePEMCertificate(pem);
+  if (!certInfo) {
+    throw new Error('Invalid PEM certificate format');
+  }
+  
+  const iacas = getIACAs();
+  
+  // Check for duplicates
+  if (iacas.some(iaca => iaca.pem === pem)) {
+    throw new Error('This certificate is already installed');
+  }
+  
+  const newIACA = {
+    name: name || certInfo.subject || 'Unknown Certificate',
+    pem: pem.trim(),
+    issuer: certInfo.subject || 'Unknown',
+    addedAt: new Date().toISOString(),
+    active: true
+  };
+  
+  iacas.push(newIACA);
+  localStorage.setItem(IACA_STORAGE_KEY, JSON.stringify(iacas));
+  
+  return newIACA;
+}
+
+// Remove an IACA certificate by index
+function removeIACA(index) {
+  const iacas = getIACAs();
+  if (index >= 0 && index < iacas.length) {
+    const removed = iacas.splice(index, 1);
+    localStorage.setItem(IACA_STORAGE_KEY, JSON.stringify(iacas));
+    return removed[0];
+  }
+  return null;
+}
+
+// Toggle IACA active status
+function toggleIACAStatus(index) {
+  const iacas = getIACAs();
+  if (index >= 0 && index < iacas.length) {
+    iacas[index].active = !iacas[index].active;
+    localStorage.setItem(IACA_STORAGE_KEY, JSON.stringify(iacas));
+    return iacas[index];
+  }
+  return null;
+}
+
+// Parse PEM certificate to extract basic info
+function parsePEMCertificate(pem) {
+  try {
+    // Extract base64 content
+    const b64 = pem.replace(/-----BEGIN CERTIFICATE-----/, '')
+                   .replace(/-----END CERTIFICATE-----/, '')
+                   .replace(/\s+/g, '');
+    
+    // Decode base64 to bytes
+    const binaryString = atob(b64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    
+    // Basic ASN.1 parsing to extract subject (very simplified)
+    // This is just for display purposes; real verification uses Web Crypto
+    const certStr = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+    
+    // Try to find common name patterns
+    let subject = 'Unknown';
+    const cnMatch = certStr.match(/CN=([^,\n\r]+)/);
+    if (cnMatch) {
+      subject = 'CN=' + cnMatch[1].trim();
+    }
+    
+    return {
+      subject,
+      bytes,
+      pem
+    };
+  } catch (e) {
+    console.error('Failed to parse PEM certificate:', e);
+    return null;
+  }
+}
+
+// Convert PEM to CryptoKey for verification
+// Uses extractPublicKeyFromCert to parse the X.509 structure and extract the EC public key
+async function pemToCryptoKey(pem) {
+  try {
+    const b64 = pem.replace(/-----BEGIN CERTIFICATE-----/, '')
+                   .replace(/-----END CERTIFICATE-----/, '')
+                   .replace(/\s+/g, '');
+    
+    const binaryString = atob(b64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    
+    // Use our existing X.509 parser to extract the public key
+    // (Web Crypto API cannot import full X.509 certificates, only public keys)
+    const key = await extractPublicKeyFromCert(bytes);
+    
+    if (!key) {
+      console.error('Failed to extract public key from IACA certificate');
+      return null;
+    }
+    
+    return key;
+  } catch (e) {
+    console.error('Failed to import certificate as CryptoKey:', e);
+    return null;
+  }
+}
+
+// Update the IACA list display
+function updateIACAList() {
+  const iacas = getIACAs();
+  
+  if (iacas.length === 0) {
+    iacaListEl.innerHTML = '<div class="muted" style="font-style: italic;">No certificates installed</div>';
+    return;
+  }
+  
+  let html = '<div style="display: grid; gap: 0.75rem;">';
+  iacas.forEach((iaca, index) => {
+    const isDefault = index < DEFAULT_IACA_CERTIFICATES.length;
+    const isActive = iaca.active !== false;
+    const statusColor = isActive ? '#059669' : '#94a3b8';
+    const statusText = isActive ? '● Active' : '○ Inactive';
+    const bgOpacity = isActive ? '1' : '0.6';
+    
+    html += `
+      <div style="background: #f8fafc; border: 1px solid rgba(148,163,184,0.25); border-radius: 8px; padding: 0.75rem; display: flex; justify-content: space-between; align-items: start; opacity: ${bgOpacity};">
+        <div style="flex: 1;">
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <div style="font-weight: 600; color: #0f172a;">${iaca.name}</div>
+            <div style="font-size: 0.8rem; color: ${statusColor}; font-weight: 500;">${statusText}</div>
+          </div>
+          <div style="font-size: 0.85rem; color: #64748b; margin-top: 0.25rem;">${iaca.issuer}</div>
+          ${isDefault ? '<div style="font-size: 0.8rem; color: #059669; margin-top: 0.25rem;">✓ Default certificate</div>' : ''}
+        </div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <button onclick="toggleIACACert(${index})" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: ${isActive ? '#64748b' : '#059669'};">
+            ${isActive ? 'Deactivate' : 'Activate'}
+          </button>
+          ${!isDefault ? `<button onclick="removeIACACert(${index})" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: #dc2626;">Remove</button>` : ''}
+        </div>
+      </div>
+    `;
+  });
+  html += '</div>';
+  
+  iacaListEl.innerHTML = html;
+}
+
+// Global function for toggle button (called from HTML)
+window.toggleIACACert = function(index) {
+  const toggled = toggleIACAStatus(index);
+  if (toggled) {
+    const status = toggled.active ? 'activated' : 'deactivated';
+    log(`${toggled.active ? '✅' : '⏸️'} ${status.charAt(0).toUpperCase() + status.slice(1)} IACA: ${toggled.name}`);
+    updateIACAList();
+  }
+};
+
+// Global function for remove button (called from HTML)
+window.removeIACACert = function(index) {
+  if (confirm('Are you sure you want to remove this certificate?')) {
+    const removed = removeIACA(index);
+    if (removed) {
+      log(`🗑️ Removed IACA: ${removed.name}`);
+      updateIACAList();
+    }
+  }
+};
+
 // Helper: Convert CBOR structures to plain JSON
 function convertToJSON(obj) {
   if (obj === null || obj === undefined) {
@@ -1303,20 +1957,19 @@ function displayDeviceResponse(deviceResponse) {
             </div>
           `;
           
-          // Display certificate chain if present (x5chain)
-          const x5chain = unprotectedHeader instanceof Map ? unprotectedHeader.get(33) : unprotectedHeader?.[33];
-          if (x5chain) {
-            const certCount = Array.isArray(x5chain) ? x5chain.length : 1;
+          // Display certificate if present in x5chain (header parameter 33)
+          const issuerCert = unprotectedHeader instanceof Map ? unprotectedHeader.get(33) : unprotectedHeader?.[33];
+          if (issuerCert) {
             html += `
               <div class="data-item">
-                <div class="data-label">Certificate Chain</div>
-                <div class="data-value">✓ ${certCount} certificate(s) provided</div>
+                <div class="data-label">Issuer Certificate</div>
+                <div class="data-value">✓ Certificate provided (${issuerCert.length || issuerCert.byteLength} bytes)</div>
               </div>
             `;
             
             // Extract and display certificate information
             try {
-              const cert = Array.isArray(x5chain) ? x5chain[0] : x5chain;
+              const cert = issuerCert;
               if (cert instanceof Uint8Array || ArrayBuffer.isView(cert)) {      
                 // Extract Subject CN and Issuer CN
                 const certInfo = extractCertInfo(cert);
@@ -1365,7 +2018,7 @@ function displayDeviceResponse(deviceResponse) {
             // Perform verification asynchronously
             // Capture variables in closure for async callback
             const capturedCoseSign1 = coseSign1;
-            const capturedX5chain = x5chain;
+            const capturedIssuerCert = issuerCert;
             
             setTimeout(async () => {
               const statusEl = document.getElementById(verifyId);
@@ -1373,7 +2026,7 @@ function displayDeviceResponse(deviceResponse) {
               
               try {
                 // Extract public key from certificate
-                const cert = Array.isArray(capturedX5chain) ? capturedX5chain[0] : capturedX5chain;
+                const cert = capturedIssuerCert;
                 if (!cert) {
                   statusEl.innerHTML = '<span style="color: #ffc107;">⚠️ No certificate found for verification</span>';
                   return;
@@ -1385,13 +2038,33 @@ function displayDeviceResponse(deviceResponse) {
                 statusEl.innerHTML = '<span style="color: #6c757d;">🔄 Verifying ECDSA signature...</span>';
                 const isValid = await verifyCoseSign1(capturedCoseSign1, publicKey);
                 
-                if (isValid) {
-                  statusEl.innerHTML = '<span style="color: #28a745;">✅ Signature verified successfully!</span>';
+                // Verify issuer certificate against IACA roots
+                statusEl.innerHTML = '<span style="color: #6c757d;">🔄 Validating issuer certificate...</span>';
+                const chainResult = await verifyCOSESign1SignatureWithChain(capturedCoseSign1);
+                
+                // Build detailed status message
+                let statusHTML = '';
+                if (isValid && chainResult.signatureValid) {
+                  statusHTML += '<span style="color: #28a745;">✅ Signature: Valid</span><br>';
                   log(`✅ Document ${docIndex + 1} signature verified`);
                 } else {
-                  statusEl.innerHTML = '<span style="color: #dc3545;">❌ Signature verification failed</span>';
+                  statusHTML += '<span style="color: #dc3545;">❌ Signature: Invalid</span><br>';
                   log(`❌ Document ${docIndex + 1} signature verification failed`);
                 }
+                
+                // Add chain validation status
+                if (chainResult.chainValid && chainResult.chainInfo?.matchedIACA) {
+                  statusHTML += `<span style="color: #28a745;">✅ Chain: Valid (${escapeHtml(chainResult.chainInfo.matchedIACA.name)})</span>`;
+                  log(`✅ Document ${docIndex + 1} issuer certificate validated with: ${chainResult.chainInfo.matchedIACA.name}`);
+                } else if (chainResult.chainInfo?.errors.length > 0) {
+                  statusHTML += `<span style="color: #ffc107;">⚠️ Chain: ${escapeHtml(chainResult.chainInfo.errors[0])}</span>`;
+                  log(`⚠️ Document ${docIndex + 1} issuer validation: ${chainResult.chainInfo.errors[0]}`);
+                } else {
+                  statusHTML += '<span style="color: #94a3b8;">○ Chain: Not validated</span>';
+                }
+                
+                statusEl.innerHTML = statusHTML;
+                
               } catch (verifyError) {
                 console.error('Verification error:', verifyError);
                 statusEl.innerHTML = `<span style="color: #dc3545;">❌ Verification error: ${escapeHtml(verifyError.message)}</span>`;
@@ -2102,6 +2775,39 @@ qrInput.addEventListener('keydown', (event) => {
     handleQrPayload(qrInput.value, 'manual input');
   }
 });
+
+// ==== IACA Management Event Listeners ====
+btnAddIaca.addEventListener('click', () => {
+  const pem = iacaInput.value.trim();
+  if (!pem) {
+    alert('Please paste a PEM certificate');
+    return;
+  }
+  
+  if (!pem.includes('-----BEGIN CERTIFICATE-----')) {
+    alert('Invalid PEM format. Certificate must start with "-----BEGIN CERTIFICATE-----"');
+    return;
+  }
+  
+  try {
+    const added = addIACA(pem);
+    log(`✅ Added IACA: ${added.name}`);
+    iacaInput.value = '';
+    updateIACAList();
+    alert(`Certificate added successfully:\n${added.name}`);
+  } catch (e) {
+    console.error('Failed to add IACA:', e);
+    alert(`Failed to add certificate:\n${e.message}`);
+  }
+});
+
+btnClearIacaInput.addEventListener('click', () => {
+  iacaInput.value = '';
+  iacaInput.focus();
+});
+
+// Initialize IACA list on page load
+updateIACAList();
 
 // ==== Robust mdoc URI → CBOR extraction helpers ====
 function b64ToBytesBrowserSafe(b64) {
