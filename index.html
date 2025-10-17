@@ -137,7 +137,6 @@
       <p class="muted">Use your computer camera to capture the wallet's QR code or paste details manually.</p>
       <div class="row">
         <button id="btnScan">Scan QR Code</button>
-        <button id="btnScanBLE" class="secondary">Scan Nearby BLE</button>
       </div>
       <div class="scanner">
         <div class="video-frame">
@@ -152,13 +151,13 @@
         </div>
       </div>
       <div class="row">
-        <label class="inline muted">Service UUID override
-          <input id="svcOverride" type="text" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+        <label class="inline muted">BLE MTU (bytes)
+          <input id="chunk" type="number" min="20" max="512" value="185">
         </label>
-        <button id="btnUseOverride">Use override</button>
-        <label class="inline muted">Chunk bytes
-          <input id="chunk" type="number" min="5" max="240" value="20">
-        </label>
+        <span class="muted" style="font-size: 0.9em; margin-left: 8px;">
+          Packet size for BLE transmission. Default 185 bytes works with most modern devices. 
+          Reduce to 20 if connection issues occur.
+        </span>
       </div>
 
       <div class="manual-entry">
@@ -215,11 +214,8 @@ const btnParseQr = document.getElementById('btnParseQr');
 const btnClearQr = document.getElementById('btnClearQr');
 
 const btnScan = document.getElementById('btnScan');
-const btnScanBLE = document.getElementById('btnScanBLE');
 const btnSend = document.getElementById('btnSend');
 const chunkInput = document.getElementById('chunk');
-const svcOverrideInput = document.getElementById('svcOverride');
-const btnUseOverride = document.getElementById('btnUseOverride');
 
 // Removed buttons (kept as null for legacy code compatibility)
 const btnAdvertise = null;
@@ -1679,7 +1675,9 @@ async function sendFragmented(payload) {
   if (!chC2S) throw new Error('Client-to-Server characteristic not available');
   if (!device?.gatt?.connected) throw new Error('Device not connected');
   
-  const sz = parseInt(chunkInput.value,10) || 20; // Web Bluetooth doesn't expose MTU
+  // ISO 18013-5 recommends requesting high MTU, but Web Bluetooth API doesn't expose requestMTU()
+  // User can manually configure chunk size. Modern devices typically support 185-512 bytes.
+  const sz = parseInt(chunkInput.value,10) || 185;
   let off = 0;
   while (off < payload.length) {
     const rem = payload.length - off;
@@ -2029,16 +2027,6 @@ qrInput.addEventListener('keydown', (event) => {
     event.preventDefault();
     handleQrPayload(qrInput.value, 'manual input');
   }
-});
-
-// ==== Manual Service UUID override ====
-btnUseOverride.addEventListener('click', () => {
-  const v = (svcOverrideInput.value || '').trim();
-  if (!v) return;
-  svcUUID = v;
-  svcUuidEl.textContent = v;
-  updateBleRoleUI(); // Update button states based on current mode
-  log('Using manual Service UUID override.');
 });
 
 // ==== Robust mdoc URI → CBOR extraction helpers ====
@@ -3629,56 +3617,6 @@ requestTypeCheckboxes.forEach(checkbox => {
 updateBleRoleUI();
 
 // ==== UI actions ====
-btnScanBLE.addEventListener('click', async () => {
-  try {
-    log('Scanning for ALL BLE devices (no filters)...');
-    console.log('Starting general BLE scan...');
-    
-    // Scan without any filters to see all advertising devices
-    const device = await navigator.bluetooth.requestDevice({
-      acceptAllDevices: true,
-      optionalServices: ['generic_access', 'generic_attribute'] // Standard services
-    });
-    
-    console.log('Device found:', device);
-    log(`Found device: ${device.name || '(unnamed)'} (${device.id})`);
-    
-    // Try to connect and see what services it has
-    try {
-      const server = await device.gatt.connect();
-      console.log('Connected to device, getting services...');
-      
-      const services = await server.getPrimaryServices();
-      console.log('Available services:', services);
-      
-      log(`Device has ${services.length} services:`);
-      for (const service of services) {
-        console.log('Service UUID:', service.uuid);
-        log(`- Service: ${service.uuid}`);
-        
-        // Check if this is our target service
-        if (service.uuid === svcUUID) {
-          log(`*** FOUND TARGET SERVICE: ${svcUUID} ***`);
-        }
-      }
-      
-      device.gatt.disconnect();
-      
-    } catch (e) {
-      console.log('Could not connect or enumerate services:', e.message);
-      log(`Could not connect: ${e.message}`);
-    }
-    
-  } catch (e) {
-    console.error('BLE scan failed:', e);
-    if (e.name === 'NotFoundError') {
-      log('No devices found or scan cancelled');
-    } else {
-      log(`BLE scan error: ${e.message}`);
-    }
-  }
-});
-
 if (btnAdvertise) btnAdvertise.addEventListener('click', async () => {
   try {
     if (!svcUUID) throw new Error('Service UUID missing (scan QR or use override)');
