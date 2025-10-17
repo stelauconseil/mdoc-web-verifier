@@ -1317,14 +1317,7 @@ function displayDeviceResponse(deviceResponse) {
             // Extract and display certificate information
             try {
               const cert = Array.isArray(x5chain) ? x5chain[0] : x5chain;
-              if (cert instanceof Uint8Array || ArrayBuffer.isView(cert)) {
-                html += `
-                  <div class="data-item">
-                    <div class="data-label">Certificate Size</div>
-                    <div class="data-value">${cert.length} bytes</div>
-                  </div>
-                `;
-                
+              if (cert instanceof Uint8Array || ArrayBuffer.isView(cert)) {      
                 // Extract Subject CN and Issuer CN
                 const certInfo = extractCertInfo(cert);
                 
