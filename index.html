@@ -7,11 +7,11 @@
   <style>
     :root { color-scheme: light dark; font-family: "Inter", "Segoe UI", sans-serif; line-height: 1.5; }
     body { margin: 0; background: #F2F4F8; color: #111827; }
-    .page-header { background: linear-gradient(135deg,#0f172a,#1e293b); color: #f8fafc; padding: 2.5rem 1.5rem 2rem; text-align: center; }
+    .page-header { background: linear-gradient(135deg,#0f172a,#1e293b); color: #f8fafc; margin-bottom: 3.5rem; padding: 1rem 1rem 1rem; text-align: center; }
     .page-header h1 { margin: 0; font-size: clamp(1.8rem,3vw,2.4rem); font-weight: 600; }
     .page-header p { margin: 0.75rem auto 0; max-width: 720px; color: rgba(248,250,252,0.8); }
     main { max-width: 1100px; margin: -2rem auto 3rem; padding: 0 1.5rem 3rem; }
-    .card { background: #ffffff; border-radius: 18px; padding: 1.75rem; margin-top: 2rem; box-shadow: 0 20px 45px -25px rgba(15,23,42,0.35); border: 1px solid rgba(148,163,184,0.25); }
+    .card { background: #ffffff; border-radius: 18px; padding: 1.75rem; margin-top: 1.5rem; box-shadow: 0 20px 45px -25px rgba(15,23,42,0.35); border: 1px solid rgba(148,163,184,0.25); }
     .card h2 { margin-top: 0; font-size: 1.35rem; font-weight: 600; color: #0f172a; }
     .card h3 { margin-bottom: 0.5rem; margin-top: 1.5rem; font-size: 1.15rem; color: #0f172a; }
     .muted { color: #64748b; font-size: 0.95rem; }
@@ -26,7 +26,7 @@
     label.inline input[type="text"],
     label.inline input[type="number"] { flex: 1; min-width: 12rem; padding: 0.45rem 0.65rem; border-radius: 8px; border: 1px solid rgba(148,163,184,0.6); font-size: 0.95rem; }
   .manual-entry { margin-top: 1.5rem; display: grid; gap: 0.75rem; }
-  .manual-entry textarea { width: 100%; min-height: 110px; padding: 0.75rem 0.9rem; border-radius: 12px; border: 1px solid rgba(148,163,184,0.45); font-family: "SFMono-Regular","JetBrains Mono",ui-monospace,monospace; font-size: 0.9rem; background: #f8fafc; resize: vertical; }
+  .manual-entry textarea { width: 100%; min-height: 60px; padding: 0.75rem 0.25rem; border-radius: 12px; border: 1px solid rgba(148,163,184,0.45); font-family: "SFMono-Regular","JetBrains Mono",ui-monospace,monospace; font-size: 0.9rem; background: #f8fafc; resize: vertical; }
   .manual-entry textarea:focus { outline: 2px solid rgba(37,99,235,0.4); outline-offset: 2px; }
     button { font: inherit; font-weight: 600; padding: 0.55rem 1rem; border-radius: 10px; border: 1px solid rgba(15,23,42,0.08); background: #1d4ed8; color: #fff; cursor: pointer; transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease; }
     button.secondary { background: #0f172a; }
@@ -63,6 +63,15 @@
     
     .chip-list { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.5rem; }
     .chip { background: #e2e8f0; border-radius: 999px; padding: 0.25rem 0.75rem; font-size: 0.8rem; color: #0f172a; }
+    
+    /* Compatibility Warning Banner */
+    .compat-warning { background: linear-gradient(135deg, #dc2626, #b91c1c); color: white; padding: 1rem 1.5rem; margin: -2rem auto 1.5rem; max-width: 1100px; border-radius: 12px; box-shadow: 0 8px 24px rgba(220, 38, 38, 0.3); border: 1px solid rgba(255, 255, 255, 0.2); display: none; }
+    .compat-warning.show { display: block; }
+    .compat-warning strong { font-weight: 700; }
+    .compat-warning p { margin: 0; line-height: 1.6; }
+    .compat-warning ul { margin: 0.5rem 0 0 1.25rem; padding: 0; }
+    .compat-warning a { color: #fef3c7; text-decoration: underline; }
+    
     footer { text-align: center; padding: 2rem 1rem 3rem; color: #64748b; font-size: 0.9rem; }
     @media (max-width: 640px) {
       .card { padding: 1.25rem; border-radius: 14px; }
@@ -78,6 +87,13 @@
     <h1>ISO 18013-5 Web Proximity Reader</h1>
     <p>Scan an mDL/mDoc device engagement QR, connect over Web Bluetooth, and request digital credentials.</p>
   </header>
+  
+  <!-- Compatibility Warning Banner -->
+  <div id="compatWarning" class="compat-warning">
+    <p><strong>⚠️ Browser Compatibility Issue</strong></p>
+    <p id="compatMessage"></p>
+  </div>
+  
   <main>
     <section class="card" id="requestSection">
       <h2>1. Request Digital Credentials</h2>
@@ -197,6 +213,69 @@ if (!CBORRef) {
 }
 if (!CBORRef) throw new Error('CBOR library unavailable. Check network/CSP.');
 const CBOR = CBORRef;
+
+// ==== Browser Compatibility Check ====
+function checkBrowserCompatibility() {
+  const compatWarning = document.getElementById('compatWarning');
+  const compatMessage = document.getElementById('compatMessage');
+  const issues = [];
+  
+  // Check for HTTPS (required for Web Bluetooth)
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+    issues.push('This page must be served over HTTPS. Web Bluetooth is only available in secure contexts.');
+  }
+  
+  // Check for Web Bluetooth API
+  if (!navigator.bluetooth) {
+    const userAgent = navigator.userAgent.toLowerCase();
+    const isChrome = /chrome|chromium|edg/.test(userAgent) && !/firefox|safari/.test(userAgent);
+    
+    if (!isChrome) {
+      issues.push('Web Bluetooth is not supported in this browser. Please use a Chromium-based browser (Chrome, Edge, or Brave).');
+    } else {
+      issues.push('Web Bluetooth API is not available. This may be due to browser flags or platform limitations.');
+    }
+  }
+  
+  // Check for required Web Bluetooth features
+  if (navigator.bluetooth) {
+    if (typeof navigator.bluetooth.requestDevice !== 'function') {
+      issues.push('Web Bluetooth API is incomplete. The requestDevice() method is missing.');
+    }
+  }
+  
+  // Check for MediaDevices (camera for QR scanning)
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    issues.push('Camera access (MediaDevices API) is not available. QR code scanning will not work.');
+  }
+  
+  // Check for Web Crypto API
+  if (!window.crypto || !window.crypto.subtle) {
+    issues.push('Web Crypto API is not available. Encryption and key derivation will fail.');
+  }
+  
+  // Display warning if there are any issues
+  if (issues.length > 0) {
+    let message = '<ul style="margin: 0.5rem 0 0 0; padding-left: 1.25rem;">';
+    issues.forEach(issue => {
+      message += `<li>${issue}</li>`;
+    });
+    message += '</ul>';
+    message += '<p style="margin-top: 0.75rem; font-size: 0.9rem;">For best results, use <strong>Chrome or Edge</strong> on desktop with HTTPS enabled.</p>';
+    
+    compatMessage.innerHTML = message;
+    compatWarning.classList.add('show');
+    
+    console.warn('Browser compatibility issues detected:', issues);
+    return false;
+  }
+  
+  console.log('✓ Browser compatibility check passed');
+  return true;
+}
+
+// Run compatibility check on page load
+checkBrowserCompatibility();
 
 // ==== DOM refs ====
 const logEl = document.getElementById('log');
