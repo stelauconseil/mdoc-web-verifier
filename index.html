@@ -3,15 +3,40 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ISO 18013-5 Web Proximity Reader</title>
+  <title>ISO 18013-5 Mobile Driver's License (mDL) Reader & Verifier | Web Bluetooth PWA</title>
+  
+  <!-- SEO Meta Tags -->
+  <meta name="description" content="Free web-based ISO 18013-5 mobile Driver's License (mDL) and mDoc reader and verifier. Scan QR codes, connect via Web Bluetooth, verify digital credentials, and validate IACA certificates. Works offline as a Progressive Web App.">
+  <meta name="keywords" content="ISO 18013-5, mobile driver's license, mDL, mdoc, digital identity, digital credentials, Web Bluetooth, QR code scanner, IACA, certificate validation, PWA, progressive web app, CBOR, COSE, AES-GCM encryption, eIDAS, EU Digital Identity Wallet">
+  <meta name="author" content="ISO 18013-5 Web Reader">
+  <meta name="robots" content="index, follow">
+  <meta name="language" content="English">
+  <meta name="revisit-after" content="7 days">
+  <meta name="category" content="Technology">
+  
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://mdoc-web-verifier.stelau.com/">
+  <meta property="og:title" content="ISO 18013-5 Mobile Driver's License Reader & Verifier">
+  <meta property="og:description" content="Free web-based mDL reader with Web Bluetooth support. Scan, connect, and verify digital driver's licenses compliant with ISO 18013-5 standard.">
+  <meta property="og:image" content="/assets/icon-512.png">
+  
+  <!-- Twitter -->
+  <meta property="twitter:card" content="summary_large_image">
+  <meta property="twitter:url" content="https://mdoc-web-verifier.stelau.com/">
+  <meta property="twitter:title" content="ISO 18013-5 mDL Reader & Verifier">
+  <meta property="twitter:description" content="Free web-based mobile Driver's License reader with Web Bluetooth. Verify ISO 18013-5 digital credentials instantly.">
+  <meta property="twitter:image" content="/assets/icon-512.png">
   
   <!-- PWA Meta Tags -->
-  <meta name="description" content="Read and verify ISO 18013-5 mobile Driver's License credentials via Web Bluetooth">
   <meta name="theme-color" content="#0f172a">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="mDL Reader">
+  
+  <!-- Canonical URL -->
+  <link rel="canonical" href="https://mdoc-web-verifier.stelau.com//">
   
   <!-- PWA Manifest -->
   <link rel="manifest" href="/manifest.json">
@@ -130,11 +155,62 @@
       }
     }
   </style>
+  
+  <!-- Structured Data (JSON-LD) for SEO -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "ISO 18013-5 Mobile Driver's License Reader",
+    "alternateName": "mDL Reader",
+    "url": "https://mdoc-web-verifier.stelau.com/",
+    "description": "Free web-based ISO 18013-5 mobile Driver's License (mDL) reader and verifier with Web Bluetooth support, QR code scanning, and IACA certificate validation.",
+    "applicationCategory": "UtilityApplication",
+    "operatingSystem": "Web Browser (Chrome, Edge)",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "featureList": [
+      "ISO 18013-5 Compliance",
+      "Web Bluetooth GATT Communication",
+      "QR Code Scanning",
+      "CBOR Encoding/Decoding",
+      "AES-256-GCM Encryption",
+      "X.509 Certificate Validation",
+      "IACA Trust Anchor Support",
+      "Offline PWA Functionality",
+      "Mobile Driver's License Verification",
+      "Device Engagement Processing"
+    ],
+    "browserRequirements": "Requires HTTPS, Web Bluetooth API, Camera permission",
+    "screenshot": "/assets/icon-512.png",
+    "softwareVersion": "2.0",
+    "datePublished": "2025-01-01",
+    "dateModified": "2025-10-18",
+    "creator": {
+      "@type": "Organization",
+      "name": "ISO 18013-5 Web Reader"
+    },
+    "potentialAction": {
+      "@type": "UseAction",
+      "target": {
+        "@type": "EntryPoint",
+        "urlTemplate": "https://mdoc-web-verifier.stelau.com/",
+        "actionPlatform": [
+          "http://schema.org/DesktopWebPlatform",
+          "http://schema.org/MobileWebPlatform"
+        ]
+      }
+    }
+  }
+  </script>
 </head>
 <body>
-  <header class="page-header">
+  <header class="page-header" role="banner">
     <h1>ISO 18013-5 Web Proximity Reader</h1>
-    <p>Scan an mDL/mDoc device engagement QR, connect over Web Bluetooth, and request digital credentials. Data is processed locally in the browser. No data is sent to external servers.</p>
+    <p>Scan an <strong>mDL/mDoc device engagement QR code</strong>, connect over <strong>Web Bluetooth</strong>, and request <strong>digital credentials</strong>. Verify mobile Driver's Licenses compliant with <strong>ISO 18013-5 standard</strong>. Data is processed locally in the browser. No data is sent to external servers.</p>
   </header>
   
   <!-- PWA Status Badge - Fixed position top-right -->
