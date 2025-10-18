@@ -1009,6 +1009,126 @@ function extractCertInfo(certDer) {
   }
 }
 
+// Extract validity dates from X.509 DER certificate
+function extractCertValidity(certDer) {
+  try {
+    const cert = new Uint8Array(certDer);
+    
+    // Helper to parse DER length
+    function parseDerLength(bytes, offset) {
+      const firstByte = bytes[offset];
+      if (firstByte < 0x80) {
+        return { length: firstByte, bytesUsed: 1 };
+      }
+      const numBytes = firstByte & 0x7F;
+      let length = 0;
+      for (let i = 0; i < numBytes; i++) {
+        length = (length << 8) | bytes[offset + 1 + i];
+      }
+      return { length, bytesUsed: 1 + numBytes };
+    }
+    
+    // Helper to parse ASN.1 time (UTCTime or GeneralizedTime)
+    function parseTime(bytes, offset) {
+      const tag = bytes[offset];
+      const lenInfo = parseDerLength(bytes, offset + 1);
+      const timeStart = offset + 1 + lenInfo.bytesUsed;
+      const timeEnd = timeStart + lenInfo.length;
+      const timeBytes = bytes.slice(timeStart, timeEnd);
+      const timeStr = new TextDecoder().decode(timeBytes);
+      
+      // UTCTime: 0x17 (YYMMDDHHMMSSZ)
+      // GeneralizedTime: 0x18 (YYYYMMDDHHMMSSZ)
+      if (tag === 0x17) {
+        // UTCTime format: YYMMDDHHMMSSZ
+        const year = parseInt(timeStr.substr(0, 2));
+        const fullYear = year >= 50 ? 1900 + year : 2000 + year;
+        const month = parseInt(timeStr.substr(2, 2)) - 1;
+        const day = parseInt(timeStr.substr(4, 2));
+        const hour = parseInt(timeStr.substr(6, 2));
+        const minute = parseInt(timeStr.substr(8, 2));
+        const second = parseInt(timeStr.substr(10, 2));
+        return new Date(Date.UTC(fullYear, month, day, hour, minute, second));
+      } else if (tag === 0x18) {
+        // GeneralizedTime format: YYYYMMDDHHMMSSZ
+        const year = parseInt(timeStr.substr(0, 4));
+        const month = parseInt(timeStr.substr(4, 2)) - 1;
+        const day = parseInt(timeStr.substr(6, 2));
+        const hour = parseInt(timeStr.substr(8, 2));
+        const minute = parseInt(timeStr.substr(10, 2));
+        const second = parseInt(timeStr.substr(12, 2));
+        return new Date(Date.UTC(year, month, day, hour, minute, second));
+      }
+      return null;
+    }
+    
+    // Navigate to validity field
+    let offset = 0;
+    if (cert[offset] !== 0x30) return { notBefore: null, notAfter: null };
+    offset++;
+    
+    const certLenInfo = parseDerLength(cert, offset);
+    offset += certLenInfo.bytesUsed;
+    
+    // TBSCertificate SEQUENCE
+    if (cert[offset] !== 0x30) return { notBefore: null, notAfter: null };
+    offset++;
+    
+    const tbsLenInfo = parseDerLength(cert, offset);
+    offset += tbsLenInfo.bytesUsed;
+    
+    // Skip version (optional [0] EXPLICIT)
+    if (cert[offset] === 0xA0) {
+      offset++;
+      const verLenInfo = parseDerLength(cert, offset);
+      offset += verLenInfo.bytesUsed + verLenInfo.length;
+    }
+    
+    // Skip serialNumber
+    if (cert[offset] === 0x02) {
+      offset++;
+      const snLenInfo = parseDerLength(cert, offset);
+      offset += snLenInfo.bytesUsed + snLenInfo.length;
+    }
+    
+    // Skip signature algorithm
+    if (cert[offset] === 0x30) {
+      offset++;
+      const algLenInfo = parseDerLength(cert, offset);
+      offset += algLenInfo.bytesUsed + algLenInfo.length;
+    }
+    
+    // Skip issuer
+    if (cert[offset] === 0x30) {
+      offset++;
+      const issuerLenInfo = parseDerLength(cert, offset);
+      offset += issuerLenInfo.bytesUsed + issuerLenInfo.length;
+    }
+    
+    // Now at validity SEQUENCE
+    if (cert[offset] !== 0x30) return { notBefore: null, notAfter: null };
+    offset++;
+    
+    const valLenInfo = parseDerLength(cert, offset);
+    offset += valLenInfo.bytesUsed;
+    
+    // Parse notBefore
+    const notBefore = parseTime(cert, offset);
+    offset++;
+    const notBeforeLenInfo = parseDerLength(cert, offset);
+    offset += notBeforeLenInfo.bytesUsed + notBeforeLenInfo.length;
+    
+    // Parse notAfter
+    const notAfter = parseTime(cert, offset);
+    
+    return { notBefore, notAfter };
+    
+  } catch (err) {
+    console.warn('Error extracting certificate validity:', err);
+    return { notBefore: null, notAfter: null };
+  }
+}
+
 // Verify COSE_Sign1 signature
 async function verifyCoseSign1(coseSign1, publicKey) {
   try {
@@ -1294,10 +1414,21 @@ function convertDERSignatureToRaw(derSig) {
     }
     
     // Pad to 32 bytes if needed (for P-256)
+    // If component is longer than 32 bytes, take the last 32 bytes
     const rPadded = new Uint8Array(32);
     const sPadded = new Uint8Array(32);
-    rPadded.set(r, 32 - r.length);
-    sPadded.set(s, 32 - s.length);
+    
+    if (r.length <= 32) {
+      rPadded.set(r, 32 - r.length);
+    } else {
+      rPadded.set(r.slice(r.length - 32), 0);
+    }
+    
+    if (s.length <= 32) {
+      sPadded.set(s, 32 - s.length);
+    } else {
+      sPadded.set(s.slice(s.length - 32), 0);
+    }
     
     // Concatenate r || s
     const rawSig = new Uint8Array(64);
@@ -1642,15 +1773,21 @@ function parsePEMCertificate(pem) {
       bytes[i] = binaryString.charCodeAt(i);
     }
     
-    // Basic ASN.1 parsing to extract subject (very simplified)
-    // This is just for display purposes; real verification uses Web Crypto
-    const certStr = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
-    
-    // Try to find common name patterns
+    // Use proper X.509 parser to extract subject CN
     let subject = 'Unknown';
-    const cnMatch = certStr.match(/CN=([^,\n\r]+)/);
-    if (cnMatch) {
-      subject = 'CN=' + cnMatch[1].trim();
+    try {
+      const certInfo = extractCertInfo(bytes);
+      if (certInfo && certInfo.subjectCN) {
+        subject = certInfo.subjectCN;
+      }
+    } catch (e) {
+      console.warn('Could not extract subject CN, trying fallback method');
+      // Fallback to simple text search
+      const certStr = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+      const cnMatch = certStr.match(/CN=([^,\n\r]+)/);
+      if (cnMatch) {
+        subject = cnMatch[1].trim();
+      }
     }
     
     return {
@@ -1711,22 +1848,77 @@ function updateIACAList() {
     const statusText = isActive ? '● Active' : '○ Inactive';
     const bgOpacity = isActive ? '1' : '0.6';
     
-    html += `
-      <div style="background: #f8fafc; border: 1px solid rgba(148,163,184,0.25); border-radius: 8px; padding: 0.75rem; display: flex; justify-content: space-between; align-items: start; opacity: ${bgOpacity};">
-        <div style="flex: 1;">
-          <div style="display: flex; align-items: center; gap: 0.5rem;">
-            <div style="font-weight: 600; color: #0f172a;">${iaca.name}</div>
-            <div style="font-size: 0.8rem; color: ${statusColor}; font-weight: 500;">${statusText}</div>
+    // Parse certificate for detailed info
+    let certDetails = '';
+    try {
+      const certInfo = parsePEMCertificate(iaca.pem);
+      if (certInfo) {
+        // Decode the certificate bytes for more details
+        const parsed = parseX509Certificate(certInfo.bytes);
+        
+        // Extract validity dates
+        const validity = extractCertValidity(certInfo.bytes);
+        
+        // Extract more information from the certificate
+        const hexThumbprint = Array.from(certInfo.bytes.slice(0, 20))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join(':')
+          .toUpperCase();
+        
+        certDetails = `
+          <div id="iaca-details-${index}" style="display: none; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid rgba(148,163,184,0.25);">
+            <div style="font-size: 0.85rem; color: #475569;">
+              <div style="margin-bottom: 0.5rem;">
+                <strong>Subject:</strong> <span style="color: #1e293b;">${escapeHtml(iaca.issuer)}</span>
+              </div>
+              ${validity.notBefore ? `<div style="margin-bottom: 0.5rem;">
+                <strong>Valid From:</strong> <span style="color: #1e293b;">${validity.notBefore.toLocaleString()}</span>
+              </div>` : ''}
+              ${validity.notAfter ? `<div style="margin-bottom: 0.5rem;">
+                <strong>Valid Until:</strong> <span style="color: #1e293b;">${validity.notAfter.toLocaleString()}</span>
+              </div>` : ''}
+              <div style="margin-bottom: 0.5rem;">
+                <strong>Fingerprint (first 20 bytes):</strong> 
+                <div style="font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.75rem; color: #1e293b; margin-top: 0.25rem; word-break: break-all;">${hexThumbprint}</div>
+              </div>
+              <div style="margin-top: 0.75rem;">
+                <button onclick="viewIACAPEM(${index})" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: #0ea5e9;">
+                  📄 View PEM
+                </button>
+                <button onclick="copyIACAPEM(${index})" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: #059669;">
+                  📋 Copy PEM
+                </button>
+              </div>
+            </div>
           </div>
-          <div style="font-size: 0.85rem; color: #64748b; margin-top: 0.25rem;">${iaca.issuer}</div>
-          ${isDefault ? '<div style="font-size: 0.8rem; color: #059669; margin-top: 0.25rem;">✓ Default certificate</div>' : ''}
+        `;
+      }
+    } catch (e) {
+      console.error('Error parsing certificate details:', e);
+    }
+    
+    html += `
+      <div style="background: #f8fafc; border: 1px solid rgba(148,163,184,0.25); border-radius: 8px; padding: 0.75rem; opacity: ${bgOpacity};">
+        <div style="display: flex; justify-content: space-between; align-items: start;">
+          <div style="flex: 1;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <div style="font-weight: 600; color: #0f172a;">${escapeHtml(iaca.name)}</div>
+              <div style="font-size: 0.8rem; color: ${statusColor}; font-weight: 500;">${statusText}</div>
+            </div>
+            <div style="font-size: 0.85rem; color: #64748b; margin-top: 0.25rem;">${escapeHtml(iaca.issuer)}</div>
+            ${isDefault ? '<div style="font-size: 0.8rem; color: #059669; margin-top: 0.25rem;">✓ Default certificate</div>' : ''}
+          </div>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            ${certDetails ? `<button onclick="toggleIACADetails(${index})" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: #64748b; display: inline-flex; align-items: center; gap: 0.35rem;">
+              <span id="iaca-details-icon-${index}">▶</span> Details
+            </button>` : ''}
+            <button onclick="toggleIACACert(${index})" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: ${isActive ? '#64748b' : '#059669'};">
+              ${isActive ? 'Deactivate' : 'Activate'}
+            </button>
+            ${!isDefault ? `<button onclick="removeIACACert(${index})" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: #dc2626;">Remove</button>` : ''}
+          </div>
         </div>
-        <div style="display: flex; gap: 0.5rem; align-items: center;">
-          <button onclick="toggleIACACert(${index})" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: ${isActive ? '#64748b' : '#059669'};">
-            ${isActive ? 'Deactivate' : 'Activate'}
-          </button>
-          ${!isDefault ? `<button onclick="removeIACACert(${index})" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: #dc2626;">Remove</button>` : ''}
-        </div>
+        ${certDetails}
       </div>
     `;
   });
@@ -1752,6 +1944,66 @@ window.removeIACACert = function(index) {
     if (removed) {
       log(`🗑️ Removed IACA: ${removed.name}`);
       updateIACAList();
+    }
+  }
+};
+
+// Global function for toggling IACA certificate details (called from HTML)
+window.toggleIACADetails = function(index) {
+  const detailsDiv = document.getElementById(`iaca-details-${index}`);
+  const icon = document.getElementById(`iaca-details-icon-${index}`);
+  
+  if (!detailsDiv || !icon) return;
+  
+  if (detailsDiv.style.display === 'none') {
+    detailsDiv.style.display = 'block';
+    icon.textContent = '▼';
+  } else {
+    detailsDiv.style.display = 'none';
+    icon.textContent = '▶';
+  }
+};
+
+// Global function for viewing IACA PEM in a modal/alert (called from HTML)
+window.viewIACAPEM = function(index) {
+  const iacas = getIACAs();
+  if (index >= 0 && index < iacas.length) {
+    const iaca = iacas[index];
+    // Create a modal-like display
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 2rem;';
+    modal.onclick = (e) => {
+      if (e.target === modal) modal.remove();
+    };
+    
+    const content = document.createElement('div');
+    content.style.cssText = 'background: white; border-radius: 12px; padding: 1.5rem; max-width: 800px; max-height: 80vh; overflow: auto; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3);';
+    content.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h3 style="margin: 0; color: #0f172a;">${escapeHtml(iaca.name)}</h3>
+        <button onclick="this.closest('div').parentElement.parentElement.remove()" style="background: #dc2626; padding: 0.5rem 1rem; border-radius: 6px; border: none; color: white; cursor: pointer;">Close</button>
+      </div>
+      <pre style="background: #f8fafc; padding: 1rem; border-radius: 8px; overflow-x: auto; font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.85rem; color: #1e293b; white-space: pre-wrap; word-break: break-all;">${escapeHtml(iaca.pem)}</pre>
+      <div style="margin-top: 1rem;">
+        <button onclick="copyIACAPEM(${index}); this.textContent='✅ Copied!'; setTimeout(() => this.textContent='📋 Copy to Clipboard', 2000);" style="background: #059669; padding: 0.5rem 1rem; border-radius: 6px; border: none; color: white; cursor: pointer;">📋 Copy to Clipboard</button>
+      </div>
+    `;
+    
+    modal.appendChild(content);
+    document.body.appendChild(modal);
+  }
+};
+
+// Global function for copying IACA PEM to clipboard (called from HTML)
+window.copyIACAPEM = async function(index) {
+  const iacas = getIACAs();
+  if (index >= 0 && index < iacas.length) {
+    try {
+      await navigator.clipboard.writeText(iacas[index].pem);
+      log(`📋 Copied IACA PEM to clipboard: ${iacas[index].name}`);
+    } catch (err) {
+      console.error('Copy failed:', err);
+      log('❌ Failed to copy PEM: ' + err.message);
     }
   }
 };
