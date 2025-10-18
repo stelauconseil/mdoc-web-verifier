@@ -1,6 +1,6 @@
 // Service Worker for ISO 18013-5 Web Proximity Reader PWA
 // IMPORTANT: Increment version number when you update files to trigger cache refresh
-const CACHE_VERSION = 3; // <-- INCREMENT THIS NUMBER WHEN UPDATING
+const CACHE_VERSION = 4; // <-- INCREMENT THIS NUMBER WHEN UPDATING
 const CACHE_NAME = `mdoc-reader-v${CACHE_VERSION}`;
 const RUNTIME_CACHE = `mdoc-runtime-v${CACHE_VERSION}`;
 
