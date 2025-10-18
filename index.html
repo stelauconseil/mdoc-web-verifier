@@ -42,7 +42,7 @@
     label.inline input[type="text"],
     label.inline input[type="number"] { flex: 1; min-width: 12rem; padding: 0.45rem 0.65rem; border-radius: 8px; border: 1px solid rgba(148,163,184,0.6); font-size: 0.95rem; }
   .manual-entry { margin-top: 1.5rem; display: grid; gap: 0.75rem; }
-  .manual-entry textarea { width: 100%; min-height: 60px; padding: 0.75rem 0.25rem; border-radius: 12px; border: 1px solid rgba(148,163,184,0.45); font-family: "SFMono-Regular","JetBrains Mono",ui-monospace,monospace; font-size: 0.9rem; background: #f8fafc; resize: vertical; }
+  .manual-entry textarea { width: 97%; min-height: 60px; padding: 0.75rem 0.9rem; border-radius: 12px; border: 1px solid rgba(148,163,184,0.45); font-family: "SFMono-Regular","JetBrains Mono",ui-monospace,monospace; font-size: 0.9rem; background: #f8fafc; resize: vertical; }
   .manual-entry textarea:focus { outline: 2px solid rgba(37,99,235,0.4); outline-offset: 2px; }
     button { font: inherit; font-weight: 600; padding: 0.55rem 1rem; border-radius: 10px; border: 1px solid rgba(15,23,42,0.08); background: #1d4ed8; color: #fff; cursor: pointer; transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease; }
     button.secondary { background: #0f172a; }
@@ -266,9 +266,14 @@
       <div id="responseDisplay"></div>
     </section>
 
-    <section class="card" id="iacaSection">
-      <h2>Issuer Certificate Management (IACA)</h2>
-      <p class="muted">Manage Issuer Authority Certificate Authority (IACA) certificates for signature verification. These are used to validate the mDL/mDoc issuer signatures.</p>
+    <section class="card" id="logsSection">
+      <h2>3. Activity Log</h2>
+      <div class="log" id="log" role="log" aria-live="polite" aria-label="Session activity log"></div>
+    </section>
+
+        <section class="card" id="iacaSection">
+      <h2>⚙️ Issuer Certificate Management (IACA)</h2>
+      <p class="muted">Manage Issuing Authority Certification Authority (IACA) certificates for signature verification. These are used to validate the mDoc issuer signatures.</p>
       
       <div style="margin-top: 1rem;">
         <strong>Installed IACAs:</strong>
@@ -281,7 +286,7 @@
         <strong>Add New IACA Certificate:</strong>
         <div style="margin-top: 0.75rem;">
           <label class="muted" for="iacaInput">Paste PEM certificate (-----BEGIN CERTIFICATE-----)</label>
-          <textarea id="iacaInput" placeholder="-----BEGIN CERTIFICATE-----&#10;MIIDUzCCAvmgAwIBAgISESHtNjf+2KAQ0ttWtR9EhAAPMAoGCCqGSM49BAMCMIHF&#10;...&#10;-----END CERTIFICATE-----" style="width: 100%; min-height: 120px; padding: 0.75rem 0.9rem; border-radius: 12px; border: 1px solid rgba(148,163,184,0.45); font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.85rem; background: #f8fafc; resize: vertical; margin-top: 0.5rem;"></textarea>
+          <textarea id="iacaInput" placeholder="-----BEGIN CERTIFICATE-----&#10;MIIDUzCCAvmgAwIBAgISESHtNjf+2KAQ0ttWtR9EhAAPMAoGCCqGSM49BAMCMIHF&#10;...&#10;-----END CERTIFICATE-----" style="width: 97%; min-height: 80px; padding: 0.75rem 0.9rem; border-radius: 12px; border: 1px solid rgba(148,163,184,0.45); font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.85rem; background: #f8fafc; resize: vertical; margin-top: 0.5rem;"></textarea>
           <div class="row" style="margin-top: 0.5rem;">
             <button id="btnAddIaca">Add IACA Certificate</button>
             <button id="btnClearIacaInput" class="secondary">Clear</button>
@@ -290,13 +295,10 @@
       </div>
     </section>
 
-    <section class="card" id="logsSection">
-      <h2>3. Activity Log</h2>
-      <div class="log" id="log" role="log" aria-live="polite" aria-label="Session activity log"></div>
-    </section>
+
   </main>
   <footer>
-    Built by <a href="https://stelau.com">Stelau</a> for rapid ISO 18013-5 experimentation. Web Bluetooth requires HTTPS and a compatible browser.
+    Built by <a href="https://stelau.com">Stelau</a> for ISO 18013-5 experimentation. Web Bluetooth requires HTTPS and a compatible browser.
   </footer>
 
 <!-- Load libs BEFORE the module -->
