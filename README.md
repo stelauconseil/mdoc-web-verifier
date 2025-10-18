@@ -1,18 +1,52 @@
 # ISO 18013-5 Web Verifier (mDL Reader)
 
-A single-page web application that implements ISO 18013-5 mobile Driver's License (mDL) reader functionality directly in the browser using Web Bluetooth. It scans QR codes, connects over BLE, establishes a secure session, and exchanges encrypted mDL data.
+A single-page **Progressive Web App (PWA)** that implements ISO 18013-5 mobile Driver's License (mDL) reader functionality directly in the browser using Web Bluetooth. It scans QR codes, connects over BLE, establishes a secure session, and exchanges encrypted mDL data.
 
-This project is intentionally self-contained: everything lives in a single `index.html` file (HTML, CSS, and JavaScript). No build step is required.
+This project is intentionally self-contained: everything lives in a single `index.html` file (HTML, CSS, and JavaScript). No build step is required. **Install it as an app** for offline access and native-like experience!
 
 ## Features
 
-- QR code scanning (camera) to extract Device Engagement data
-- Web Bluetooth GATT communication with the wallet device
-- ISO 18013-5 compliant session establishment
-- AES-256-GCM encryption with per-spec IV generation
-- CBOR encoding/decoding for protocol messages
-- Diagnostics view and extensive console logging
-- Works in modern Chromium browsers (secure context / HTTPS required)
+- 📱 **Progressive Web App** - Install on desktop or mobile, works offline with elegant status badge
+- 📷 QR code scanning (camera) to extract Device Engagement data
+- 🔵 Web Bluetooth GATT communication with the wallet device
+- 🔐 ISO 18013-5 compliant session establishment
+- 🔒 AES-256-GCM encryption with per-spec IV generation
+- 📦 CBOR encoding/decoding for protocol messages
+- 🔍 X.509 certificate validation with IACA trust anchors
+- 🛠️ Diagnostics view and extensive console logging
+- ⚡ Fast loading with intelligent Service Worker caching strategies
+- 🔔 Automatic update notifications when new versions are available
+- ✨ Glassmorphic floating badge showing app status (installed/offline mode)
+- 🌐 Works in modern Chromium browsers (secure context / HTTPS required)
+
+## PWA Installation
+
+### Quick Install
+
+1. Visit the app over HTTPS
+2. Look for the **install prompt** or click the ⊕ icon in the address bar
+3. Click **"Install"** to add it to your device
+4. Enjoy the native app experience with a floating status badge showing "✨ Installed App"
+
+### Benefits of Installing
+
+- ✅ **Works offline** - Full functionality after first visit
+- ✅ **Instant loading** - Cached assets for near-instant startup
+- ✅ **Native experience** - Fullscreen without browser UI
+- ✅ **Visual feedback** - Elegant floating badge shows app/offline status
+- ✅ **Auto updates** - Get notified when updates are available
+- ✅ **Quick access** - Launch from home screen or desktop
+
+### PWA Status Badge
+
+When installed or running with offline support, a beautiful floating badge appears in the top-right corner:
+
+- **✨ Installed App** (green) - Running as installed PWA
+- **🔄 Offline Ready** (blue) - Service Worker active, offline support enabled
+
+The badge uses a glassmorphic design with backdrop blur and smooth slide-in animation. On mobile, it automatically scales down for better usability.
+
+See [PWA_SETUP.md](PWA_SETUP.md) for detailed installation and development guide, or [PWA_README.md](PWA_README.md) for a quick overview of all PWA features.
 
 ## Quickstart
 
@@ -62,22 +96,52 @@ Note: The browser may prompt to trust Caddy’s local CA on first run.
 
 ## Using the app
 
+### Normal Usage Flow
+
 1. Open the app over HTTPS in a supported browser.
-2. Click Scan QR and present the wallet’s Device Engagement QR (or paste an `mdoc://` URI if supported).
-3. The app parses Device Engagement to find BLE options (service UUID and optional address).
-4. Click Connect to establish a GATT connection to the wallet.
-5. The protocol state machine starts; the session is established by exchanging ephemeral keys.
-6. Select which document fields to request and send the request.
-7. Approve the request on the wallet app; the response is received and decrypted.
-8. Use the Diagnostics button and browser DevTools for detailed logs and session info.
+2. **(Optional)** Install the app for offline access and native experience.
+3. Click **Scan QR** and present the wallet's Device Engagement QR (or paste an `mdoc://` URI if supported).
+4. The app parses Device Engagement to find BLE options (service UUID and optional address).
+5. Click **Connect** to establish a GATT connection to the wallet.
+6. The protocol state machine starts; the session is established by exchanging ephemeral keys.
+7. Select which document fields to request and send the request.
+8. Approve the request on the wallet app; the response is received and decrypted.
+9. Use the **Diagnostics** button and browser DevTools for detailed logs and session info.
+
+### Testing PWA Features
+
+Visit **pwa-test.html** to verify PWA functionality:
+
+- ✅ Check HTTPS and browser API support
+- ✅ Verify Service Worker registration
+- ✅ Test manifest loading and parsing
+- ✅ Check installation status
+- ✅ Inspect cache contents
+- 🛠️ Debug utilities (unregister SW, clear cache)
+
+Or run a Lighthouse audit in Chrome DevTools for a comprehensive PWA score.
 
 ## Architecture overview
 
-This project follows a single-file architecture. Everything resides in `index.html` and is loaded directly in the browser via CDNs.
+This project follows a single-file architecture with Progressive Web App enhancements. The core app resides in `index.html` and is loaded directly in the browser via CDNs.
 
-- index.html — full app with UI, BLE, crypto, CBOR, and QR logic
+### Core Files
 
-Key external dependencies (CDN):
+- **index.html** — Full app with UI, BLE, crypto, CBOR, QR logic, and PWA integration
+- **manifest.json** — Web app manifest for PWA installation (name, icons, theme)
+- **sw.js** — Service Worker with intelligent caching strategies
+- **icon-192.svg** / **icon-512.svg** — App icons with branded design
+
+### PWA Architecture
+
+- **Cache Strategy**:
+  - Cache-first for app shell (instant loading)
+  - Network-first for CDN resources (always fresh with fallback)
+  - Runtime caching for visited resources
+- **Update Mechanism**: Version-based cache invalidation with user notifications
+- **Offline Support**: Full functionality preserved with cached assets
+
+### Key External Dependencies (CDN)
 
 - jsQR@1.4.0 — QR code scanning via camera frames
 - cbor-web@9.0.2 — CBOR encoding/decoding for ISO 18013-5
@@ -190,16 +254,34 @@ Common issues:
 
 ## Project structure
 
-- index.html — entire application (HTML/CSS/JS)
+```
+mdoc-web-verifier/
+├── index.html              # Main application (HTML/CSS/JS)
+├── manifest.json           # PWA manifest (app metadata)
+├── sw.js                   # Service Worker (offline support)
+├── icon-192.svg            # App icon (192×192)
+├── icon-512.svg            # App icon (512×512)
+├── generate-icons.sh       # Script to generate PNG icons
+├── pwa-test.html          # PWA testing utilities
+├── PWA_SETUP.md           # Comprehensive PWA guide
+├── PWA_CONVERSION.md      # Technical PWA documentation
+├── PWA_README.md          # Quick PWA overview
+└── README.md              # This file
+```
 
-There is no build system; the page runs directly in the browser.
+There is no build system; the page runs directly in the browser. PWA features work seamlessly without compilation or bundling.
 
 ## Roadmap / ideas
 
+- ✅ ~~Progressive Web App support~~ (Completed!)
+- ✅ ~~Offline functionality~~ (Completed!)
+- ✅ ~~Install prompts and update notifications~~ (Completed!)
 - Reader authentication (optional per ISO 18013-5)
 - UX improvements and field presets
 - Additional wallet compatibility tests
 - Automated tests for crypto and CBOR encoding
+- Push notifications for updates (requires backend)
+- Share target API for receiving QR codes from other apps
 
 ## Contributing
 

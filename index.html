@@ -4,6 +4,22 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ISO 18013-5 Web Proximity Reader</title>
+  
+  <!-- PWA Meta Tags -->
+  <meta name="description" content="Read and verify ISO 18013-5 mobile Driver's License credentials via Web Bluetooth">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="mDL Reader">
+  
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="/manifest.json">
+  
+  <!-- Icons -->
+  <link rel="icon" type="image/svg+xml" href="/assets/icon-192.png">
+  <link rel="apple-touch-icon" href="/assets/icon-192.png">
+  <link rel="mask-icon" href="/assets/icon-192.png" color="#0f172a">
   <style>
     :root { color-scheme: light dark; font-family: "Inter", "Segoe UI", sans-serif; line-height: 1.5; }
     body { margin: 0; background: #F2F4F8; color: #111827; }
@@ -72,6 +88,27 @@
     .compat-warning ul { margin: 0.5rem 0 0 1.25rem; padding: 0; }
     .compat-warning a { color: #fef3c7; text-decoration: underline; }
     
+    /* PWA Status Badge Animation */
+    @keyframes slideInRight {
+      from {
+        opacity: 0;
+        transform: translateX(100px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+    
+    @keyframes pulse {
+      0%, 100% {
+        opacity: 1;
+      }
+      50% {
+        opacity: 0.7;
+      }
+    }
+    
     footer { text-align: center; padding: 2rem 1rem 3rem; color: #64748b; font-size: 0.9rem; }
     @media (max-width: 640px) {
       .card { padding: 1.25rem; border-radius: 14px; }
@@ -79,6 +116,18 @@
       .button-grid { flex-direction: column; }
       .status-panel { font-size: 0.9rem; }
       .data-item { grid-template-columns: 1fr; gap: 0.25rem; }
+      
+      /* Make PWA badge smaller and positioned better on mobile */
+      #pwaStatus {
+        top: 10px !important;
+        right: 10px !important;
+        padding: 0.4rem 0.75rem !important;
+        font-size: 0.8rem !important;
+        border-radius: 20px !important;
+      }
+      #pwaStatusText span {
+        font-size: 0.95rem !important;
+      }
     }
   </style>
 </head>
@@ -87,6 +136,30 @@
     <h1>ISO 18013-5 Web Proximity Reader</h1>
     <p>Scan an mDL/mDoc device engagement QR, connect over Web Bluetooth, and request digital credentials. Data is processed locally in the browser. No data is sent to external servers.</p>
   </header>
+  
+  <!-- PWA Status Badge - Fixed position top-right -->
+  <div id="pwaStatus" style="
+    display: none;
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: rgba(5, 150, 105, 0.95);
+    backdrop-filter: blur(10px);
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 24px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    box-shadow: 0 4px 16px rgba(5, 150, 105, 0.25), 0 2px 4px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+    animation: slideInRight 0.3s ease-out;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  ">
+    <span id="pwaStatusText" style="display: flex; align-items: center; gap: 0.5rem;">
+      <span style="font-size: 1.1rem;">✨</span>
+      <span>Installed App</span>
+    </span>
+  </div>
   
   <div style="max-width: 1100px; margin: 0 auto; padding: 0 1.5rem;">
     <!-- Compatibility Warning Banner -->
@@ -299,6 +372,40 @@ function checkBrowserCompatibility() {
   console.log('✓ Browser compatibility check passed');
   return true;
 }
+
+// ==== PWA Status Indicator ====
+function updatePWAStatus() {
+  const pwaStatus = document.getElementById('pwaStatus');
+  const pwaStatusText = document.getElementById('pwaStatusText');
+  
+  if (!pwaStatus || !pwaStatusText) return;
+  
+  // Check if running as installed PWA
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches 
+                    || window.navigator.standalone === true
+                    || document.referrer.includes('android-app://');
+  
+  // Check if service worker is active
+  const hasServiceWorker = 'serviceWorker' in navigator && navigator.serviceWorker.controller;
+  
+  if (isStandalone) {
+    pwaStatusText.innerHTML = '<span style="font-size: 1.1rem;">✨</span><span>Installed App</span>';
+    pwaStatus.style.display = 'block';
+    pwaStatus.style.background = 'rgba(5, 150, 105, 0.95)';
+    console.log('✓ Running as PWA (standalone mode)');
+  } else if (hasServiceWorker) {
+    pwaStatusText.innerHTML = '<span style="font-size: 1.1rem;">🔄</span><span>Offline Ready</span>';
+    pwaStatus.style.display = 'block';
+    pwaStatus.style.background = 'rgba(99, 102, 241, 0.95)';
+    console.log('✓ Service Worker active (offline support enabled)');
+  } else {
+    pwaStatus.style.display = 'none';
+  }
+}
+
+// Update PWA status on load and when display mode changes
+window.addEventListener('load', updatePWAStatus);
+window.matchMedia('(display-mode: standalone)').addEventListener('change', updatePWAStatus);
 
 // Run compatibility check on page load
 checkBrowserCompatibility();
@@ -5353,5 +5460,222 @@ if (btnQuickReconnect) btnQuickReconnect.addEventListener('click', async () => {
 if (btnDisc) btnDisc.addEventListener('click', async () => {
   try { if (device?.gatt?.connected) device.gatt.disconnect(); } catch (e) { log('Disconnect error: '+e.message); }
 });
+
+// ========================================
+// PWA Service Worker Registration
+// ========================================
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', async () => {
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js', {
+        scope: '/'
+      });
+      
+      console.log('✅ Service Worker registered successfully:', registration.scope);
+      
+      // Check for updates
+      registration.addEventListener('updatefound', () => {
+        const newWorker = registration.installing;
+        console.log('🔄 Service Worker update found');
+        
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            console.log('✨ New content available, please refresh');
+            // Optionally show a toast notification to user
+            showUpdateNotification();
+          }
+        });
+      });
+      
+      // Handle controller change (after update)
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        console.log('♻️ Service Worker controller changed, reloading...');
+        window.location.reload();
+      });
+      
+    } catch (error) {
+      console.error('❌ Service Worker registration failed:', error);
+    }
+  });
+}
+
+// PWA Install Prompt
+let deferredPrompt;
+const pwaInstallBanner = document.createElement('div');
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  // Prevent the mini-infobar from appearing on mobile
+  e.preventDefault();
+  // Stash the event so it can be triggered later
+  deferredPrompt = e;
+  
+  // Show custom install banner
+  showInstallBanner();
+});
+
+function showInstallBanner() {
+  pwaInstallBanner.style.cssText = `
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: linear-gradient(135deg, #1d4ed8, #2563eb);
+    color: white;
+    padding: 1rem 1.5rem;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px -15px rgba(29, 78, 216, 0.6);
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    z-index: 10000;
+    max-width: 90%;
+    animation: slideUp 0.3s ease-out;
+  `;
+  
+  pwaInstallBanner.innerHTML = `
+    <div style="flex: 1;">
+      <div style="font-weight: 600; margin-bottom: 0.25rem;">Install mDL Reader</div>
+      <div style="font-size: 0.875rem; opacity: 0.9;">Access offline and faster</div>
+    </div>
+    <button id="installBtn" style="
+      background: white;
+      color: #1d4ed8;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.875rem;
+    ">Install</button>
+    <button id="dismissInstall" style="
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.3);
+      color: white;
+      padding: 0.5rem 0.75rem;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.875rem;
+    ">✕</button>
+  `;
+  
+  document.body.appendChild(pwaInstallBanner);
+  
+  // Install button handler
+  document.getElementById('installBtn').addEventListener('click', async () => {
+    if (!deferredPrompt) return;
+    
+    // Show the install prompt
+    deferredPrompt.prompt();
+    
+    // Wait for the user to respond to the prompt
+    const { outcome } = await deferredPrompt.userChoice;
+    console.log(`User response to install prompt: ${outcome}`);
+    
+    // Clear the deferred prompt
+    deferredPrompt = null;
+    
+    // Hide the banner
+    pwaInstallBanner.remove();
+  });
+  
+  // Dismiss button handler
+  document.getElementById('dismissInstall').addEventListener('click', () => {
+    pwaInstallBanner.remove();
+    // Remember dismissal for 7 days
+    localStorage.setItem('pwa-install-dismissed', Date.now().toString());
+  });
+  
+  // Check if dismissed recently
+  const dismissed = localStorage.getItem('pwa-install-dismissed');
+  if (dismissed && (Date.now() - parseInt(dismissed)) < 7 * 24 * 60 * 60 * 1000) {
+    pwaInstallBanner.remove();
+  }
+}
+
+// Add slideUp animation
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes slideUp {
+    from {
+      transform: translateX(-50%) translateY(100px);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+  }
+`;
+document.head.appendChild(style);
+
+// Track successful installation
+window.addEventListener('appinstalled', () => {
+  console.log('✅ PWA installed successfully');
+  pwaInstallBanner.remove();
+  deferredPrompt = null;
+});
+
+// Show update notification
+function showUpdateNotification() {
+  const updateBanner = document.createElement('div');
+  updateBanner.style.cssText = `
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #059669;
+    color: white;
+    padding: 0.75rem 1.25rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    z-index: 10001;
+    animation: slideDown 0.3s ease-out;
+  `;
+  
+  updateBanner.innerHTML = `
+    <span>✨ Update available!</span>
+    <button id="updateBtn" style="
+      background: white;
+      color: #059669;
+      border: none;
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.875rem;
+    ">Refresh</button>
+  `;
+  
+  document.body.appendChild(updateBanner);
+  
+  document.getElementById('updateBtn').addEventListener('click', () => {
+    window.location.reload();
+  });
+  
+  // Auto-dismiss after 10 seconds
+  setTimeout(() => {
+    updateBanner.style.animation = 'slideUp 0.3s ease-out reverse';
+    setTimeout(() => updateBanner.remove(), 300);
+  }, 10000);
+}
+
+const slideDownStyle = document.createElement('style');
+slideDownStyle.textContent = `
+  @keyframes slideDown {
+    from {
+      transform: translateX(-50%) translateY(-100px);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+  }
+`;
+document.head.appendChild(slideDownStyle);
+
 </script>
 </html>
