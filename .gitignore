@@ -1,5 +1,2 @@
 # Backup files
-*.backup
-*.backup*
-**.backup
-**.backup*
+backup/**
