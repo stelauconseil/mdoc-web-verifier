@@ -17,7 +17,7 @@
   <link rel="manifest" href="/manifest.json">
   
   <!-- Icons -->
-  <link rel="icon" type="image/svg+xml" href="/assets/icon-192.png">
+  <link rel="icon" href="/assets/icon-192.png">
   <link rel="apple-touch-icon" href="/assets/icon-192.png">
   <link rel="mask-icon" href="/assets/icon-192.png" color="#0f172a">
   <style>
@@ -2569,6 +2569,23 @@ async function sendFragmented(payload) {
 }
 
 // ==== QR scanning ====
+function stopCamera() {
+  scanRunning = false;
+  video.pause();
+  
+  // Stop all video tracks to release the camera
+  if (video.srcObject) {
+    const stream = video.srcObject;
+    const tracks = stream.getTracks();
+    tracks.forEach(track => {
+      track.stop();
+      console.log('Camera track stopped:', track.kind);
+    });
+    video.srcObject = null;
+    log('📹 Camera stopped');
+  }
+}
+
 async function startCamera() {
   const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
   video.srcObject = stream;
@@ -2586,7 +2603,8 @@ function tick() {
   const img = ctx2d.getImageData(0, 0, canvas.width, canvas.height);
   const code = jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
   if (code?.data) {
-    scanRunning = false; video.pause(); statusEl.textContent='QR detected';
+    stopCamera(); // Properly stop the camera
+    statusEl.textContent='QR detected';
     handleQrPayload(code.data, 'camera scan');
     return;
   }
@@ -3621,9 +3639,6 @@ async function buildTranscriptAAD() {
   const aad = await sha256(wrappedTranscript);
   console.log('Transcript AAD (SHA-256 of tag(24, bstr(SessionTranscript))):', hex(aad));
   console.log('✅ Transcript AAD built successfully');
-  console.log('✅ Using Multipaz approach: hash(tag(24, bstr(SessionTranscript)))');
-  console.log('');
-  console.log('🔍 DEBUG: Copy this data to compare with Multipaz:');
   console.log('  SessionTranscript unwrapped (base64):', btoa(String.fromCharCode(...trCbor)));
   console.log('  SessionTranscript wrapped tag(24,bstr) (base64):', btoa(String.fromCharCode(...wrappedTranscript)));
   console.log('  Transcript Hash (hex):', hex(aad));
@@ -3664,9 +3679,6 @@ async function deriveSessionKey(sharedSecret, transcriptHash) {
   console.log('- SKDevice (32 bytes):', hex(deviceKey));
   console.log('- SKDevice (base64):', btoa(String.fromCharCode(...deviceKey)));
   console.log();
-  console.log('🔍 MULTIPAZ COMPARISON:');
-  console.log('- Multipaz readerSK should match our SKReader');
-  console.log('- Multipaz deviceSK should match our SKDevice');
 
   // Expose for debugging/inspection in devtools (non-production)
   window.sessionDebug = window.sessionDebug || {};
@@ -4896,20 +4908,11 @@ if (btnEstablish) btnEstablish.addEventListener('click', async () => {
     log('❌ Session establishment failed: ' + e.message);
   }
 });
-
 if (btnEstablishAlt) btnEstablishAlt.addEventListener('click', async () => {
   try {
-    log('🔐 Alternate SessionEstablishment: ISO 18013-5 compliant flow');
+    log('🔐 SessionEstablishment: ISO 18013-5 compliant flow');
     log('📋 Sending {eReaderKey, data: <encrypted>} in one message');
-    log('⚠️ Note: Multipaz reports decryption error with this method');
-    log('');
-    log('🔬 Investigating possible causes:');
-    log('   - SessionTranscript structure/ordering');
-    log('   - COSE_Encrypt0 format expectations');  
-    log('   - Key derivation parameters (HKDF)');
-    log('   - AAD usage in AES-GCM');
-    log('');
-    log('📊 Full debugging details will be logged to console');
+
 
     // Reset session state to avoid mixing handshakes
     _readerCoseKeyCached = null;
@@ -4925,22 +4928,6 @@ if (btnEstablishAlt) btnEstablishAlt.addEventListener('click', async () => {
     await exportReaderPublicToCoseKey();
     log('✅ Generated ephemeral key pair');
     
-    console.log('========================================');
-    console.log('MULTIPAZ DEBUGGING - ALTERNATE SESSION ESTABLISHMENT');
-    console.log('========================================');
-    console.log('Per ISO 18013-5 Section 9.1.1.4:');
-    console.log('  "The mdoc reader encrypts the mdoc request with the');
-    console.log('   appropriate session key and sends it to the mdoc');
-    console.log('   together with EReaderKey.Pub in a session establishment message."');
-    console.log('');
-    console.log('This implementation follows the spec, but Multipaz rejects it.');
-    console.log('');
-    console.log('Debug checklist for Multipaz comparison:');
-    console.log('1. Compare SessionTranscript construction (check console below)');
-    console.log('2. Compare session key derivation (SKReader/SKDevice)');
-    console.log('3. Compare COSE_Encrypt0 structure');
-    console.log('4. Compare IV construction and AAD usage');
-    console.log('========================================');
 
     const legacyMessage = await buildLegacySessionEstablishmentWithData();
     console.log('SessionEstablishment message length:', legacyMessage.length);
@@ -4952,7 +4939,6 @@ if (btnEstablishAlt) btnEstablishAlt.addEventListener('click', async () => {
     window.sessionEstablished = true;
     log('📤 SessionEstablishment sent with encrypted request');
     log('⏳ Waiting for wallet response...');
-    log('⚠️ Known issue: Multipaz will likely return "Error decrypting"');
     log('💡 Use standard "Send SessionEstablishment" as workaround');
 
     btnSend.disabled = false;
