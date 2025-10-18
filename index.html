@@ -1886,6 +1886,15 @@ function displayDeviceResponse(deviceResponse) {
               // Binary data (like portrait)
               const byteLength = elementValue.length;
               
+              // Skip portrait fields with 0 bytes (empty/not provided)
+              if (byteLength === 0 && 
+                  (elementIdentifier.toLowerCase().includes('portrait') || 
+                   elementIdentifier.toLowerCase().includes('image') ||
+                   elementIdentifier.toLowerCase().includes('photo'))) {
+                // Don't display empty portrait fields - skip to next item
+                return; // Return from forEach callback to skip this item
+              }
+              
               // Try to detect if it's an image
               if (elementIdentifier.toLowerCase().includes('portrait') || 
                   elementIdentifier.toLowerCase().includes('image') ||
