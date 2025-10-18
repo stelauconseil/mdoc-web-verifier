@@ -5490,6 +5490,23 @@ if ('serviceWorker' in navigator) {
         window.location.reload();
       });
       
+      // Check for updates periodically (every 60 seconds)
+      setInterval(() => {
+        registration.update().then(() => {
+          console.log('🔍 Checked for Service Worker updates');
+        }).catch(err => {
+          console.warn('Update check failed:', err);
+        });
+      }, 60000); // Check every minute
+      
+      // Also check for updates when page becomes visible
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && registration) {
+          registration.update();
+          console.log('🔍 Checking for updates (page visible)');
+        }
+      });
+      
     } catch (error) {
       console.error('❌ Service Worker registration failed:', error);
     }
