@@ -814,20 +814,29 @@ async function extractPublicKeyFromCert(certDer) {
       y: base64UrlEncode(y)
     };
     
-    const publicKey = await crypto.subtle.importKey(
-      'jwk',
-      jwk,
-      { name: 'ECDSA', namedCurve: 'P-256' },
-      true,
-      ['verify']
-    );
-    
-    console.log('✅ Public key imported successfully');
-    return publicKey;
+    try {
+      const publicKey = await crypto.subtle.importKey(
+        'jwk',
+        jwk,
+        { name: 'ECDSA', namedCurve: 'P-256' },
+        true,
+        ['verify']
+      );
+      
+      console.log('✅ Public key imported successfully');
+      return publicKey;
+    } catch (importErr) {
+      if (importErr.name === 'DataError') {
+        console.error('❌ DataError: Invalid key format or unsupported curve. This usually means the IACA certificate is missing, corrupted, or uses an unsupported algorithm.');
+      } else {
+        console.error('❌ Failed to import public key:', importErr.message);
+      }
+      return null;
+    }
     
   } catch (err) {
-    console.error('Error extracting public key:', err);
-    throw err;
+    console.error('Error extracting public key:', err.message);
+    return null;
   }
 }
 
@@ -1565,8 +1574,8 @@ async function validateCertificateChain(issuerCertBytes) {
         const iacaPublicKey = await pemToCryptoKey(iaca.pem);
         
         if (!iacaPublicKey) {
-          console.log(`  ✗ Failed to import IACA public key`);
-          result.errors.push(`${iaca.name}: Failed to import public key`);
+          console.log(`  ✗ Failed to import IACA public key (missing or invalid certificate)`);
+          result.errors.push(`${iaca.name}: IACA certificate missing or invalid`);
           continue;
         }
         
@@ -1995,7 +2004,11 @@ async function pemToCryptoKey(pem) {
     
     return key;
   } catch (e) {
-    console.error('Failed to import certificate as CryptoKey:', e);
+    if (e.name === 'DataError') {
+      console.error('IACA certificate is missing, invalid, or has an unsupported key format:', e.message);
+    } else {
+      console.error('Failed to import certificate as CryptoKey:', e.message);
+    }
     return null;
   }
 }
@@ -2748,8 +2761,20 @@ function displayDeviceResponse(deviceResponse) {
                   statusHTML += `<span style="color: #28a745;">✅ Chain: Valid (${escapeHtml(chainResult.chainInfo.matchedIACA.name)})</span>`;
                   log(`✅ Document ${docIndex + 1} issuer certificate validated with: ${chainResult.chainInfo.matchedIACA.name}`);
                 } else if (chainResult.chainInfo?.errors.length > 0) {
-                  statusHTML += `<span style="color: #ffc107;">⚠️ Chain: ${escapeHtml(chainResult.chainInfo.errors[0])}</span>`;
-                  log(`⚠️ Document ${docIndex + 1} issuer validation: ${chainResult.chainInfo.errors[0]}`);
+                  // Check if error is IACA-related
+                  const iacaError = chainResult.chainInfo.errors.find(err => 
+                    err.includes('IACA certificate missing') || 
+                    err.includes('No active IACA') ||
+                    err.includes('Failed to import public key')
+                  );
+                  
+                  if (iacaError) {
+                    statusHTML += `<span style="color: #dc3545;">❌ Chain: IACA certificate missing or invalid</span>`;
+                    log(`❌ Document ${docIndex + 1} issuer validation: IACA certificate missing or invalid`);
+                  } else {
+                    statusHTML += `<span style="color: #ffc107;">⚠️ Chain: ${escapeHtml(chainResult.chainInfo.errors[0])}</span>`;
+                    log(`⚠️ Document ${docIndex + 1} issuer validation: ${chainResult.chainInfo.errors[0]}`);
+                  }
                 } else {
                   statusHTML += '<span style="color: #94a3b8;">○ Chain: Not validated</span>';
                 }
@@ -2758,8 +2783,17 @@ function displayDeviceResponse(deviceResponse) {
                 
               } catch (verifyError) {
                 console.error('Verification error:', verifyError);
-                statusEl.innerHTML = `<span style="color: #dc3545;">❌ Verification error: ${escapeHtml(verifyError.message)}</span>`;
-                log(`❌ Document ${docIndex + 1} verification error: ${verifyError.message}`);
+                
+                // Check if this is an IACA-related error
+                let errorMessage = verifyError.message;
+                if (verifyError.name === 'DataError' || errorMessage.includes('Failed to import')) {
+                  errorMessage = 'IACA certificate missing or invalid';
+                  statusEl.innerHTML = `<span style="color: #dc3545;">❌ Chain: ${escapeHtml(errorMessage)}</span>`;
+                } else {
+                  statusEl.innerHTML = `<span style="color: #dc3545;">❌ Verification error: ${escapeHtml(errorMessage)}</span>`;
+                }
+                
+                log(`❌ Document ${docIndex + 1} verification error: ${errorMessage}`);
               }
             }, 100);
           }
@@ -5134,8 +5168,9 @@ function buildSingleDocRequest(requestType) {
     docType = "eu.europa.ec.av.1";
     namespace = "eu.europa.ec.av.1";
   } else if (requestType.startsWith('photoid_')) {
-    docType = "org.iso.23220.photoid.1";
+    docType = "org.iso.23220.photoID.1";
     namespace = "org.iso.23220.1";
+    console.log('📸 Building Photo ID request - docType:', docType, 'namespace:', namespace);
   } else {
     docType = "org.iso.18013.5.1.mDL";
     namespace = "org.iso.18013.5.1";
@@ -5299,6 +5334,7 @@ function buildSingleDocRequest(requestType) {
         "resident_postal_code": true,
         "resident_country": true
       };
+      console.log('📸 Photo ID fields:', Object.keys(fields).length, 'attributes requested');
       break;
 
     default:
@@ -5314,6 +5350,12 @@ function buildSingleDocRequest(requestType) {
     },
     requestInfo: {}
   };
+  
+  console.log('📋 ItemsRequest built:', {
+    docType,
+    namespace,
+    fieldCount: Object.keys(fields).length
+  });
   
   // Per ISO 18013-5, itemsRequest must be tag(24, bstr .cbor ItemsRequest)
   const itemsRequestCbor = CBOR.encode(itemsRequest);
