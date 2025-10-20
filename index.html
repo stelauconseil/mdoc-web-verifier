@@ -251,6 +251,21 @@
       <p class="muted">Select one or more digital credential. You can request multiple digital credentials (e.g., mDL + PID) in a single session.</p>
       
       <div style="margin-bottom: 15px;">
+        <strong>EU PID (Personal Identity Document)</strong>
+      </div>
+      <div class="radio-group request-type">
+        <label class="radio-chip small">
+          <input type="checkbox" name="requestType" value="pid_basic"> EU PID Basic
+        </label>
+        <label class="radio-chip small">
+          <input type="checkbox" name="requestType" value="pid_age"> EU PID Age Check
+        </label>
+        <label class="radio-chip small">
+          <input type="checkbox" name="requestType" value="pid_full" checked> EU PID Full
+        </label>
+      </div>
+      
+      <div style="margin: 15px 0 15px 0;">
         <strong>mDL (Mobile Driver's License)</strong>
       </div>
       <div class="radio-group request-type">
@@ -264,22 +279,7 @@
           <input type="checkbox" name="requestType" value="driving"> mDL Driving
         </label>
         <label class="radio-chip small">
-          <input type="checkbox" name="requestType" value="full" checked> mDL Full
-        </label>
-      </div>
-      
-      <div style="margin: 15px 0 15px 0;">
-        <strong>EU PID (Personal Identity Document)</strong>
-      </div>
-      <div class="radio-group request-type">
-        <label class="radio-chip small">
-          <input type="checkbox" name="requestType" value="pid_basic"> EU PID Basic
-        </label>
-        <label class="radio-chip small">
-          <input type="checkbox" name="requestType" value="pid_age"> EU PID Age Check
-        </label>
-        <label class="radio-chip small">
-          <input type="checkbox" name="requestType" value="pid_full"> EU PID Full
+          <input type="checkbox" name="requestType" value="full"> mDL Full
         </label>
       </div>
       
@@ -391,6 +391,9 @@
 <script src="https://cdn.jsdelivr.net/npm/cbor-web@9.0.2/dist/cbor.min.js"></script>
 
 <script type="module">
+// ==== App Version (must match CACHE_VERSION in sw.js) ====
+const APP_VERSION = 10; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
+
 // ==== CBOR bootstrap (works even if global isn't set) ====
 let CBORRef = self.CBOR || self.cbor;
 if (!CBORRef) {
@@ -918,6 +921,72 @@ function extractCertInfo(certDer) {
       return null;
     }
     
+    // Parse complete Distinguished Name (DN) structure
+    function parseDN(bytes, start, end) {
+      // Common X.509 attribute OIDs
+      const oidMap = {
+        '06 03 55 04 03': 'CN',    // Common Name
+        '06 03 55 04 05': 'SN',    // Serial Number
+        '06 03 55 04 06': 'C',     // Country
+        '06 03 55 04 07': 'L',     // Locality
+        '06 03 55 04 08': 'ST',    // State/Province
+        '06 03 55 04 0A': 'O',     // Organization
+        '06 03 55 04 0B': 'OU',    // Organizational Unit
+        '06 09 2A 86 48 86 F7 0D 01 09 01': 'E', // Email
+      };
+      
+      const components = [];
+      let offset = start;
+      
+      // DN is a SEQUENCE of SETs, each SET contains a SEQUENCE with OID and value
+      while (offset < end) {
+        // Expect SET tag (0x31)
+        if (bytes[offset] !== 0x31) {
+          offset++;
+          continue;
+        }
+        offset++; // skip SET tag
+        
+        const setLenInfo = parseDerLength(bytes, offset);
+        offset += setLenInfo.bytesUsed;
+        const setEnd = offset + setLenInfo.length;
+        
+        // Inside SET, expect SEQUENCE (0x30)
+        if (offset < setEnd && bytes[offset] === 0x30) {
+          offset++; // skip SEQUENCE tag
+          const seqLenInfo = parseDerLength(bytes, offset);
+          offset += seqLenInfo.bytesUsed;
+          
+          // Now should have OID followed by value
+          if (bytes[offset] === 0x06) { // OID tag
+            const oidOffset = offset;
+            offset++; // skip OID tag
+            const oidLenInfo = parseDerLength(bytes, offset);
+            offset += oidLenInfo.bytesUsed;
+            const oidBytes = bytes.slice(offset, offset + oidLenInfo.length);
+            offset += oidLenInfo.length;
+            
+            // Convert OID bytes to string key
+            const oidKey = Array.from(oidBytes).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+            const oidKey2 = `06 ${oidLenInfo.length.toString(16).padStart(2, '0').toUpperCase()} ${oidKey}`;
+            
+            // Get attribute name
+            const attrName = oidMap[oidKey2] || `OID(${oidKey})`;
+            
+            // Extract value string
+            const value = extractString(bytes, offset);
+            if (value) {
+              components.push(`${attrName}=${value}`);
+            }
+          }
+        }
+        
+        offset = setEnd;
+      }
+      
+      return components.join(', ');
+    }
+    
     // X.509 Certificate structure:
     // SEQUENCE {
     //   tbsCertificate SEQUENCE {
@@ -972,6 +1041,7 @@ function extractCertInfo(certDer) {
     
     // Now we should be at issuer Name (SEQUENCE)
     let issuerCN = null;
+    let issuerDN = null;
     if (cert[offset] === 0x30) {
       offset++; // skip tag
       const issuerLenInfo = parseDerLength(cert, offset);
@@ -979,6 +1049,7 @@ function extractCertInfo(certDer) {
       const issuerEnd = issuerStart + issuerLenInfo.length;
       
       issuerCN = findCN(cert, issuerStart, issuerEnd);
+      issuerDN = parseDN(cert, issuerStart, issuerEnd);
       
       offset = issuerEnd;
     }
@@ -992,6 +1063,7 @@ function extractCertInfo(certDer) {
     
     // Now we should be at subject Name (SEQUENCE)
     let subjectCN = null;
+    let subjectDN = null;
     if (cert[offset] === 0x30) {
       offset++; // skip tag
       const subjectLenInfo = parseDerLength(cert, offset);
@@ -999,13 +1071,14 @@ function extractCertInfo(certDer) {
       const subjectEnd = subjectStart + subjectLenInfo.length;
       
       subjectCN = findCN(cert, subjectStart, subjectEnd);
+      subjectDN = parseDN(cert, subjectStart, subjectEnd);
     }
     
-    return { subjectCN, issuerCN };
+    return { subjectCN, issuerCN, subjectDN, issuerDN };
     
   } catch (err) {
     console.warn('Error parsing certificate info:', err);
-    return { subjectCN: null, issuerCN: null };
+    return { subjectCN: null, issuerCN: null, subjectDN: null, issuerDN: null };
   }
 }
 
@@ -1644,6 +1717,55 @@ async function verifyCOSESign1SignatureWithChain(coseSign1) {
 // Default test IACA certificate (France Attestations)
 const DEFAULT_IACA_CERTIFICATES = [
   {
+    name: 'Autorité de Certification France Identité IACA',
+    pem:`-----BEGIN CERTIFICATE-----
+MIIDHTCCAsSgAwIBAgISESEhmoph1P1OOjDCLJAgGdBbMAoGCCqGSM49BAMCMIGf
+MQswCQYDVQQGEwJGUjEwMC4GA1UECgwnQWdlbmNlIE5hdGlvbmFsZSBkZXMgVGl0
+cmVzIFPDqWN1cmlzw6lzMRcwFQYDVQQLDA4wMDAyIDEzMDAwMzI2MjE5MDcGA1UE
+AwwwQXV0b3JpdMOpIGRlIENlcnRpZmljYXRpb24gRnJhbmNlIElkZW50aXTDqSBJ
+QUNBMQowCAYDVQQFEwExMB4XDTI1MTAxNzAwMDAwMFoXDTM0MTAxNzAwMDAwMFow
+gZ8xCzAJBgNVBAYTAkZSMTAwLgYDVQQKDCdBZ2VuY2UgTmF0aW9uYWxlIGRlcyBU
+aXRyZXMgU8OpY3VyaXPDqXMxFzAVBgNVBAsMDjAwMDIgMTMwMDAzMjYyMTkwNwYD
+VQQDDDBBdXRvcml0w6kgZGUgQ2VydGlmaWNhdGlvbiBGcmFuY2UgSWRlbnRpdMOp
+IElBQ0ExCjAIBgNVBAUTATEwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQqfRW/
+7OTJS4K0IPMa/c8UicIUq62jTccQtGnHAYk6UnvXyRO3PC4/2pdq5QjhwIKwJVqC
+FOr4fbGboMKLX+L/o4HdMIHaMA4GA1UdDwEB/wQEAwIBBjASBgNVHRMBAf8ECDAG
+AQH/AgEAMCwGA1UdEgQlMCOBIWZyYW5jZS1pZGVudGl0ZUBpbnRlcmlldXIuZ291
+di5mcjBGBgNVHR8EPzA9MDugOaA3hjVodHRwOi8vY3JsLmFudHMuZ291di5mci9h
+Y19mcmFuY2VfaWRlbnRpdGVfaWFjYV8xLmNybDAdBgNVHQ4EFgQUAQ1+Rjq9mU0k
+AyKKyTwFdgjmwA4wHwYDVR0jBBgwFoAUAQ1+Rjq9mU0kAyKKyTwFdgjmwA4wCgYI
+KoZIzj0EAwIDRwAwRAIgSNKCT8z4zaZLfdOd/rHevKYDbvjqylK723wjd4g4s0EC
+IDnoWVWyJHwlO31z3QmK7QapM00sOCJnsTIvEGi1Fz/I
+-----END CERTIFICATE-----`,
+    issuer: 'CN=Autorité de Certification France Identité IACA, C=FR',
+    active: true
+  },
+  {
+    name: 'Autorité de Certification France Attestations IACA',
+    pem:`-----BEGIN CERTIFICATE-----
+MIIDLTCCAtKgAwIBAgISESEFJUbpBJovlg7lg3Eb5YTCMAoGCCqGSM49BAMCMIGi
+MQswCQYDVQQGEwJGUjEwMC4GA1UECgwnQWdlbmNlIE5hdGlvbmFsZSBkZXMgVGl0
+cmVzIFPDqWN1cmlzw6lzMRcwFQYDVQQLDA4wMDAyIDEzMDAwMzI2MjE8MDoGA1UE
+AwwzQXV0b3JpdMOpIGRlIENlcnRpZmljYXRpb24gRnJhbmNlIEF0dGVzdGF0aW9u
+cyBJQUNBMQowCAYDVQQFEwExMB4XDTI1MTAxNzAwMDAwMFoXDTM0MTAxNzAwMDAw
+MFowgaIxCzAJBgNVBAYTAkZSMTAwLgYDVQQKDCdBZ2VuY2UgTmF0aW9uYWxlIGRl
+cyBUaXRyZXMgU8OpY3VyaXPDqXMxFzAVBgNVBAsMDjAwMDIgMTMwMDAzMjYyMTww
+OgYDVQQDDDNBdXRvcml0w6kgZGUgQ2VydGlmaWNhdGlvbiBGcmFuY2UgQXR0ZXN0
+YXRpb25zIElBQ0ExCjAIBgNVBAUTATEwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNC
+AASa4ZI0w4Mn4FW6kYdKPUlYYgVbwFf1A6lBDnurRsoPJxM3+dVupbkGl9O+QnJ3
+6wc8ngoXE3oH1hP11flDmWsIo4HlMIHiMA4GA1UdDwEB/wQEAwIBBjASBgNVHRMB
+Af8ECDAGAQH/AgEAMDAGA1UdEgQpMCeBJWZyYW5jZS1hdHRlc3RhdGlvbnNAaW50
+ZXJpZXVyLmdvdXYuZnIwSgYDVR0fBEMwQTA/oD2gO4Y5aHR0cDovL2NybC5hbnRz
+LmdvdXYuZnIvYWNfZnJhbmNlX2F0dGVzdGF0aW9uc19pYWNhXzEuY3JsMB0GA1Ud
+DgQWBBT/dscZoX+tou0+F2dDsFrTPfsMpzAfBgNVHSMEGDAWgBT/dscZoX+tou0+
+F2dDsFrTPfsMpzAKBggqhkjOPQQDAgNJADBGAiEAmMD8Kpgnctmx12gCBYrj98kn
+oKDSPlO5SucThy1EEqwCIQDsYM80Ere4Yw0fHNJQQHl6D1rAITDV3qFKP62Uq7xt
+sQ==
+-----END CERTIFICATE-----`,
+    issuer: 'CN=Autorité de Certification France Attestations IACA, C=FR',
+    active: true
+  },
+  {
     name: 'France Attestations - Test IACA',
     pem: `-----BEGIN CERTIFICATE-----
 MIIDUzCCAvmgAwIBAgISESHtNjf+2KAQ0ttWtR9EhAAPMAoGCCqGSM49BAMCMIHF
@@ -1672,15 +1794,56 @@ oah58AIhAL+KWRF8FwT4JBblyZdmuoVVXJ36LMmAUcs5YwJpMiQW
 
 // Storage key for localStorage
 const IACA_STORAGE_KEY = 'mdoc_iaca_certificates';
+const IACA_VERSION_KEY = 'mdoc_iaca_version';
+// IACA version now uses APP_VERSION from above (synced with CACHE_VERSION in sw.js)
 
 // Initialize IACA storage with defaults
 function initializeIACAs() {
+  const storedVersion = parseInt(localStorage.getItem(IACA_VERSION_KEY)) || 0;
   let stored = localStorage.getItem(IACA_STORAGE_KEY);
+  
+  // Check if we need to update default certificates
+  // Uses APP_VERSION which is synced with service worker CACHE_VERSION
+  if (storedVersion < APP_VERSION) {
+    console.log(`Updating IACA certificates from version ${storedVersion} to ${APP_VERSION}`);
+    
+    let userAddedCerts = [];
+    
+    // If there's existing storage, preserve user-added certificates
+    if (stored) {
+      try {
+        const existingIacas = JSON.parse(stored);
+        // User-added certificates are those beyond the default count
+        // We identify them by checking if they're not in DEFAULT_IACA_CERTIFICATES
+        userAddedCerts = existingIacas.filter(iaca => {
+          return !DEFAULT_IACA_CERTIFICATES.some(defaultCert => 
+            defaultCert.pem === iaca.pem
+          );
+        });
+        console.log(`Preserving ${userAddedCerts.length} user-added certificate(s)`);
+      } catch (e) {
+        console.error('Failed to parse stored IACAs during update:', e);
+      }
+    }
+    
+    // Merge: defaults first, then user-added certificates
+    const updatedIacas = [...DEFAULT_IACA_CERTIFICATES, ...userAddedCerts];
+    
+    localStorage.setItem(IACA_STORAGE_KEY, JSON.stringify(updatedIacas));
+    localStorage.setItem(IACA_VERSION_KEY, APP_VERSION.toString());
+    
+    console.log(`IACA certificates updated: ${DEFAULT_IACA_CERTIFICATES.length} default(s), ${userAddedCerts.length} user-added`);
+    return updatedIacas;
+  }
+  
+  // No update needed
   if (!stored) {
     // First time - store defaults
     localStorage.setItem(IACA_STORAGE_KEY, JSON.stringify(DEFAULT_IACA_CERTIFICATES));
+    localStorage.setItem(IACA_VERSION_KEY, APP_VERSION.toString());
     return DEFAULT_IACA_CERTIFICATES;
   }
+  
   try {
     const iacas = JSON.parse(stored);
     // Ensure all certificates have an 'active' property (migration support)
@@ -1693,6 +1856,7 @@ function initializeIACAs() {
   } catch (e) {
     console.error('Failed to parse stored IACAs, using defaults:', e);
     localStorage.setItem(IACA_STORAGE_KEY, JSON.stringify(DEFAULT_IACA_CERTIFICATES));
+    localStorage.setItem(IACA_VERSION_KEY, APP_VERSION.toString());
     return DEFAULT_IACA_CERTIFICATES;
   }
 }
@@ -1773,12 +1937,16 @@ function parsePEMCertificate(pem) {
       bytes[i] = binaryString.charCodeAt(i);
     }
     
-    // Use proper X.509 parser to extract subject CN
+    // Use proper X.509 parser to extract subject
     let subject = 'Unknown';
+    let subjectDN = null;
     try {
       const certInfo = extractCertInfo(bytes);
       if (certInfo && certInfo.subjectCN) {
         subject = certInfo.subjectCN;
+      }
+      if (certInfo && certInfo.subjectDN) {
+        subjectDN = certInfo.subjectDN;
       }
     } catch (e) {
       console.warn('Could not extract subject CN, trying fallback method');
@@ -1792,6 +1960,7 @@ function parsePEMCertificate(pem) {
     
     return {
       subject,
+      subjectDN,
       bytes,
       pem
     };
@@ -1832,7 +2001,7 @@ async function pemToCryptoKey(pem) {
 }
 
 // Update the IACA list display
-function updateIACAList() {
+async function updateIACAList() {
   const iacas = getIACAs();
   
   if (iacas.length === 0) {
@@ -1841,7 +2010,10 @@ function updateIACAList() {
   }
   
   let html = '<div style="display: grid; gap: 0.75rem;">';
-  iacas.forEach((iaca, index) => {
+  
+  // Process each IACA certificate with async operations
+  for (let index = 0; index < iacas.length; index++) {
+    const iaca = iacas[index];
     const isDefault = index < DEFAULT_IACA_CERTIFICATES.length;
     const isActive = iaca.active !== false;
     const statusColor = isActive ? '#059669' : '#94a3b8';
@@ -1859,17 +2031,22 @@ function updateIACAList() {
         // Extract validity dates
         const validity = extractCertValidity(certInfo.bytes);
         
-        // Extract more information from the certificate
-        const hexThumbprint = Array.from(certInfo.bytes.slice(0, 20))
+        // Compute SHA-256 fingerprint of the entire certificate
+        const sha256Hash = await crypto.subtle.digest('SHA-256', certInfo.bytes);
+        const hexThumbprint = Array.from(new Uint8Array(sha256Hash))
           .map(b => b.toString(16).padStart(2, '0'))
           .join(':')
           .toUpperCase();
+        
+        // Use full DN if available, otherwise fall back to CN
+        const subjectDisplay = certInfo.subjectDN || iaca.issuer;
         
         certDetails = `
           <div id="iaca-details-${index}" style="display: none; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid rgba(148,163,184,0.25);">
             <div style="font-size: 0.85rem; color: #475569;">
               <div style="margin-bottom: 0.5rem;">
-                <strong>Subject:</strong> <span style="color: #1e293b;">${escapeHtml(iaca.issuer)}</span>
+                <strong>Subject:</strong>
+                <div style="color: #1e293b; font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.8rem; margin-top: 0.25rem; word-break: break-all; line-height: 1.4;">${escapeHtml(subjectDisplay)}</div>
               </div>
               ${validity.notBefore ? `<div style="margin-bottom: 0.5rem;">
                 <strong>Valid From:</strong> <span style="color: #1e293b;">${validity.notBefore.toLocaleString()}</span>
@@ -1878,7 +2055,7 @@ function updateIACAList() {
                 <strong>Valid Until:</strong> <span style="color: #1e293b;">${validity.notAfter.toLocaleString()}</span>
               </div>` : ''}
               <div style="margin-bottom: 0.5rem;">
-                <strong>Fingerprint (first 20 bytes):</strong> 
+                <strong>SHA-256 Fingerprint:</strong> 
                 <div style="font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.75rem; color: #1e293b; margin-top: 0.25rem; word-break: break-all;">${hexThumbprint}</div>
               </div>
               <div style="margin-top: 0.75rem;">
@@ -1921,7 +2098,7 @@ function updateIACAList() {
         ${certDetails}
       </div>
     `;
-  });
+  }
   html += '</div>';
   
   iacaListEl.innerHTML = html;
@@ -2471,10 +2648,17 @@ function displayDeviceResponse(deviceResponse) {
             try {
               const cert = issuerCert;
               if (cert instanceof Uint8Array || ArrayBuffer.isView(cert)) {      
-                // Extract Subject CN and Issuer CN
+                // Extract Subject and Issuer information
                 const certInfo = extractCertInfo(cert);
                 
-                if (certInfo.subjectCN) {
+                if (certInfo.subjectDN) {
+                  html += `
+                    <div class="data-item">
+                      <div class="data-label">Subject</div>
+                      <div class="data-value" style="font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.85rem;">${escapeHtml(certInfo.subjectDN)}</div>
+                    </div>
+                  `;
+                } else if (certInfo.subjectCN) {
                   html += `
                     <div class="data-item">
                       <div class="data-label">Subject CN</div>
@@ -2483,7 +2667,14 @@ function displayDeviceResponse(deviceResponse) {
                   `;
                 }
                 
-                if (certInfo.issuerCN) {
+                if (certInfo.issuerDN) {
+                  html += `
+                    <div class="data-item">
+                      <div class="data-label">Issuer</div>
+                      <div class="data-value" style="font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.85rem;">${escapeHtml(certInfo.issuerDN)}</div>
+                    </div>
+                  `;
+                } else if (certInfo.issuerCN) {
                   html += `
                     <div class="data-item">
                       <div class="data-label">Issuer CN</div>
