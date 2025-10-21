@@ -386,10 +386,10 @@
       </div>
     </section>
 
-
   </main>
   <footer>
     Built by <a href="https://stelau.com">Stelau</a> for ISO 18013-5 experimentation. Web Bluetooth requires HTTPS and a compatible browser.
+    <span id="appVersionFooter" style="display:block;margin-top:0.5rem;color:#64748b;font-size:0.7rem;"></span>
   </footer>
 
 <!-- Load libs BEFORE the module -->
@@ -6314,6 +6314,14 @@ if ('serviceWorker' in navigator) {
 // PWA Install Prompt
 let deferredPrompt;
 const pwaInstallBanner = document.createElement('div');
+
+// Footer: show APP_VERSION
+window.addEventListener('DOMContentLoaded', () => {
+  const footerVersion = document.getElementById('appVersionFooter');
+  if (footerVersion) {
+    footerVersion.innerText = `v ${APP_VERSION}`;
+  }
+});
 
 window.addEventListener('beforeinstallprompt', (e) => {
   // Prevent the mini-infobar from appearing on mobile
