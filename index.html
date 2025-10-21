@@ -3328,36 +3328,11 @@ async function processSessionResponse(assembled) {
     }
   }
 
-  if (walletKeyMap) {
-    console.log('Wallet COSE_Key map:', walletKeyMap);
-  }
-
   let sharedSecretBuffer = null;
-  let usedEphemeralKey = false;
 
-  if (walletKeyMap) {
-    const xField = walletKeyMap.get(-2) || walletKeyMap.get('x');
-    const yField = walletKeyMap.get(-3) || walletKeyMap.get('y');
-
-    if (xField && yField) {
-      console.log('Extracted wallet eDeviceKey coordinates');
-      const x = new Uint8Array(xField);
-      const y = new Uint8Array(yField);
-      console.log('  x:', hex(x));
-      console.log('  y:', hex(y));
-
-      walletEphemeralKey = await importMdocPubKeyXY(x, y);
-      sharedSecretBuffer = await deriveSharedSecretBits(readerKeyPair.privateKey, walletEphemeralKey);
-      usedEphemeralKey = true;
-      log('✅ Derived shared secret using wallet ephemeral key');
-    }
-  }
-
-  if (!sharedSecretBuffer) {
-    log('⚠️ Wallet response did not contain an ephemeral key. Falling back to static DeviceEngagement key.');
-    const mdocPub = await importMdocPubKeyXY(mdocPubKey.x, mdocPubKey.y);
-    sharedSecretBuffer = await deriveSharedSecretBits(readerKeyPair.privateKey, mdocPub);
-  }
+  // log('⚠️ Wallet response did not contain an ephemeral key. Falling back to static DeviceEngagement key.');
+  const mdocPub = await importMdocPubKeyXY(mdocPubKey.x, mdocPubKey.y);
+  sharedSecretBuffer = await deriveSharedSecretBits(readerKeyPair.privateKey, mdocPub);
 
   const sharedSecretBytes = new Uint8Array(sharedSecretBuffer);
   transcriptAAD = await buildTranscriptAAD();
@@ -3365,18 +3340,14 @@ async function processSessionResponse(assembled) {
 
   skReader = keys.readerKey;
   skDevice = keys.deviceKey;
-  sessionKey = skReader; // Maintain compatibility with legacy code paths
+  sessionKey = skReader;
   sessionEstablished = true;
   window.sessionEstablished = true;
 
   console.log('Session keys ready. SKReader:', hex(skReader));
   console.log('Session keys ready. SKDevice:', hex(skDevice));
 
-  if (usedEphemeralKey) {
-    log('🎯 Session established using wallet ephemeral key (ISO 18013-5 compliant)');
-  } else {
-    log('✅ Session ready using static DeviceEngagement key');
-  }
+  log('✅ Session ready using static DeviceEngagement key');
 
   // Now decrypt and display the documents from the 'data' field
   log('🔓 Decrypting wallet response to extract documents...');
