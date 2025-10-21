@@ -372,6 +372,12 @@
         <div style="margin-top: 0.75rem;">
           <label class="muted" for="iacaInput">Paste PEM certificate (-----BEGIN CERTIFICATE-----)</label>
           <textarea id="iacaInput" placeholder="-----BEGIN CERTIFICATE-----&#10;MIIDUzCCAvmgAwIBAgISESHtNjf+2KAQ0ttWtR9EhAAPMAoGCCqGSM49BAMCMIHF&#10;...&#10;-----END CERTIFICATE-----" style="width: 97%; min-height: 80px; padding: 0.75rem 0.9rem; border-radius: 12px; border: 1px solid rgba(148,163,184,0.45); font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.85rem; background: #f8fafc; resize: vertical; margin-top: 0.5rem;"></textarea>
+          <div style="margin-top: 0.75rem;">
+            <label style="display: flex; align-items: center; cursor: pointer; user-select: none;">
+              <input type="checkbox" id="iacaIsTest" style="margin-right: 0.5rem;">
+              <span class="muted">This is a test/development certificate (not for production use)</span>
+            </label>
+          </div>
           <div class="row" style="margin-top: 0.5rem;">
             <button id="btnAddIaca">Add IACA Certificate</button>
             <button id="btnClearIacaInput" class="secondary">Clear</button>
@@ -392,7 +398,7 @@
 
 <script type="module">
 // ==== App Version (must match CACHE_VERSION in sw.js) ====
-const APP_VERSION = 10; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
+const APP_VERSION = 11; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
 
 // ==== CBOR bootstrap (works even if global isn't set) ====
 let CBORRef = self.CBOR || self.cbor;
@@ -1599,15 +1605,16 @@ async function validateCertificateChain(issuerCertBytes) {
           result.valid = true;
           result.matchedIACA = {
             name: iaca.name,
-            issuer: iaca.issuer
+            issuer: iaca.issuer,
+            test: iaca.test || false  // Include test flag
           };
           result.chain = [
             'mDoc Issuer Certificate',
             `↓ signed by`,
-            `IACA Root: ${iaca.name}`
+            `IACA Root: ${iaca.name}${iaca.test ? ' (TEST)' : ''}`
           ];
           
-          console.log(`✅ Issuer certificate validated with IACA: ${iaca.name}`);
+          console.log(`✅ Issuer certificate validated with IACA: ${iaca.name}${iaca.test ? ' (TEST)' : ''}`);
           return result;
         } else {
           console.log(`  ✗ Signature does not match this IACA`);
@@ -1723,8 +1730,28 @@ async function verifyCOSESign1SignatureWithChain(coseSign1) {
 
 // ===== IACA CERTIFICATE MANAGEMENT =====
 
-// Default test IACA certificate (France Attestations)
 const DEFAULT_IACA_CERTIFICATES = [
+      {
+    name: 'OWF Multipaz Getting Started Sample IACA',
+    pem:`-----BEGIN CERTIFICATE-----
+MIICrTCCAjOgAwIBAgIQ9BmVry0hKDk+MG8+h6pjfDAKBggqhkjOPQQDAzBAMQswCQYDVQQGDAJV
+UzExMC8GA1UEAwwoT1dGIE11bHRpcGF6IEdldHRpbmcgU3RhcnRlZCBTYW1wbGUgSUFDQTAeFw0y
+NTA5MTkxMzIyMDJaFw0zMDA5MTkxMzIyMDJaMEAxCzAJBgNVBAYMAlVTMTEwLwYDVQQDDChPV0Yg
+TXVsdGlwYXogR2V0dGluZyBTdGFydGVkIFNhbXBsZSBJQUNBMHYwEAYHKoZIzj0CAQYFK4EEACID
+YgAE5Xnksv+TQc1wUrACkPZG8FhRu4u7xbb4xhSJjYs4jrclG7JAVoAkCohm5ZoQF3/8uOGtuyaR
+O0F2X/R7DXCkX+w/liIHWauweMGv9q4LXrbyijKrbUK/WuDcdVrAIsk3o4HxMIHuMA4GA1UdDwEB
+/wQEAwIBBjASBgNVHRMBAf8ECDAGAQH/AgEAMD4GA1UdEgQ3MDWGM2h0dHBzOi8vZGV2ZWxvcGVy
+Lm11bHRpcGF6Lm9yZy9kb2NzL2dldHRpbmctc3RhcnRlZDBIBgNVHR8EQTA/MD2gO6A5hjdodHRw
+czovL2RldmVsb3Blci5tdWx0aXBhei5vcmcvZG9jcy9nZXR0aW5nLXN0YXJ0ZWQ/Y3JsMB0GA1Ud
+DgQWBBRDjkOcZIDVcy5aNb7pzE+7de2MsTAfBgNVHSMEGDAWgBRDjkOcZIDVcy5aNb7pzE+7de2M
+sTAKBggqhkjOPQQDAwNoADBlAjEAobY/H1pT0ApbBPnT3YRRaa2qv5BaUw3i58EsVQlV9+s3k47p
+qy+aRhi+aoOzUl9oAjBF6AY/9xNw9xCVJv0VeaYoAnnmyMjrcLQJTYOpG6C+3lfFU74LexWLdIMM
+d1DhUwE=
+-----END CERTIFICATE-----`,
+    issuer: 'CN=OWF Multipaz Getting Started Sample IACA, C=US',
+    test: true,
+    active: true
+  },
   {
     name: 'Autorité de Certification France Identité IACA',
     pem:`-----BEGIN CERTIFICATE-----
@@ -1747,6 +1774,7 @@ KoZIzj0EAwIDRwAwRAIgSNKCT8z4zaZLfdOd/rHevKYDbvjqylK723wjd4g4s0EC
 IDnoWVWyJHwlO31z3QmK7QapM00sOCJnsTIvEGi1Fz/I
 -----END CERTIFICATE-----`,
     issuer: 'CN=Autorité de Certification France Identité IACA, C=FR',
+    test: false,
     active: true
   },
   {
@@ -1772,6 +1800,7 @@ oKDSPlO5SucThy1EEqwCIQDsYM80Ere4Yw0fHNJQQHl6D1rAITDV3qFKP62Uq7xt
 sQ==
 -----END CERTIFICATE-----`,
     issuer: 'CN=Autorité de Certification France Attestations IACA, C=FR',
+    test: false,
     active: true
   },
   {
@@ -1797,6 +1826,7 @@ sDAKBggqhkjOPQQDAgNIADBFAiBrI2HGG1SZNRfEoaIwk3bjAjLBcE9tcKPi1gu0
 oah58AIhAL+KWRF8FwT4JBblyZdmuoVVXJ36LMmAUcs5YwJpMiQW
 -----END CERTIFICATE-----`,
     issuer: 'CN=Autorité de Certification France Attestations, C=FR',
+    test: true,
     active: true
   }
 ];
@@ -1881,7 +1911,7 @@ function getActiveIACAs() {
 }
 
 // Add a new IACA certificate
-function addIACA(pem, name = null) {
+function addIACA(pem, name = null, isTest = false) {
   // Parse certificate to extract info
   const certInfo = parsePEMCertificate(pem);
   if (!certInfo) {
@@ -1900,7 +1930,8 @@ function addIACA(pem, name = null) {
     pem: pem.trim(),
     issuer: certInfo.subject || 'Unknown',
     addedAt: new Date().toISOString(),
-    active: true
+    active: true,
+    test: isTest  // Flag to indicate test/development certificate
   };
   
   iacas.push(newIACA);
@@ -2029,9 +2060,11 @@ async function updateIACAList() {
     const iaca = iacas[index];
     const isDefault = index < DEFAULT_IACA_CERTIFICATES.length;
     const isActive = iaca.active !== false;
+    const isTest = iaca.test === true;
     const statusColor = isActive ? '#059669' : '#94a3b8';
     const statusText = isActive ? '● Active' : '○ Inactive';
     const bgOpacity = isActive ? '1' : '0.6';
+    const testBadge = isTest ? '<div style="font-size: 0.8rem; color: #f59e0b; margin-top: 0.25rem; font-weight: 500;">⚠️ Test/Development Certificate</div>' : '';
     
     // Parse certificate for detailed info
     let certDetails = '';
@@ -2097,6 +2130,7 @@ async function updateIACAList() {
             </div>
             <div style="font-size: 0.85rem; color: #64748b; margin-top: 0.25rem;">${escapeHtml(iaca.issuer)}</div>
             ${isDefault ? '<div style="font-size: 0.8rem; color: #059669; margin-top: 0.25rem;">✓ Default certificate</div>' : ''}
+            ${testBadge}
           </div>
           <div style="display: flex; gap: 0.5rem; align-items: center;">
             ${certDetails ? `<button onclick="toggleIACADetails(${index})" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: #64748b; display: inline-flex; align-items: center; gap: 0.35rem;">
@@ -2758,8 +2792,10 @@ function displayDeviceResponse(deviceResponse) {
                 
                 // Add chain validation status
                 if (chainResult.chainValid && chainResult.chainInfo?.matchedIACA) {
-                  statusHTML += `<span style="color: #28a745;">✅ Chain: Valid (${escapeHtml(chainResult.chainInfo.matchedIACA.name)})</span>`;
-                  log(`✅ Document ${docIndex + 1} issuer certificate validated with: ${chainResult.chainInfo.matchedIACA.name}`);
+                  const matchedIACA = chainResult.chainInfo.matchedIACA;
+                  const testIndicator = matchedIACA.test ? ' <span style="color: #f59e0b; font-weight: 500;">⚠️ test/development IACA</span>' : '';
+                  statusHTML += `<span style="color: #28a745;">✅ Chain: Valid (${escapeHtml(matchedIACA.name)}) ${testIndicator}</span>`;
+                  log(`✅ Document ${docIndex + 1} issuer certificate validated with: ${matchedIACA.name}${matchedIACA.test ? ' (TEST)' : ''}`);
                 } else if (chainResult.chainInfo?.errors.length > 0) {
                   // Check if error is IACA-related
                   const iacaError = chainResult.chainInfo.errors.find(err => 
@@ -3788,6 +3824,8 @@ qrInput.addEventListener('keydown', (event) => {
 // ==== IACA Management Event Listeners ====
 btnAddIaca.addEventListener('click', () => {
   const pem = iacaInput.value.trim();
+  const isTest = document.getElementById('iacaIsTest').checked;
+  
   if (!pem) {
     alert('Please paste a PEM certificate');
     return;
@@ -3799,11 +3837,12 @@ btnAddIaca.addEventListener('click', () => {
   }
   
   try {
-    const added = addIACA(pem);
-    log(`✅ Added IACA: ${added.name}`);
+    const added = addIACA(pem, null, isTest);
+    log(`✅ Added IACA: ${added.name}${isTest ? ' (test)' : ''}`);
     iacaInput.value = '';
+    document.getElementById('iacaIsTest').checked = false;
     updateIACAList();
-    alert(`Certificate added successfully:\n${added.name}`);
+    alert(`Certificate added successfully:\n${added.name}${isTest ? '\n⚠️ Marked as test/development certificate' : ''}`);
   } catch (e) {
     console.error('Failed to add IACA:', e);
     alert(`Failed to add certificate:\n${e.message}`);
@@ -3812,6 +3851,7 @@ btnAddIaca.addEventListener('click', () => {
 
 btnClearIacaInput.addEventListener('click', () => {
   iacaInput.value = '';
+  document.getElementById('iacaIsTest').checked = false;
   iacaInput.focus();
 });
 
