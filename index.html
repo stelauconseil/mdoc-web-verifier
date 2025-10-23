@@ -772,50 +772,98 @@ async function extractPublicKeyFromCert(certDer) {
     // X.509 structure: SEQUENCE { tbsCertificate, signatureAlgorithm, signature }
     // We need to extract the public key from tbsCertificate
     
-    // For now, we'll use a simple approach: look for the EC public key pattern
-    // EC public key is typically 65 bytes: 0x04 || X (32 bytes) || Y (32 bytes)
+    // Support both P-256 (65 bytes) and P-384 (97 bytes) EC public keys
+    // EC public key format: 0x04 || X || Y (uncompressed point)
+    // - P-256: 0x04 + 32 bytes X + 32 bytes Y = 65 bytes
+    // - P-384: 0x04 + 48 bytes X + 48 bytes Y = 97 bytes
     
-    // Better approach: Parse the SEQUENCE structure
     const cert = new Uint8Array(certDer);
     
-    // Find the public key (look for SEQUENCE tag followed by BIT STRING containing the key)
-    // The public key in X.509 is in SubjectPublicKeyInfo
-    // For EC keys, it's typically: BIT STRING with 0x04 prefix + 64 bytes (uncompressed point)
+    // Check for Brainpool curve OIDs (not supported by Web Crypto API)
+    // Brainpool P256r1: 1.3.36.3.3.2.8.1.1.7  -> 0x2B 0x24 0x03 0x03 0x02 0x08 0x01 0x01 0x07
+    // Brainpool P384r1: 1.3.36.3.3.2.8.1.1.11 -> 0x2B 0x24 0x03 0x03 0x02 0x08 0x01 0x01 0x0B
+    // Brainpool P512r1: 1.3.36.3.3.2.8.1.1.13 -> 0x2B 0x24 0x03 0x03 0x02 0x08 0x01 0x01 0x0D
+    const brainpoolP256r1 = [0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x07];
+    const brainpoolP384r1 = [0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x0B];
+    const brainpoolP512r1 = [0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x0D];
+    
+    const hasBrainpool = (oid) => {
+      for (let i = 0; i < cert.length - oid.length; i++) {
+        if (cert.slice(i, i + oid.length).every((byte, idx) => byte === oid[idx])) {
+          return true;
+        }
+      }
+      return false;
+    };
+    
+    if (hasBrainpool(brainpoolP256r1)) {
+      console.error('❌ Certificate uses brainpoolP256r1 curve - NOT supported by Web Crypto API');
+      console.error('   Web Crypto API only supports NIST curves: P-256, P-384, P-521');
+      return null;
+    }
+    if (hasBrainpool(brainpoolP384r1)) {
+      console.error('❌ Certificate uses brainpoolP384r1 curve - NOT supported by Web Crypto API');
+      console.error('   Web Crypto API only supports NIST curves: P-256, P-384, P-521');
+      return null;
+    }
+    if (hasBrainpool(brainpoolP512r1)) {
+      console.error('❌ Certificate uses brainpoolP512r1 curve - NOT supported by Web Crypto API');
+      console.error('   Web Crypto API only supports NIST curves: P-256, P-384, P-521');
+      return null;
+    }
     
     let publicKeyBytes = null;
+    let curve = null;
     
-    // Look for the uncompressed EC point pattern (0x04 followed by 64 bytes)
-    for (let i = 0; i < cert.length - 65; i++) {
+    // Look for P-384 public key first (97 bytes)
+    for (let i = 0; i < cert.length - 97; i++) {
       if (cert[i] === 0x04) {
-        // Check if this looks like an EC public key (uncompressed point)
-        // It should be 65 bytes total: 0x04 + 32 bytes X + 32 bytes Y
-        const candidate = cert.slice(i, i + 65);
+        const candidate = cert.slice(i, i + 97);
         
         // Verify it's preceded by reasonable DER structure
         // Typically: 0x03 (BIT STRING tag), length, 0x00 (no unused bits), 0x04...
-        if (i >= 2 && cert[i - 1] === 0x00 && cert[i - 2] >= 66) {
+        if (i >= 2 && cert[i - 1] === 0x00 && cert[i - 2] >= 98) {
           publicKeyBytes = candidate;
-          console.log('Found EC public key at offset', i);
+          curve = 'P-384';
+          console.log('Found P-384 public key at offset', i);
           break;
         }
       }
     }
     
+    // If no P-384 key found, look for P-256 (65 bytes)
     if (!publicKeyBytes) {
-      throw new Error('Could not find EC public key in certificate');
+      for (let i = 0; i < cert.length - 65; i++) {
+        if (cert[i] === 0x04) {
+          const candidate = cert.slice(i, i + 65);
+          
+          // Verify it's preceded by reasonable DER structure
+          if (i >= 2 && cert[i - 1] === 0x00 && cert[i - 2] >= 66) {
+            publicKeyBytes = candidate;
+            curve = 'P-256';
+            console.log('Found P-256 public key at offset', i);
+            break;
+          }
+        }
+      }
+    }
+    
+    if (!publicKeyBytes) {
+      throw new Error('Could not find EC public key (P-256 or P-384) in certificate');
     }
     
     // Extract X and Y coordinates (skip the 0x04 prefix)
-    const x = publicKeyBytes.slice(1, 33);
-    const y = publicKeyBytes.slice(33, 65);
+    const coordSize = curve === 'P-384' ? 48 : 32;
+    const x = publicKeyBytes.slice(1, 1 + coordSize);
+    const y = publicKeyBytes.slice(1 + coordSize, 1 + 2 * coordSize);
     
-    console.log('Extracted X:', hex(x));
-    console.log('Extracted Y:', hex(y));
+    console.log(`Extracted ${curve} X:`, hex(x));
+    console.log(`Extracted ${curve} Y:`, hex(y));
     
-    // Import as P-256 public key for ECDSA verification
+    // Import as public key for ECDSA verification
     const jwk = {
       kty: 'EC',
-      crv: 'P-256',
+      crv: curve,
       x: base64UrlEncode(x),
       y: base64UrlEncode(y)
     };
@@ -824,16 +872,19 @@ async function extractPublicKeyFromCert(certDer) {
       const publicKey = await crypto.subtle.importKey(
         'jwk',
         jwk,
-        { name: 'ECDSA', namedCurve: 'P-256' },
+        { name: 'ECDSA', namedCurve: curve },
         true,
         ['verify']
       );
       
-      console.log('✅ Public key imported successfully');
+      console.log(`✅ ${curve} public key imported successfully`);
       return publicKey;
     } catch (importErr) {
       if (importErr.name === 'DataError') {
-        console.error('❌ DataError: Invalid key format or unsupported curve. This usually means the IACA certificate is missing, corrupted, or uses an unsupported algorithm.');
+        console.error('❌ DataError: Invalid key format or unsupported curve.');
+        console.error('   Web Crypto API only supports NIST curves (P-256, P-384, P-521).');
+        console.error('   Brainpool curves (brainpoolP256r1, brainpoolP384r1, etc.) are NOT supported.');
+        console.error('   This certificate cannot be verified in the browser using native Web Crypto.');
       } else {
         console.error('❌ Failed to import public key:', importErr.message);
       }
@@ -1245,6 +1296,44 @@ async function verifyCoseSign1(coseSign1, publicKey) {
     console.log('Protected header bytes:', hex(protectedHeaderBytes));
     console.log('Payload bytes (first 32):', hex(payloadBytes.slice(0, 32)));
     
+    // Decode protected header to extract algorithm
+    let alg = -7; // Default to ES256
+    let algName = 'ES256';
+    let hashAlg = 'SHA-256';
+    let expectedSigLength = 64; // P-256
+    let curve = 'P-256';
+    
+    try {
+      const decodedHeader = CBOR.decode(protectedHeaderBytes.buffer);
+      console.log('Decoded protected header:', decodedHeader);
+      
+      // Handle both Map and plain object
+      if (decodedHeader instanceof Map) {
+        alg = decodedHeader.get(1) || -7;
+      } else if (typeof decodedHeader === 'object') {
+        alg = decodedHeader[1] || -7;
+      }
+      
+      // Set parameters based on algorithm
+      if (alg === -35) { // ES384
+        algName = 'ES384';
+        hashAlg = 'SHA-384';
+        expectedSigLength = 96; // P-384 (48-byte r + 48-byte s)
+        curve = 'P-384';
+      } else if (alg === -7) { // ES256
+        algName = 'ES256';
+        hashAlg = 'SHA-256';
+        expectedSigLength = 64; // P-256 (32-byte r + 32-byte s)
+        curve = 'P-256';
+      } else {
+        console.warn('⚠️ Unknown algorithm:', alg, '- defaulting to ES256');
+      }
+      
+      console.log(`Algorithm: ${algName} (${alg}), Hash: ${hashAlg}, Curve: ${curve}`);
+    } catch (e) {
+      console.warn('Could not decode protected header, using default ES256:', e.message);
+    }
+    
     // Reconstruct Sig_structure per RFC 8152 Section 4.4
     // Sig_structure = [
     //   context : "Signature1",
@@ -1310,21 +1399,24 @@ async function verifyCoseSign1(coseSign1, publicKey) {
     console.log('Sig_structure length:', sigStructureBytes.length);
     
     // Convert signature to the format expected by Web Crypto
-    // COSE signature is raw r||s format (64 bytes for P-256)
-    // Web Crypto expects the same format for ECDSA
+    // COSE signature is raw r||s format
+    // - ES256: 64 bytes (32-byte r + 32-byte s) for P-256
+    // - ES384: 96 bytes (48-byte r + 48-byte s) for P-384
+    // Web Crypto expects the same raw format for ECDSA
     const signatureBytes = new Uint8Array(signature);
     console.log('Signature bytes:', hex(signatureBytes));
+    console.log(`Signature length: ${signatureBytes.length} bytes (expected ${expectedSigLength} for ${algName})`);
     
-    if (signatureBytes.length !== 64) {
-      console.warn('⚠️ Expected 64-byte signature for ES256, got', signatureBytes.length);
+    if (signatureBytes.length !== expectedSigLength) {
+      console.warn(`⚠️ Expected ${expectedSigLength}-byte signature for ${algName}, got`, signatureBytes.length);
     }
     
     // Verify the signature
-    // Web Crypto will hash the data with SHA-256 internally for ES256
+    // Web Crypto will hash the data with the appropriate hash algorithm internally
     const isValid = await crypto.subtle.verify(
       {
         name: 'ECDSA',
-        hash: { name: 'SHA-256' }
+        hash: { name: hashAlg }
       },
       publicKey,
       signatureBytes,
@@ -1455,6 +1547,7 @@ function parseX509Certificate(certBytes) {
 
 /**
  * Convert DER-encoded ECDSA signature to raw r||s format
+ * Supports both P-256 (32-byte r/s) and P-384 (48-byte r/s)
  */
 function convertDERSignatureToRaw(derSig) {
   try {
@@ -1485,7 +1578,7 @@ function convertDERSignatureToRaw(derSig) {
     pos += rLength;
     
     // Remove leading zero if present (DER encoding adds it for positive numbers with high bit set)
-    if (r[0] === 0x00 && r.length > 32) {
+    if (r[0] === 0x00 && r.length > 1) {
       r = r.slice(1);
     }
     
@@ -1497,31 +1590,34 @@ function convertDERSignatureToRaw(derSig) {
     let s = derSig.slice(pos, pos + sLength);
     
     // Remove leading zero if present
-    if (s[0] === 0x00 && s.length > 32) {
+    if (s[0] === 0x00 && s.length > 1) {
       s = s.slice(1);
     }
     
-    // Pad to 32 bytes if needed (for P-256)
-    // If component is longer than 32 bytes, take the last 32 bytes
-    const rPadded = new Uint8Array(32);
-    const sPadded = new Uint8Array(32);
+    // Determine curve based on component size
+    // P-256: 32 bytes, P-384: 48 bytes
+    const componentSize = Math.max(r.length, s.length) <= 32 ? 32 : 48;
     
-    if (r.length <= 32) {
-      rPadded.set(r, 32 - r.length);
+    // Pad to correct size (32 bytes for P-256, 48 bytes for P-384)
+    const rPadded = new Uint8Array(componentSize);
+    const sPadded = new Uint8Array(componentSize);
+    
+    if (r.length <= componentSize) {
+      rPadded.set(r, componentSize - r.length);
     } else {
-      rPadded.set(r.slice(r.length - 32), 0);
+      rPadded.set(r.slice(r.length - componentSize), 0);
     }
     
-    if (s.length <= 32) {
-      sPadded.set(s, 32 - s.length);
+    if (s.length <= componentSize) {
+      sPadded.set(s, componentSize - s.length);
     } else {
-      sPadded.set(s.slice(s.length - 32), 0);
+      sPadded.set(s.slice(s.length - componentSize), 0);
     }
     
-    // Concatenate r || s
-    const rawSig = new Uint8Array(64);
+    // Concatenate r || s (64 bytes for P-256, 96 bytes for P-384)
+    const rawSig = new Uint8Array(componentSize * 2);
     rawSig.set(rPadded, 0);
-    rawSig.set(sPadded, 32);
+    rawSig.set(sPadded, componentSize);
     
     return rawSig;
   } catch (e) {
@@ -1571,6 +1667,13 @@ async function validateCertificateChain(issuerCertBytes) {
     console.log('  TBS length:', parsedCert.tbsCertificate.length, 'bytes');
     console.log('  Signature length:', parsedCert.signature.length, 'bytes');
     
+    // Determine hash algorithm based on signature length
+    // P-256 (ES256): 64-byte signature (32+32) → SHA-256
+    // P-384 (ES384): 96-byte signature (48+48) → SHA-384
+    const hashAlgorithm = parsedCert.signature.length === 96 ? 'SHA-384' : 'SHA-256';
+    const algName = parsedCert.signature.length === 96 ? 'ES384' : 'ES256';
+    console.log(`  Detected algorithm: ${algName} with ${hashAlgorithm}`);
+    
     // For each active IACA, attempt to verify the issuer certificate was signed by it
     for (const iaca of activeIACAs) {
       console.log(`Testing IACA: ${iaca.name}`);
@@ -1592,7 +1695,7 @@ async function validateCertificateChain(issuerCertBytes) {
         const isValid = await crypto.subtle.verify(
           {
             name: 'ECDSA',
-            hash: { name: 'SHA-256' }
+            hash: { name: hashAlgorithm }
           },
           iacaPublicKey,
           parsedCert.signature,
@@ -2066,6 +2169,37 @@ async function updateIACAList() {
     const bgOpacity = isActive ? '1' : '0.6';
     const testBadge = isTest ? '<div style="font-size: 0.8rem; color: #f59e0b; margin-top: 0.25rem; font-weight: 500;">⚠️ Test/Development Certificate</div>' : '';
     
+    // Check for Brainpool curves in the certificate
+    let brainpoolWarning = '';
+    try {
+      const certInfo = parsePEMCertificate(iaca.pem);
+      if (certInfo) {
+        const cert = new Uint8Array(certInfo.bytes);
+        const brainpoolP256r1 = [0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x07];
+        const brainpoolP384r1 = [0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x0B];
+        const brainpoolP512r1 = [0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x0D];
+        
+        const hasBrainpool = (oid) => {
+          for (let i = 0; i < cert.length - oid.length; i++) {
+            if (cert.slice(i, i + oid.length).every((byte, idx) => byte === oid[idx])) {
+              return true;
+            }
+          }
+          return false;
+        };
+        
+        if (hasBrainpool(brainpoolP256r1)) {
+          brainpoolWarning = '<div style="font-size: 0.8rem; color: #dc2626; margin-top: 0.25rem; font-weight: 500;">❌ Brainpool P-256 (NOT supported by Web Crypto API)</div>';
+        } else if (hasBrainpool(brainpoolP384r1)) {
+          brainpoolWarning = '<div style="font-size: 0.8rem; color: #dc2626; margin-top: 0.25rem; font-weight: 500;">❌ Brainpool P-384 (NOT supported by Web Crypto API)</div>';
+        } else if (hasBrainpool(brainpoolP512r1)) {
+          brainpoolWarning = '<div style="font-size: 0.8rem; color: #dc2626; margin-top: 0.25rem; font-weight: 500;">❌ Brainpool P-512 (NOT supported by Web Crypto API)</div>';
+        }
+      }
+    } catch (e) {
+      // Ignore errors during Brainpool detection
+    }
+    
     // Parse certificate for detailed info
     let certDetails = '';
     try {
@@ -2131,6 +2265,7 @@ async function updateIACAList() {
             <div style="font-size: 0.85rem; color: #64748b; margin-top: 0.25rem;">${escapeHtml(iaca.issuer)}</div>
             ${isDefault ? '<div style="font-size: 0.8rem; color: #059669; margin-top: 0.25rem;">✓ Default certificate</div>' : ''}
             ${testBadge}
+            ${brainpoolWarning}
           </div>
           <div style="display: flex; gap: 0.5rem; align-items: center;">
             ${certDetails ? `<button onclick="toggleIACADetails(${index})" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: #64748b; display: inline-flex; align-items: center; gap: 0.35rem;">
@@ -2772,6 +2907,13 @@ function displayDeviceResponse(deviceResponse) {
                 
                 statusEl.innerHTML = '<span style="color: #6c757d;">🔄 Extracting public key from certificate...</span>';
                 const publicKey = await extractPublicKeyFromCert(cert);
+                
+                // Check if public key extraction failed
+                if (!publicKey) {
+                  statusEl.innerHTML = '<span style="color: #dc3545;">❌ Chain: IACA certificate missing or invalid</span>';
+                  log(`❌ Document ${docIndex + 1} issuer validation: IACA certificate missing or invalid`);
+                  return;
+                }
                 
                 statusEl.innerHTML = '<span style="color: #6c757d;">🔄 Verifying ECDSA signature...</span>';
                 const isValid = await verifyCoseSign1(capturedCoseSign1, publicKey);
