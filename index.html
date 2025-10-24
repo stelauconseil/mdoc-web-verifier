@@ -412,10 +412,80 @@
       </div>
     </section>
 
+    <!-- Reader Authentication (Optional) -->
+    <section class="card" id="readerAuthSection">
+      <h2>🔐 Reader Authentication (Optional)</h2>
+      <p class="muted">Configure reader authentication to prove your identity to the wallet. This adds a digitally signed certificate to document requests.</p>
+      
+      <div style="margin-top: 1rem; padding: 1rem; background: #fff3cd; border-radius: 8px; border: 1px solid #ffc107;">
+        <strong>⚠️ Security Warning:</strong>
+        <p class="muted" style="margin-top: 0.5rem; margin-bottom: 0;">
+          Reader authentication requires storing your <strong>private key</strong> in browser localStorage. 
+          Only use this feature for testing purposes. In production, private keys should be stored in secure hardware (HSM/TPM).
+        </p>
+      </div>
+
+      <div style="margin-top: 1.5rem;">
+        <label style="display: flex; align-items: center; cursor: pointer; user-select: none;">
+          <input type="checkbox" id="enableReaderAuth" style="margin-right: 0.5rem;">
+          <strong>Enable Reader Authentication</strong>
+        </label>
+      </div>
+
+      <div id="readerAuthConfig" style="margin-top: 1.5rem; display: none;">
+        <div style="margin-bottom: 1rem;">
+          <label class="muted" for="readerOrgName">Organization Name</label>
+          <input type="text" id="readerOrgName" placeholder="e.g., Example Reader Organization" style="width: 97%; padding: 0.75rem 0.9rem; border-radius: 12px; border: 1px solid rgba(148,163,184,0.45); font-size: 0.95rem; margin-top: 0.5rem;">
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+          <label class="muted" for="readerCertificate">Reader Certificate (PEM format)</label>
+          <textarea id="readerCertificate" placeholder="-----BEGIN CERTIFICATE-----&#10;MIICx...&#10;-----END CERTIFICATE-----" style="width: 97%; min-height: 100px; padding: 0.75rem 0.9rem; border-radius: 12px; border: 1px solid rgba(148,163,184,0.45); font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.85rem; background: #f8fafc; resize: vertical; margin-top: 0.5rem;"></textarea>
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+          <label class="muted" for="readerPrivateKey">Reader Private Key (PKCS#8 PEM format)</label>
+          <textarea id="readerPrivateKey" placeholder="-----BEGIN PRIVATE KEY-----&#10;MIGHAgEAMBMGByqGSM49...&#10;-----END PRIVATE KEY-----" style="width: 97%; min-height: 100px; padding: 0.75rem 0.9rem; border-radius: 12px; border: 1px solid rgba(148,163,184,0.45); font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.85rem; background: #f8fafc; resize: vertical; margin-top: 0.5rem;"></textarea>
+        </div>
+
+        <div class="row">
+          <button id="btnSaveReaderCert">💾 Save Reader Certificate</button>
+          <button id="btnClearReaderCert" class="secondary">🗑️ Clear</button>
+        </div>
+
+        <div id="readerAuthStatus" style="margin-top: 1rem; padding: 0.75rem; border-radius: 8px; display: none;">
+          <!-- Status messages will appear here -->
+        </div>
+
+        <div style="margin-top: 1.5rem; padding: 1rem; background: #e7f3ff; border-radius: 8px; border: 1px solid #2196f3;">
+          <strong>ℹ️ Testing Instructions:</strong>
+          <p class="muted" style="margin-top: 0.5rem; margin-bottom: 0.5rem;">
+            Generate a self-signed certificate for testing:
+          </p>
+          <pre style="background: #1e293b; color: #e2e8f0; padding: 0.75rem; border-radius: 6px; overflow-x: auto; font-size: 0.85rem; margin-top: 0.5rem;"><code># Generate P-256 private key
+openssl ecparam -name prime256v1 -genkey -noout -out reader_key.pem
+
+# Convert to PKCS#8 format (required)
+openssl pkcs8 -topk8 -nocrypt -in reader_key.pem -out reader_key_pkcs8.pem
+
+# Generate self-signed certificate
+openssl req -new -x509 -key reader_key.pem -out reader_cert.pem -days 365 \
+  -subj "/CN=Test Reader/O=Example Org/C=US"</code></pre>
+          <p class="muted" style="margin-top: 0.5rem; margin-bottom: 0;">
+            Then paste the contents of <code>reader_cert.pem</code> and <code>reader_key_pkcs8.pem</code> into the fields above.
+          </p>
+        </div>
+
+      </div>
+    </section>
+
+
   </main>
   <footer>
     Built by <a href="https://stelau.com">Stelau</a> for ISO 18013-5 experimentation. Web Bluetooth requires HTTPS and a compatible browser.
     <span id="appVersionFooter" style="display:block;margin-top:0.5rem;color:#64748b;font-size:0.7rem;"></span>
+    <br>
+    <span style="font-size:0.9em;color:#888;">&copy; 2025 Stelau. All rights reserved.</span>
   </footer>
 
 <!-- Load libs BEFORE the module -->
@@ -824,8 +894,8 @@ async function aesGcmDecrypt(ciphertextWithTag, keyBytes, iv, aad) {
 
 // Extract public key from X.509 certificate (DER format)
 // Supports NIST curves (P-256, P-384) via Web Crypto API
-// Supports Brainpool curves (P-256r1, P-384r1, P-512r1) via @noble/curves
-async function extractPublicKeyFromCert(certDer) {
+// Supports Brainpool curves (P-256r1, P-320r1, P-384r1, P-512r1) via @noble/curves
+async function extractPublicKeyFromCert(certDer, quiet = false) {
   try {
     console.log('Extracting public key from certificate, size:', certDer.length);
     
@@ -836,7 +906,8 @@ async function extractPublicKeyFromCert(certDer) {
     // NIST P-384: 1.3.132.0.34 -> 0x2B 0x81 0x04 0x00 0x22
     // NIST P-521: 1.3.132.0.35 -> 0x2B 0x81 0x04 0x00 0x23
     // Brainpool P256r1: 1.3.36.3.3.2.8.1.1.7  -> 0x2B 0x24 0x03 0x03 0x02 0x08 0x01 0x01 0x07
-    // Brainpool P384r1: 1.3.36.3.3.2.8.1.1.11 -> 0x2B 0x24 0x03 0x03 0x02 0x08 0x01 0x01 0x0B
+  // Brainpool P320r1: 1.3.36.3.3.2.8.1.1.9  -> 0x2B 0x24 0x03 0x03 0x02 0x08 0x01 0x01 0x09
+  // Brainpool P384r1: 1.3.36.3.3.2.8.1.1.11 -> 0x2B 0x24 0x03 0x03 0x02 0x08 0x01 0x01 0x0B
     // Brainpool P512r1: 1.3.36.3.3.2.8.1.1.13 -> 0x2B 0x24 0x03 0x03 0x02 0x08 0x01 0x01 0x0D
     
     const curveOIDs = {
@@ -844,7 +915,8 @@ async function extractPublicKeyFromCert(certDer) {
       'P-384': [0x2B, 0x81, 0x04, 0x00, 0x22],
       'P-521': [0x2B, 0x81, 0x04, 0x00, 0x23],
       'brainpoolP256r1': [0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x07],
-      'brainpoolP384r1': [0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x0B],
+  'brainpoolP320r1': [0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x09],
+  'brainpoolP384r1': [0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x0B],
       'brainpoolP512r1': [0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x0D]
     };
     
@@ -877,6 +949,7 @@ async function extractPublicKeyFromCert(certDer) {
       'P-384': 97,
       'P-521': 133,
       'brainpoolP256r1': 65,
+      'brainpoolP320r1': 81,
       'brainpoolP384r1': 97,
       'brainpoolP512r1': 129
     };
@@ -886,6 +959,7 @@ async function extractPublicKeyFromCert(certDer) {
       'P-384': 48,
       'P-521': 66,
       'brainpoolP256r1': 32,
+      'brainpoolP320r1': 40,
       'brainpoolP384r1': 48,
       'brainpoolP512r1': 64
     };
@@ -922,7 +996,7 @@ async function extractPublicKeyFromCert(certDer) {
     
     // Use @noble/curves for all curves (both NIST and Brainpool)
     if (!window.nobleCurves) {
-      console.error('❌ @noble/curves library not loaded');
+      if (!quiet) console.error('❌ @noble/curves library not loaded');
       return null;
     }
     
@@ -932,14 +1006,15 @@ async function extractPublicKeyFromCert(certDer) {
       'P-384': 'p384',
       'P-521': 'p521',
       'brainpoolP256r1': 'brainpoolP256r1',
-      'brainpoolP384r1': 'brainpoolP384r1',
+  'brainpoolP320r1': 'brainpoolP320r1',
+  'brainpoolP384r1': 'brainpoolP384r1',
       'brainpoolP512r1': 'brainpoolP512r1'
     };
     
     const nobleCurveName = curveMap[detectedCurve];
     if (!nobleCurveName || !window.nobleCurves[nobleCurveName]) {
-      console.error(`❌ Curve ${detectedCurve} (${nobleCurveName}) not available in @noble/curves`);
-      console.log('Available curves:', Object.keys(window.nobleCurves));
+      if (!quiet) console.error(`❌ Curve ${detectedCurve} (${nobleCurveName}) not available in @noble/curves`);
+      if (!quiet) console.log('Available curves:', Object.keys(window.nobleCurves));
       return null;
     }
     
@@ -955,7 +1030,40 @@ async function extractPublicKeyFromCert(certDer) {
     };
     
   } catch (err) {
-    console.error('Error extracting public key:', err.message);
+    if (!quiet) console.error('Error extracting public key:', err.message);
+    return null;
+  }
+}
+
+// Lightweight helper for UI: detect EC curve from certificate OID without requiring a crypto implementation
+// Returns one of: 'P-256','P-384','P-521','brainpoolP256r1','brainpoolP320r1','brainpoolP384r1','brainpoolP512r1', or null if not found
+function detectCurveFromCertOID(certDer) {
+  try {
+    const cert = certDer instanceof Uint8Array ? certDer : new Uint8Array(certDer);
+    const curveOIDs = {
+      'P-256': [0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07],
+      'P-384': [0x2B, 0x81, 0x04, 0x00, 0x22],
+      'P-521': [0x2B, 0x81, 0x04, 0x00, 0x23],
+      'brainpoolP256r1': [0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x07],
+      'brainpoolP320r1': [0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x09],
+      'brainpoolP384r1': [0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x0B],
+      'brainpoolP512r1': [0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x0D]
+    };
+    const findOID = (oid) => {
+      for (let i = 0; i <= cert.length - oid.length; i++) {
+        let ok = true;
+        for (let j = 0; j < oid.length; j++) {
+          if (cert[i + j] !== oid[j]) { ok = false; break; }
+        }
+        if (ok) return i;
+      }
+      return -1;
+    };
+    for (const [curveName, oid] of Object.entries(curveOIDs)) {
+      if (findOID(oid) !== -1) return curveName;
+    }
+    return null;
+  } catch {
     return null;
   }
 }
@@ -1359,12 +1467,44 @@ async function verifyCoseSign1(coseSign1, publicKey) {
     console.log('Protected header bytes:', hex(protectedHeaderBytes));
     console.log('Payload bytes (first 32):', hex(payloadBytes.slice(0, 32)));
     
-    // Decode protected header to extract algorithm
+    // Decode protected header to extract algorithm (may be overridden by key curve mapping per ISO 18013-5)
     let alg = -7; // Default to ES256
     let algName = 'ES256';
     let hashAlg = 'SHA-256';
-    let expectedSigLength = 64; // P-256
+    let expectedSigLength = 64; // r||s length in bytes
     let curve = 'P-256';
+
+    // ISO 18013-5 mapping helper: curve → (algName, hash, expectedSigLen)
+    function specAlgFromCurve(nobleCurveName) {
+      const name = (nobleCurveName || '').toLowerCase();
+      // Defaults
+      let out = { algName: 'ES256', hash: 'SHA-256', sigLen: 64, curveLabel: nobleCurveName };
+      if (!name) return out;
+      // ES256 curves
+      if (name.includes('p256') || name.includes('brainpoolp256')) {
+        return { algName: 'ES256', hash: 'SHA-256', sigLen: 64, curveLabel: name.includes('brainpool') ? 'brainpoolP256r1' : 'P-256' };
+      }
+      // ES384 curves
+      if (name.includes('p384') || name.includes('brainpoolp384') || name.includes('brainpoolp320')) {
+        // 384-bit → 96 bytes; 320-bit → 80 bytes
+        const sigLen = name.includes('320') ? 80 : 96;
+        const curveLabel = name.includes('brainpoolp320') ? 'brainpoolP320r1' : (name.includes('brainpool') ? 'brainpoolP384r1' : 'P-384');
+        return { algName: 'ES384', hash: 'SHA-384', sigLen, curveLabel };
+      }
+      // ES512 curves
+      if (name.includes('p521') || name.includes('brainpoolp512')) {
+        // P-521 → 66+66=132; brainpoolP512r1 → 64+64=128
+        const sigLen = name.includes('p521') ? 132 : 128;
+        const curveLabel = name.includes('p521') ? 'P-521' : 'brainpoolP512r1';
+        return { algName: 'ES512', hash: 'SHA-512', sigLen, curveLabel };
+      }
+      // EdDSA (if ever present)
+      if (name.includes('ed25519') || name.includes('ed448')) {
+        // Note: Current verifier path is ECDSA-only; EdDSA not supported here
+        return { algName: 'EdDSA', hash: 'NONE', sigLen: 64, curveLabel: name.includes('ed448') ? 'Ed448' : 'Ed25519' };
+      }
+      return out;
+    }
     
     try {
   const decodedHeader = CBOR.decode(protectedHeaderBytes);
@@ -1377,22 +1517,33 @@ async function verifyCoseSign1(coseSign1, publicKey) {
         alg = decodedHeader[1] || -7;
       }
       
-      // Set parameters based on algorithm
+      // Set parameters based on protected header alg (initial)
       if (alg === -35) { // ES384
         algName = 'ES384';
         hashAlg = 'SHA-384';
-        expectedSigLength = 96; // P-384 (48-byte r + 48-byte s)
+        expectedSigLength = 96;
         curve = 'P-384';
       } else if (alg === -7) { // ES256
         algName = 'ES256';
         hashAlg = 'SHA-256';
-        expectedSigLength = 64; // P-256 (32-byte r + 32-byte s)
+        expectedSigLength = 64;
         curve = 'P-256';
       } else {
-        console.warn('⚠️ Unknown algorithm:', alg, '- defaulting to ES256');
+        console.warn('⚠️ Unknown algorithm label in protected header:', alg, '- defaulting to ES256');
       }
-      
-      console.log(`Algorithm: ${algName} (${alg}), Hash: ${hashAlg}, Curve: ${curve}`);
+
+      // Override by spec mapping from actual key curve, if it differs
+      const pkCurve = publicKey?.nobleCurveName || '';
+      const mapped = specAlgFromCurve(pkCurve);
+      if (mapped.algName !== algName || mapped.sigLen !== expectedSigLength) {
+        console.warn(`⚠️ Protected alg suggests ${algName}, but key curve '${pkCurve}' maps to ${mapped.algName}. Adjusting.`);
+        algName = mapped.algName;
+        hashAlg = mapped.hash;
+        expectedSigLength = mapped.sigLen;
+        curve = mapped.curveLabel;
+      }
+
+      console.log(`Algorithm (effective): ${algName} (label ${alg}), Hash: ${hashAlg}, Curve: ${curve}, Expected Sig Len: ${expectedSigLength}`);
     } catch (e) {
       console.warn('Could not decode protected header, using default ES256:', e.message);
     }
@@ -2834,6 +2985,360 @@ function parsePEMCertificate(pem) {
   }
 }
 
+// ===== READER AUTHENTICATION MANAGEMENT =====
+
+const READER_CERT_KEY = 'mdoc_reader_certificate';
+
+/**
+ * Get stored reader certificate configuration
+ * @returns {Object|null} Reader certificate data or null
+ */
+function getReaderCert() {
+  try {
+    const stored = localStorage.getItem(READER_CERT_KEY);
+    return stored ? JSON.parse(stored) : null;
+  } catch (e) {
+    console.error('Failed to load reader certificate:', e);
+    return null;
+  }
+}
+
+/**
+ * Save reader certificate configuration
+ * @param {Object} certData - Certificate data with name, certificate, privateKey, enabled
+ * @returns {boolean} Success status
+ */
+function setReaderCert(certData) {
+  try {
+    localStorage.setItem(READER_CERT_KEY, JSON.stringify(certData));
+    console.log('✅ Reader certificate saved');
+    return true;
+  } catch (e) {
+    console.error('Failed to save reader certificate:', e);
+    return false;
+  }
+}
+
+/**
+ * Clear reader certificate configuration
+ */
+function clearReaderCert() {
+  try {
+    localStorage.removeItem(READER_CERT_KEY);
+    console.log('🗑️ Reader certificate cleared');
+    return true;
+  } catch (e) {
+    console.error('Failed to clear reader certificate:', e);
+    return false;
+  }
+}
+
+/**
+ * Generate readerAuth (COSE_Sign1) for reader authentication
+ * Per ISO 18013-5 Section 8.3.2.1.2.2
+ * 
+ * CRITICAL: The payload in COSE_Sign1 must be NULL (detached signature)
+ * The actual signed data is ReaderAuthenticationBytes (detached content)
+ * 
+ * ReaderAuthenticationBytes = #6.24(bstr .cbor ReaderAuthentication)
+ * ReaderAuthentication = [
+ *   "ReaderAuthentication",
+ *   SessionTranscript,
+ *   ItemsRequestBytes
+ * ]
+ * 
+ * @param {Uint8Array} itemsRequestBytes - The encoded ItemsRequest
+ * @param {Object} readerCert - Reader certificate and private key
+ * @returns {Array} COSE_Sign1 structure [protected, unprotected, null, signature]
+ */
+async function generateReaderAuth(itemsRequestBytes, readerCert) {
+  try {
+    console.log('=== GENERATING READER AUTHENTICATION (ISO 18013-5 Section 8.3.2.1.2.2) ===');
+    
+  // Step 1: Determine algorithm/curve from reader certificate
+  console.log('Step 1: Determining reader algorithm from certificate...');
+    
+    // Parse certificate bytes
+    const certPem = readerCert.certificate;
+    const certB64 = certPem
+      .replace(/-----BEGIN CERTIFICATE-----/, '')
+      .replace(/-----END CERTIFICATE-----/, '')
+      .replace(/\s+/g, '');
+    const certBinary = atob(certB64);
+    const certBytes = new Uint8Array(certBinary.length);
+    for (let i = 0; i < certBinary.length; i++) certBytes[i] = certBinary.charCodeAt(i);
+
+    // Detect curve from certificate public key
+    let coseAlg = -7; // ES256 default
+    let webCryptoCurve = 'P-256';
+    let webCryptoHash = 'SHA-256';
+    try {
+      const certPub = await extractPublicKeyFromCert(certBytes);
+      const curveName = certPub?.nobleCurveName || '';
+      if (curveName.includes('p384') || /brainpoolp384/i.test(curveName)) {
+        coseAlg = -35; // ES384
+        webCryptoCurve = 'P-384';
+        webCryptoHash = 'SHA-384';
+      } else if (curveName.includes('p256') || /brainpoolp256/i.test(curveName)) {
+        coseAlg = -7; // ES256
+        webCryptoCurve = 'P-256';
+        webCryptoHash = 'SHA-256';
+      } else if (curveName.includes('p521')) {
+        // ES512 with P-521 is supported by WebCrypto
+        coseAlg = -36; // ES512
+        webCryptoCurve = 'P-521';
+        webCryptoHash = 'SHA-512';
+      } else if (/brainpool/i.test(curveName)) {
+        // WebCrypto does not support brainpool ECDSA keys for sign().
+        // To avoid wallet crashes, skip readerAuth with a clear message.
+        throw new Error('Reader certificate uses brainpool curve; signing not supported by WebCrypto');
+      }
+      console.log('Detected reader cert curve:', curveName, '→ alg', coseAlg, webCryptoCurve, webCryptoHash);
+    } catch (e) {
+      console.warn('Could not determine curve from certificate, defaulting to ES256:', e.message);
+    }
+
+    // Step 2: Import reader's private key with the selected curve
+    console.log('Step 2: Importing reader private key as', webCryptoCurve, '...');
+
+    // Parse PEM private key (PKCS#8 format)
+    const privateKeyPem = readerCert.privateKey;
+    const b64 = privateKeyPem
+      .replace(/-----BEGIN PRIVATE KEY-----/, '')
+      .replace(/-----END PRIVATE KEY-----/, '')
+      .replace(/\s+/g, '');
+    
+    const binaryString = atob(b64);
+    const keyBytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      keyBytes[i] = binaryString.charCodeAt(i);
+    }
+    
+    const privateKey = await crypto.subtle.importKey(
+      'pkcs8',
+      keyBytes,
+      { name: 'ECDSA', namedCurve: webCryptoCurve },
+      false,
+      ['sign']
+    );
+    
+    console.log('✅ Private key imported successfully');
+    
+    // Certificate already parsed above
+    console.log('Reader certificate bytes:', certBytes);
+    console.log('✅ Reader certificate parsed, size:', certBytes.length, 'bytes');
+    
+    // Step 3: Build ReaderAuthentication structure (the detached content)
+    console.log('Step 3: Building ReaderAuthentication structure...');
+    
+    // Get current SessionTranscript (must match the session establishment)
+    if (!transcriptAAD) {
+      console.error('❌ SessionTranscript (transcriptAAD) is not available');
+      console.error('   This usually means session has not been established yet');
+      console.error('   Reader authentication should only be used AFTER SessionEstablishment');
+      throw new Error('SessionTranscript not available. This should not happen - reader auth should be skipped during SessionEstablishment.');
+    }
+    
+    // ReaderAuthentication = ["ReaderAuthentication", SessionTranscript, ItemsRequestBytes]
+    // CRITICAL: Use the actual SessionTranscript object, not the hash
+    const sessionTranscriptObj = buildSessionTranscriptObject();
+
+    // Ensure ItemsRequestBytes is encoded as a plain CBOR bstr (avoid tag 64)
+    const itemsReqBstr = itemsRequestBytes.buffer.slice(
+      itemsRequestBytes.byteOffset || 0,
+      (itemsRequestBytes.byteOffset || 0) + itemsRequestBytes.byteLength
+    );
+
+    const readerAuthentication = [
+      "ReaderAuthentication",
+      sessionTranscriptObj,               // SessionTranscript structure (array)
+      itemsReqBstr                        // ItemsRequestBytes as bstr
+    ];
+    
+    console.log('ReaderAuthentication structure:');
+    console.log('  - Type: "ReaderAuthentication"');
+    console.log('  - SessionTranscript length:', transcriptAAD.length, 'bytes');
+    console.log('  - ItemsRequestBytes length:', itemsRequestBytes.length, 'bytes');
+    
+    // Encode ReaderAuthentication
+  const readerAuthenticationCbor = CBOR.encode(readerAuthentication);
+    console.log('ReaderAuthentication CBOR length:', readerAuthenticationCbor.length, 'bytes');
+    
+    // Tag with 24 to create ReaderAuthenticationBytes
+    const readerAuthenticationBytes = CBOR.encode(new CBOR.Tagged(24, readerAuthenticationCbor));
+    console.log('ReaderAuthenticationBytes (tagged) length:', readerAuthenticationBytes.length, 'bytes');
+    console.log('ReaderAuthenticationBytes hex (first 64 bytes):', hex(readerAuthenticationBytes.slice(0, 64)));
+    
+    // Step 4: Build COSE_Sign1 structure with NULL payload (detached signature)
+    console.log('Step 4: Building COSE_Sign1 with NULL payload (detached signature)...');
+    
+  // Protected header: { alg: ES256/ES384 }
+    // IMPORTANT: Use Map with numeric key to ensure CBOR encodes label 1 as integer, not text "1"
+    const protectedHeader = new Map();
+  protectedHeader.set(1, coseAlg);
+    const protectedBytes = CBOR.encode(protectedHeader);
+    
+    // Unprotected header: { x5chain: [reader_cert] }
+    // COSE header parameter 33 = x5chain
+    const unprotectedHeader = new Map();
+    // Use ArrayBuffer to avoid CBOR typed array tag(64); encode as plain bstr
+    const certBstr = certBytes.buffer.slice(
+      certBytes.byteOffset,
+      certBytes.byteOffset + certBytes.byteLength
+    );
+    unprotectedHeader.set(33, [certBstr]);  // Array of untagged bstr (DER)
+
+    // Payload: NULL (detached signature per spec)
+    const payload = null;
+    
+    console.log('COSE_Sign1 structure:');
+  console.log('  - Protected header: { alg:', coseAlg, '}');
+    console.log('  - Unprotected header: { x5chain: [certificate] }');
+    console.log('  - Payload: null (DETACHED)');
+    console.log('  - Certificate in x5chain:', certBytes.length, 'bytes');
+    
+    // Step 5: Create Sig_structure for signing (manual CBOR build to avoid tag(64))
+    // Per RFC 8152 Section 4.4: Sig_structure = ["Signature1", protected, external_aad, payload]
+    // For detached signatures, payload in Sig_structure is the detached content
+    console.log('Step 5: Creating Sig_structure with detached content (manual CBOR encoding)...');
+
+    function encBstr(bytes) {
+      const len = bytes.length;
+      if (len <= 23) return new Uint8Array([0x40 + len, ...bytes]);
+      if (len <= 0xFF) return new Uint8Array([0x58, len, ...bytes]);
+      if (len <= 0xFFFF) return new Uint8Array([0x59, (len >> 8) & 0xFF, len & 0xFF, ...bytes]);
+      return new Uint8Array([0x5A, (len>>>24)&0xFF, (len>>>16)&0xFF, (len>>>8)&0xFF, len&0xFF, ...bytes]);
+    }
+
+    const parts = [];
+    // array(4)
+    parts.push(new Uint8Array([0x84]));
+    // text "Signature1"
+    const ctx = new TextEncoder().encode('Signature1');
+    parts.push(new Uint8Array([0x60 + ctx.length, ...ctx])); // length fits (10)
+    // protected header bstr (already CBOR)
+    parts.push(encBstr(protectedBytes));
+    // external_aad: empty bstr (0x40) with NO tag
+    parts.push(new Uint8Array([0x40]));
+    // payload: ReaderAuthenticationBytes as bstr
+    parts.push(encBstr(readerAuthenticationBytes));
+
+    let total = 0;
+    for (const p of parts) total += p.length;
+    const sigStructureBytes = new Uint8Array(total);
+    {
+      let off = 0;
+      for (const p of parts) { sigStructureBytes.set(p, off); off += p.length; }
+    }
+    console.log('Sig_structure length:', sigStructureBytes.length, 'bytes');
+    console.log('Sig_structure hex (first 64 bytes):', hex(sigStructureBytes.slice(0, 64)));
+  console.log('Sig_structure hex (full, may be large):', hex(sigStructureBytes));
+  console.log('Sig_structure base64:', btoa(String.fromCharCode(...sigStructureBytes)));
+    
+    // Step 6: Sign with reader's private key (ECDSA with SHA-256)
+    console.log('Step 6: Signing with reader private key (ECDSA,', webCryptoHash, ')...');
+    const signatureBuffer = await crypto.subtle.sign(
+      { name: 'ECDSA', hash: webCryptoHash },
+      privateKey,
+      sigStructureBytes
+    );
+    
+    const signature = new Uint8Array(signatureBuffer);
+    console.log('Signature length:', signature.length, 'bytes');
+    console.log('Signature hex:', hex(signature));
+    
+    // Web Crypto API returns ECDSA signatures in IEEE P1363 format (raw r||s)
+    // This is already the format required by COSE, no conversion needed!
+    // For P-256: signature is 64 bytes (32 bytes r + 32 bytes s)
+    let rawSignature;
+    if (signature.length === 64) {
+      // Already in raw format (r||s) - this is the normal case for Web Crypto
+      console.log('✅ Signature already in raw r||s format (Web Crypto default)');
+      rawSignature = signature;
+    } else if (signature[0] === 0x30) {
+      // DER format detected (unlikely with Web Crypto, but handle it)
+      console.log('⚠️ DER signature detected, converting to raw format...');
+      rawSignature = convertDERSignatureToRaw(signature);
+    } else {
+      console.warn('⚠️ Unexpected signature format, using as-is');
+      rawSignature = signature;
+    }
+    
+    console.log('Raw signature (r||s) length:', rawSignature.length, 'bytes (should be 64 for P-256)');
+    console.log('Raw signature hex:', hex(rawSignature));
+    
+    // Step 7: Build final COSE_Sign1 = [protected, unprotected, payload=null, signature]
+      // Signature must be a CBOR bstr, so pass rawSignature directly and let CBOR.encode handle it
+      // Convert protected header and signature to ArrayBuffer to avoid typed array tag(64)
+      const protectedBstr = protectedBytes.buffer.slice(
+        protectedBytes.byteOffset || 0,
+        (protectedBytes.byteOffset || 0) + protectedBytes.byteLength
+      );
+      const signatureBstr = rawSignature.buffer.slice(
+        rawSignature.byteOffset || 0,
+        (rawSignature.byteOffset || 0) + rawSignature.byteLength
+      );
+
+      const coseSign1 = [
+        protectedBstr,     // bstr (no typed array tag)
+        unprotectedHeader, // map
+        payload,           // null
+        signatureBstr      // bstr (no typed array tag)
+      ];
+
+      // DIAGNOSTIC: Encode and verify protected headers contain alg
+      try {
+        const encSign1 = CBOR.encode(coseSign1);
+        const decSign1 = CBOR.decode(encSign1);
+        const prot = decSign1[0] || decSign1.get?.(0);
+        const protBytes = prot instanceof Uint8Array ? prot : new Uint8Array(prot);
+        console.log('🔎 COSE_Sign1 protected bstr length:', protBytes.length);
+        console.log('🔎 COSE_Sign1 protected bstr hex:', hex(protBytes));
+        try {
+          const protMap = CBOR.decode(protBytes.buffer);
+          const algVal = protMap[1] ?? protMap.get?.(1);
+          console.log('🔎 Decoded protected map has alg (label 1):', algVal);
+        } catch (e2) {
+          console.warn('⚠️ Failed to decode protected header map from bstr:', e2);
+        }
+      } catch (e1) {
+        console.warn('⚠️ Failed to CBOR.encode/verify COSE_Sign1 for diagnostics:', e1);
+      }
+
+      console.log('✅ ReaderAuth COSE_Sign1 generated successfully');
+      console.log('   Structure: [protected, unprotected, null, signature]');
+      console.log('   Protected header length:', protectedBytes.length, 'bytes');
+      console.log('   x5chain certificate length:', certBytes.length, 'bytes');
+      console.log('   Payload: null (detached)');
+      console.log('   Signature length:', rawSignature.length, 'bytes');
+      console.log('   Detached content (ReaderAuthenticationBytes):', readerAuthenticationBytes.length, 'bytes');
+      console.log('.  coseSign1 hex (first 64 bytes):', coseSign1);
+
+      // Self-verify locally using the certificate public key to catch mismatches early
+      try {
+        const certPublicKey = await extractPublicKeyFromCert(certBytes);
+        const ok = await crypto.subtle.verify(
+          { name: 'ECDSA', hash: { name: webCryptoHash } },
+          certPublicKey,
+          new Uint8Array(signatureBstr),
+          sigStructureBytes
+        );
+        console.log('🧪 Self-verify readerAuth with cert public key:', ok ? 'PASS' : 'FAIL');
+        if (!ok) {
+          console.warn('Possible causes: private key does not match cert, or Sig_structure payload differs from wallet\'s reconstruction (SessionTranscript/ItemsRequestBytes mismatch).');
+        }
+      } catch (selfErr) {
+        console.warn('Self-verify of readerAuth signature failed:', selfErr);
+      }
+
+      return coseSign1;
+    
+  } catch (err) {
+    console.error('❌ Failed to generate readerAuth:', err);
+    throw new Error(`Reader authentication generation failed: ${err.message}`);
+  }
+}
+
 // Convert PEM to CryptoKey for verification
 // Uses extractPublicKeyFromCert to parse the X.509 structure and extract the EC public key
 async function pemToCryptoKey(pem) {
@@ -2914,15 +3419,33 @@ async function updateIACAList() {
         // Determine crypto used (curve) by the IACA public key
         let cryptoLabel = null;
         try {
-          const pubKey = await extractPublicKeyFromCert(certInfo.bytes);
+          const pubKey = await extractPublicKeyFromCert(certInfo.bytes, true);
           if (pubKey && pubKey.nobleCurveName) {
             const map = {
               p256: 'ECDSA P-256 (secp256r1)',
               p384: 'ECDSA P-384 (secp384r1)',
+              p521: 'ECDSA P-521 (secp521r1)',
               brainpoolP256r1: 'ECDSA brainpoolP256r1',
-              brainpoolP384r1: 'ECDSA brainpoolP384r1'
+              brainpoolP320r1: 'ECDSA brainpoolP320r1',
+              brainpoolP384r1: 'ECDSA brainpoolP384r1',
+              brainpoolP512r1: 'ECDSA brainpoolP512r1'
             };
             cryptoLabel = map[pubKey.nobleCurveName] || `ECDSA (${pubKey.nobleCurveName})`;
+          } else {
+            // Fallback: detect via OID only (works even when noble doesn't support the curve)
+            const detected = detectCurveFromCertOID(certInfo.bytes);
+            if (detected) {
+              const map = {
+                'P-256': 'ECDSA P-256 (secp256r1)',
+                'P-384': 'ECDSA P-384 (secp384r1)',
+                'P-521': 'ECDSA P-521 (secp521r1)',
+                'brainpoolP256r1': 'ECDSA brainpoolP256r1',
+                'brainpoolP320r1': 'ECDSA brainpoolP320r1',
+                'brainpoolP384r1': 'ECDSA brainpoolP384r1',
+                'brainpoolP512r1': 'ECDSA brainpoolP512r1'
+              };
+              cryptoLabel = map[detected] || `ECDSA (${detected})`;
+            }
           }
         } catch {}
         const defaultBadge = isDefault ? '<div style="font-size: 0.8rem; color: #059669; margin: 0.25rem 0 0.5rem;">✓ Default certificate</div>' : '';
@@ -3500,27 +4023,82 @@ function displayDeviceResponse(deviceResponse) {
             }
           }
           
-          // Display algorithm
+          // Display algorithm: show header immediately, then update asynchronously based on cert curve
           const alg = protectedData[1] || (unprotectedHeader instanceof Map ? unprotectedHeader.get(1) : unprotectedHeader?.[1]);
           console.log('Algorithm value:', alg);
           console.log('Algorithm from protected:', protectedData[1]);
           console.log('Algorithm from unprotected:', unprotectedHeader instanceof Map ? unprotectedHeader.get(1) : unprotectedHeader?.[1]);
-          
-          let algName = 'Unknown';
-          if (alg === -7) algName = 'ES256 (ECDSA with SHA-256)';
-          else if (alg === -35) algName = 'ES384 (ECDSA with SHA-384)';
-          else if (alg === -36) algName = 'ES512 (ECDSA with SHA-512)';
-          else if (alg === -8) algName = 'EdDSA';
-          else if (alg) algName = `Algorithm ${alg}`;
-          
-          console.log('Algorithm name:', algName);
-          
+
+          // Header-based label
+          let headerAlgLabel = 'Unknown';
+          if (alg === -7) headerAlgLabel = 'ES256 (ECDSA with SHA-256)';
+          else if (alg === -35) headerAlgLabel = 'ES384 (ECDSA with SHA-384)';
+          else if (alg === -36) headerAlgLabel = 'ES512 (ECDSA with SHA-512)';
+          else if (alg === -8) headerAlgLabel = 'EdDSA';
+          else if (alg != null) headerAlgLabel = `Algorithm ${alg}`;
+
+          const sigAlgId = `sig-alg-${docIndex}`;
           html += `
-            <div class="data-item">
-              <div class="data-label">Signature Algorithm</div>
-              <div class="data-value">${escapeHtml(algName)}</div>
+            <div class=\"data-item\">
+              <div class=\"data-label\">Signature Algorithm</div>
+              <div class=\"data-value\" id=\"${sigAlgId}\">${escapeHtml(headerAlgLabel)}</div>
             </div>
           `;
+
+          // Read issuer certificate (x5chain, header 33) early for mapping
+          const _issuerCertRaw = (unprotectedHeader instanceof Map ? unprotectedHeader.get(33) : unprotectedHeader?.[33]);
+          let issuerCertFirst = null;
+          if (_issuerCertRaw) {
+            if (Array.isArray(_issuerCertRaw) && _issuerCertRaw.length > 0) {
+              issuerCertFirst = _issuerCertRaw[0];
+            } else {
+              issuerCertFirst = _issuerCertRaw;
+            }
+          }
+
+          // Update algorithm display asynchronously based on actual curve
+          if (issuerCertFirst) {
+            setTimeout(async () => {
+              try {
+                const el = document.getElementById(sigAlgId);
+                if (!el) return;
+                const pub = await extractPublicKeyFromCert(issuerCertFirst, true);
+                let curveName = (pub?.nobleCurveName || '').toLowerCase();
+                let effectiveAlgLabel = headerAlgLabel;
+                let curveLabel = '';
+                // Fallback: derive curve from certificate OID if noble-based extraction is unavailable
+                if (!curveName) {
+                  const label = detectCurveFromCertOID(issuerCertFirst);
+                  curveLabel = label || '';
+                  curveName = (label || '').toLowerCase();
+                }
+                if (curveName.includes('p256') || curveName.includes('brainpoolp256')) {
+                  effectiveAlgLabel = 'ES256 (ECDSA with SHA-256)';
+                  curveLabel = curveName.includes('brainpool') ? 'brainpoolP256r1' : 'P-256';
+                } else if (curveName.includes('p384') || curveName.includes('brainpoolp384') || curveName.includes('brainpoolp320')) {
+                  effectiveAlgLabel = 'ES384 (ECDSA with SHA-384)';
+                  if (curveName.includes('brainpoolp320')) curveLabel = 'brainpoolP320r1';
+                  else if (curveName.includes('brainpool')) curveLabel = 'brainpoolP384r1';
+                  else curveLabel = 'P-384';
+                } else if (curveName.includes('p521') || curveName.includes('brainpoolp512')) {
+                  effectiveAlgLabel = 'ES512 (ECDSA with SHA-512)';
+                  curveLabel = curveName.includes('brainpool') ? 'brainpoolP512r1' : 'P-521';
+                } else if (curveName.includes('ed25519') || curveName.includes('ed448')) {
+                  effectiveAlgLabel = 'EdDSA';
+                  curveLabel = curveName.includes('ed448') ? 'Ed448' : 'Ed25519';
+                }
+                const curveSuffix = curveLabel ? ` <span style=\"color:#475569;\">— Curve: ${curveLabel}</span>` : '';
+                if (effectiveAlgLabel !== headerAlgLabel) {
+                  el.innerHTML = `${effectiveAlgLabel}${curveSuffix} <span style=\"color:#64748b;\">(header: ${escapeHtml(headerAlgLabel)})</span>`;
+                } else {
+                  el.innerHTML = `${effectiveAlgLabel}${curveSuffix}`;
+                }
+                console.log('Updated UI Signature Algorithm to effective label:', effectiveAlgLabel, 'based on curve', curveName);
+              } catch (e) {
+                console.warn('Failed to update Signature Algorithm from certificate curve:', e?.message || e);
+              }
+            }, 0);
+          }
           
           // Display certificate if present in x5chain (header parameter 33)
           const issuerCert = unprotectedHeader instanceof Map ? unprotectedHeader.get(33) : unprotectedHeader?.[33];
@@ -4500,6 +5078,16 @@ async function autoConnectFlow() {
     await exportReaderPublicToCoseKey();
     log('✅ Generated ephemeral key pair');
     
+    // Build SessionTranscript immediately (needed for reader authentication)
+    // SessionTranscript = [DeviceEngagement, EReaderKey, Handover]
+    // All components are now available:
+    //  - DeviceEngagement (deBytes) from QR scan
+    //  - EReaderKey (readerKeyPair) just generated
+    //  - Handover (null for BLE)
+    console.log('Building SessionTranscript for reader authentication...');
+    transcriptAAD = await buildTranscriptAAD();
+    console.log('✅ SessionTranscript built, length:', transcriptAAD.length, 'bytes');
+    
     // Build and send SessionEstablishment message
     const legacyMessage = await buildLegacySessionEstablishmentWithData();
     console.log('SessionEstablishment message length:', legacyMessage.length);
@@ -4586,7 +5174,7 @@ async function sendDeviceRequest() {
       throw new Error('Connection lost during preparation. Please reconnect.');
     }
     
-    const req = buildRequestByType(selectedType);
+    const req = await buildRequestByType(selectedType);
     
     // Debug: Log the request structure
     try {
@@ -4685,6 +5273,154 @@ btnClearIacaInput.addEventListener('click', () => {
 
 // Initialize IACA list on page load
 updateIACAList();
+
+// ===== READER AUTHENTICATION EVENT HANDLERS =====
+
+const enableReaderAuth = document.getElementById('enableReaderAuth');
+const readerAuthConfig = document.getElementById('readerAuthConfig');
+const readerOrgName = document.getElementById('readerOrgName');
+const readerCertificate = document.getElementById('readerCertificate');
+const readerPrivateKey = document.getElementById('readerPrivateKey');
+const btnSaveReaderCert = document.getElementById('btnSaveReaderCert');
+const btnClearReaderCert = document.getElementById('btnClearReaderCert');
+const readerAuthStatus = document.getElementById('readerAuthStatus');
+
+// Toggle reader auth configuration visibility
+enableReaderAuth.addEventListener('change', () => {
+  const enabled = enableReaderAuth.checked;
+  readerAuthConfig.style.display = enabled ? 'block' : 'none';
+  
+  if (enabled) {
+    log('🔐 Reader authentication enabled');
+    // Load existing configuration if available
+    const existing = getReaderCert();
+    if (existing) {
+      readerOrgName.value = existing.name || '';
+      readerCertificate.value = existing.certificate || '';
+      readerPrivateKey.value = existing.privateKey || '';
+      showReaderAuthStatus('ℹ️ Loaded existing reader certificate configuration', 'info');
+    }
+  } else {
+    log('🔓 Reader authentication disabled');
+    // Update stored config to mark as disabled
+    const existing = getReaderCert();
+    if (existing) {
+      existing.enabled = false;
+      setReaderCert(existing);
+    }
+  }
+});
+
+// Save reader certificate
+btnSaveReaderCert.addEventListener('click', async () => {
+  const name = readerOrgName.value.trim();
+  const certificate = readerCertificate.value.trim();
+  const privateKey = readerPrivateKey.value.trim();
+  
+  // Validation
+  if (!name) {
+    showReaderAuthStatus('❌ Please enter an organization name', 'error');
+    return;
+  }
+  
+  if (!certificate || !certificate.includes('-----BEGIN CERTIFICATE-----')) {
+    showReaderAuthStatus('❌ Invalid certificate format. Must be PEM format starting with "-----BEGIN CERTIFICATE-----"', 'error');
+    return;
+  }
+  
+  if (!privateKey || !privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
+    showReaderAuthStatus('❌ Invalid private key format. Must be PKCS#8 PEM format starting with "-----BEGIN PRIVATE KEY-----"', 'error');
+    return;
+  }
+  
+  // Test that the private key can be imported
+  try {
+    showReaderAuthStatus('⏳ Validating private key...', 'info');
+    
+    const b64 = privateKey
+      .replace(/-----BEGIN PRIVATE KEY-----/, '')
+      .replace(/-----END PRIVATE KEY-----/, '')
+      .replace(/\s+/g, '');
+    
+    const binaryString = atob(b64);
+    const keyBytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      keyBytes[i] = binaryString.charCodeAt(i);
+    }
+    
+    await crypto.subtle.importKey(
+      'pkcs8',
+      keyBytes,
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      false,
+      ['sign']
+    );
+    
+    console.log('✅ Private key validated successfully');
+  } catch (err) {
+    console.error('Private key validation failed:', err);
+    showReaderAuthStatus(`❌ Invalid private key: ${err.message}. Make sure it's in PKCS#8 format and uses P-256 curve.`, 'error');
+    return;
+  }
+  
+  // Save configuration
+  const certData = {
+    name,
+    certificate,
+    privateKey,
+    enabled: true,
+    savedAt: new Date().toISOString()
+  };
+  
+  if (setReaderCert(certData)) {
+    showReaderAuthStatus(`✅ Reader certificate saved successfully for "${name}"`, 'success');
+    log(`🔐 Reader authentication configured: ${name}`);
+  } else {
+    showReaderAuthStatus('❌ Failed to save reader certificate', 'error');
+  }
+});
+
+// Clear reader certificate
+btnClearReaderCert.addEventListener('click', () => {
+  if (confirm('Are you sure you want to clear the reader certificate and private key?')) {
+    readerOrgName.value = '';
+    readerCertificate.value = '';
+    readerPrivateKey.value = '';
+    clearReaderCert();
+    showReaderAuthStatus('🗑️ Reader certificate cleared', 'info');
+    log('🔓 Reader authentication cleared');
+  }
+});
+
+// Helper function to show status messages
+function showReaderAuthStatus(message, type) {
+  const colors = {
+    success: { bg: '#d4edda', border: '#28a745', color: '#155724' },
+    error: { bg: '#f8d7da', border: '#dc3545', color: '#721c24' },
+    info: { bg: '#d1ecf1', border: '#17a2b8', color: '#0c5460' }
+  };
+  
+  const style = colors[type] || colors.info;
+  readerAuthStatus.style.display = 'block';
+  readerAuthStatus.style.background = style.bg;
+  readerAuthStatus.style.borderColor = style.border;
+  readerAuthStatus.style.color = style.color;
+  readerAuthStatus.style.border = `1px solid ${style.border}`;
+  readerAuthStatus.textContent = message;
+}
+
+// Load reader auth configuration on page load
+document.addEventListener('DOMContentLoaded', () => {
+  const existing = getReaderCert();
+  if (existing && existing.enabled) {
+    enableReaderAuth.checked = true;
+    readerAuthConfig.style.display = 'block';
+    readerOrgName.value = existing.name || '';
+    readerCertificate.value = existing.certificate || '';
+    readerPrivateKey.value = existing.privateKey || '';
+    log(`🔐 Reader authentication loaded: ${existing.name}`);
+  }
+});
 
 // ==== Robust mdoc URI → CBOR extraction helpers ====
 function b64ToBytesBrowserSafe(b64) {
@@ -5296,8 +6032,8 @@ async function buildTranscriptAAD() {
   console.log('EReaderKeyBytes:', hex(eReaderKeyBytes));
   
   // Manually build the transcript array to avoid any CBOR library issues
-  // SessionTranscript = [DeviceEngagementBytes, Handover, EReaderKeyBytes]
-  // NOTE: Wallet puts Handover BEFORE EReaderKey, not after!
+  // SessionTranscript (HKDF salt) = [DeviceEngagementBytes, EReaderKeyBytes, Handover]
+  // Per ISO 18013-5: Handover is third; both sides must agree for key derivation
   
   // 🔍 MULTIPAZ CONFIRMED: Uses tag(24) wrapped COSE_Keys inside SessionTranscript
   // Then wraps the whole thing in tag(24, bstr(...)) before hashing
@@ -5311,13 +6047,13 @@ async function buildTranscriptAAD() {
   if (useUnwrappedKeys) {
     // Item 1: DeviceEngagement COSE_Key (unwrapped - no tag 24)
     result.push(...deBytes);
-    
     // Item 2: EReaderKey COSE_Key (unwrapped - no tag 24)
     result.push(...coseKeyEncoded);
+    // Item 3: Handover (QR) = null
+    result.push(0xF6);
   } else {
-    // Original: tag(24) wrapped versions
-    // Item 1: tag(24, DeviceEngagementBytes)
-    result.push(0xD8, 0x18);  // tag 24
+    // tag(24, DeviceEngagementBytes)
+    result.push(0xD8, 0x18);
     if (deBytes.length < 24) {
       result.push(0x40 + deBytes.length);
     } else if (deBytes.length < 256) {
@@ -5326,19 +6062,14 @@ async function buildTranscriptAAD() {
       result.push(0x59, deBytes.length >> 8, deBytes.length & 0xFF);
     }
     result.push(...deBytes);
-    
-    // Item 2: EReaderKeyBytes (already contains tag 24)
+    // EReaderKeyBytes (already contains tag 24)
     result.push(...eReaderKeyBytes);
+    // Handover (QR) = null
+    result.push(0xF6);
   }
   
-  // Item 3: Handover per ISO 18013-5 Section 9.1.5.1
-  // Per spec: "If device engagement using QR code was used, the contents shall be QRHandover"
-  // QRHandover = null
-  // Even though we connect via BLE, the engagement method was QR code
   console.log('🔐 Using QRHandover (null) - engagement was via QR code');
-  result.push(0xF6);  // CBOR null
-  
-  console.log(useUnwrappedKeys ? '🧪 SessionTranscript: [DeviceEngagement (unwrapped), EReaderKey (unwrapped), null]' : 'SessionTranscript: [DeviceEngagement, EReaderKey, null]');
+  console.log(useUnwrappedKeys ? '🧪 SessionTranscript (HKDF): [DeviceEngagement (unwrapped), EReaderKey (unwrapped), null]' : 'SessionTranscript (HKDF): [DeviceEngagement, EReaderKey, null]');
   
   const trCbor = new Uint8Array(result);
   console.log('Transcript CBOR length (unwrapped):', trCbor.length);
@@ -5385,6 +6116,43 @@ async function buildTranscriptAAD() {
   console.log('  Transcript Hash (hex):', hex(aad));
   
   return aad;
+}
+
+// Build the actual SessionTranscript structure (not the hash)
+// SessionTranscript = [ DeviceEngagementBytes, EReaderKeyBytes, Handover ]
+// - DeviceEngagementBytes = tag(24, bstr .cbor(DeviceEngagement))
+// - EReaderKeyBytes = tag(24, bstr .cbor(COSE_Key))
+// - Handover = null (for QR engagement)
+// Notes:
+// - We pass ArrayBuffer slices to ensure plain CBOR bstr without adding tag(64)
+// - This must match the eReaderKey used during session establishment
+function buildSessionTranscriptObject() {
+  if (!deBytes) {
+    throw new Error('DeviceEngagement bytes not available');
+  }
+
+  // Build EReaderKeyBytes using the current ephemeral reader key
+  const readerCoseKey = buildReaderCoseKey();
+  const coseKeyEncoded = encodeCoseKeyManually(readerCoseKey); // Uint8Array
+
+  // Use ArrayBuffer slices for byte strings to avoid CBOR tag(64)
+  const deBuf = deBytes.buffer.slice(deBytes.byteOffset, deBytes.byteOffset + deBytes.byteLength);
+  const coseKeyBuf = coseKeyEncoded.buffer.slice(
+    coseKeyEncoded.byteOffset || 0,
+    (coseKeyEncoded.byteOffset || 0) + coseKeyEncoded.byteLength
+  );
+
+  // Wrap both as tag(24, bstr(...)) as per ISO 18013-5
+  const deTagged = new CBOR.Tagged(24, deBuf);
+  const eReaderKeyTagged = new CBOR.Tagged(24, coseKeyBuf);
+
+  // Handover is null for QR engagement
+  const handover = null;
+
+  // Return SessionTranscript in the SAME order we use for AAD hashing:
+  // [DeviceEngagementBytes, EReaderKeyBytes, Handover]
+  // Keeping order consistent avoids wallet mismatches (e.g., Multipaz)
+  return [deTagged, eReaderKeyTagged, handover];
 }
 
 // Derive session keys per ISO 18013-5 standard
@@ -5695,6 +6463,120 @@ function buildSessionEstablishmentHello() {
   return final;
 }
 
+async function buildSessionEstablishment() {
+  // Per ISO 18013-5 spec:
+  // SessionEstablishment = {
+  //   "eReaderKey": EReaderKeyBytes,  // tag(24, bstr .cbor COSE_Key)
+  //   "data": bstr                    // Encrypted mdoc request
+  // }
+  
+  const readerCoseKey = buildReaderCoseKey();
+  
+  // Step 1: Manually encode the COSE_Key to avoid tag 64
+  const coseKeyEncoded = encodeCoseKeyManually(readerCoseKey);
+  console.log('COSE_Key manually encoded:', hex(coseKeyEncoded));
+  
+  // Step 2: Manually wrap in tag 24 as byte string (avoids tag 64)
+  const eReaderKeyBytes = encodeTag24ByteString(coseKeyEncoded);
+  console.log('eReaderKey with tag 24 (manual):', hex(eReaderKeyBytes));
+  
+  // Step 3: Build and encrypt the mDL request
+  console.log('Building mDL request for SessionEstablishment...');
+  const mdlRequest = buildRequestByType();
+  
+  // Derive session key first
+  if (!skReader || !transcriptAAD) {
+    console.log('Deriving session keys for encryption...');
+    
+    // Use static mdoc key from Device Engagement (static handover)
+    const mdocPub = await importMdocPubKeyXY(mdocPubKey.x, mdocPubKey.y);
+    const shared = await deriveSharedSecretBits(readerKeyPair.privateKey, mdocPub);
+    transcriptAAD = await buildTranscriptAAD();
+    
+    // Derive both session keys
+    const keys = await deriveSessionKey(new Uint8Array(shared), transcriptAAD);
+  skReader = keys.readerKey;  // Reader encrypts requests with SKReader
+  skDevice = keys.deviceKey;  // Reader decrypts responses with SKDevice
+  sessionKey = skReader;      // Compatibility alias for legacy code paths
+    
+    console.log('✅ Session keys derived:');
+    console.log('  - SKReader for encrypting requests');
+    console.log('  - SKDevice for decrypting responses');
+  }
+  
+  // Encrypt the request WITH SKReader (not SKDevice!)
+  // Per ISO 18013-5: "The mdoc reader shall encrypt its mdoc requests with SKReader"
+  console.log('🔐 Encrypting request with SKReader...');
+  const encryptedRequest = await coseEncrypt0_AESGCM_Enc0(mdlRequest, transcriptAAD, skReader);
+  console.log('Encrypted request length:', encryptedRequest.length);
+  console.log('Encrypted request (first 32 bytes):', hex(encryptedRequest.slice(0, 32)));
+  
+  // Step 4: Manually build SessionEstablishment CBOR
+  // Structure: { "eReaderKey": tag(24, bstr .cbor COSE_Key), "data": bstr }
+  // NOTE: No outer tag 24 wrapper!
+  
+  const result = [];
+  
+  // Map with 2 items
+  result.push(0xA2);
+  
+  // Key 1: "eReaderKey" (10 characters)
+  result.push(0x6A);  // text string, length 10
+  result.push(...Array.from('eReaderKey').map(c => c.charCodeAt(0)));
+  
+  // Value 1: tag(24, bstr .cbor COSE_Key) - already encoded
+  result.push(...eReaderKeyBytes);
+  
+  // Key 2: "data" (4 characters)
+  result.push(0x64);  // text string, length 4
+  result.push(...Array.from('data').map(c => c.charCodeAt(0)));
+  
+  // Value 2: encrypted request (byte string)
+  if (encryptedRequest.length < 24) {
+    result.push(0x40 + encryptedRequest.length);
+  } else if (encryptedRequest.length < 256) {
+    result.push(0x58, encryptedRequest.length);
+  } else {
+    result.push(0x59, encryptedRequest.length >> 8, encryptedRequest.length & 0xFF);
+  }
+  result.push(...encryptedRequest);
+  
+  // That's it - just a plain map, no outer wrapping
+  const final = new Uint8Array(result);
+  
+  console.log('SessionEstablishment (fully manual encoding), length:', final.length);
+  console.log('SessionEstablishment hex (first 200 bytes):', hex(final.slice(0, 200)));
+  
+  // DIAGNOSTIC: Decode to verify structure
+  try {
+    const decoded = CBOR.decode(final);
+    console.log('=== DIAGNOSTIC: SessionEstablishment Structure ===');
+    console.log('Is a Map:', decoded instanceof Map || typeof decoded === 'object');
+    console.log('Has eReaderKey:', 'eReaderKey' in decoded || decoded.get?.('eReaderKey'));
+    console.log('Has data:', 'data' in decoded || decoded.get?.('data'));
+    
+    const eReaderKey = decoded.eReaderKey || decoded.get?.('eReaderKey');
+    if (eReaderKey) {
+      console.log('eReaderKey type:', eReaderKey.constructor.name);
+      console.log('eReaderKey tag:', eReaderKey.tag);
+      
+      if (eReaderKey.value) {
+        const coseKey = CBOR.decode(eReaderKey.value.buffer || eReaderKey.value);
+        console.log('COSE_Key decoded:', coseKey);
+        console.log('COSE_Key has field 1 (kty):', coseKey[1] || coseKey.get?.(1));
+        console.log('COSE_Key has field -1 (crv):', coseKey[-1] || coseKey.get?.(-1));
+        console.log('COSE_Key has field -2 (x):', coseKey[-2] || coseKey.get?.(-2));
+        console.log('COSE_Key has field -3 (y):', coseKey[-3] || coseKey.get?.(-3));
+      }
+    }
+    console.log('=== END DIAGNOSTIC ===');
+  } catch (diagError) {
+    console.error('Diagnostic decode failed:', diagError);
+  }
+  
+  return final;
+}
+
 // ISO 18013-5 compliant SessionEstablishment with manual CBOR encoding
 async function buildLegacySessionEstablishmentWithData() {
   // ISO 18013-5 compliant SessionEstablishment
@@ -5717,7 +6599,7 @@ async function buildLegacySessionEstablishmentWithData() {
   
   // Build and encrypt the mDL request
   console.log('Building mDL request for SessionEstablishment (publicKey variant)...');
-  const mdlRequest = buildRequestByType();
+  const mdlRequest = await buildRequestByType();
   
   // Derive session keys if needed
   if (!skReader || !transcriptAAD) {
@@ -5862,7 +6744,7 @@ function buildDeviceRequestCBOR() {
 
 // Build different request types for common use cases
 // Can now accept array of request types to create multiple docRequests
-function buildRequestByType(requestTypes) {
+async function buildRequestByType(requestTypes) {
   // Get selected request types if not provided
   if (!requestTypes) {
     requestTypes = Array.from(document.querySelectorAll('input[name="requestType"]:checked'))
@@ -5888,12 +6770,46 @@ function buildRequestByType(requestTypes) {
   };
   
   // Build each document request
-  requestTypes.forEach(requestType => {
+  for (const requestType of requestTypes) {
     const docRequest = buildSingleDocRequest(requestType);
     if (docRequest) {
+      // Process reader authentication if needed
+      if (docRequest._needsReaderAuth && docRequest._readerCert && docRequest._itemsRequestBytes) {
+        console.log('🔐 Generating readerAuth for:', requestType);
+        try {
+          const readerAuth = await generateReaderAuth(
+            docRequest._itemsRequestBytes,
+            docRequest._readerCert
+          );
+          
+          // Add readerAuth to the document request (spec-compliant: only readerAuth)
+            docRequest.readerAuth = readerAuth;
+            console.log('✅ readerAuth added to docRequest (no extra alg fields)');
+
+            // Clean up temporary properties
+            delete docRequest._needsReaderAuth;
+            delete docRequest._readerCert;
+            delete docRequest._itemsRequestBytes;
+        } catch (err) {
+          console.error('❌ Failed to generate readerAuth:', err);
+          alert(`Reader authentication failed: ${err.message}\n\nThe request will be sent without reader authentication.`);
+          // Clean up temporary properties
+          delete docRequest._needsReaderAuth;
+          delete docRequest._readerCert;
+          delete docRequest._itemsRequestBytes;
+        }
+      }
+      
+      // Debug: ensure algorithm fields are present before encoding
+      if (docRequest.readerAuth || docRequest.readerAuth_) {
+        console.log('🔎 DocRequest has readerAuth; alg fields:', {
+          readerAuthAlgorithm: docRequest.readerAuthAlgorithm,
+          readerAuthAlg: docRequest.readerAuthAlg
+        });
+      }
       deviceRequest.docRequests.push(docRequest);
     }
-  });
+  }
   
   console.log('→ Device Request with', deviceRequest.docRequests.length, 'document(s):', deviceRequest);
   
@@ -6185,10 +7101,25 @@ function buildSingleDocRequest(requestType) {
   const itemsRequestCbor = CBOR.encode(itemsRequest);
   const taggedItemsRequest = new CBOR.Tagged(24, itemsRequestCbor);
   
-  return {
+  const docRequest = {
     itemsRequest: taggedItemsRequest
-    // Note: No readerAuth for this demo
   };
+  
+  // Check if reader authentication is enabled
+  const readerCert = getReaderCert();
+  if (readerCert && readerCert.enabled) {
+    if (!transcriptAAD) {
+      console.warn('⚠️ Reader authentication enabled but SessionTranscript not yet built');
+      console.warn('   This should not happen - SessionTranscript should be built after key generation');
+    } else {
+      console.log('🔐 Reader authentication enabled for this request');
+      docRequest._needsReaderAuth = true;
+      docRequest._readerCert = readerCert;
+      docRequest._itemsRequestBytes = itemsRequestCbor; // Need raw bytes for signing
+    }
+  }
+  
+  return docRequest;
 }
 
 // ==== Mode switching ====
@@ -6598,6 +7529,11 @@ if (btnEstablish) btnEstablish.addEventListener('click', async () => {
     await exportReaderPublicToCoseKey();
     log('✅ Generated reader ephemeral key pair');
 
+    // Step 1.5: Build SessionTranscript immediately (needed for reader authentication)
+    console.log('Building SessionTranscript for reader authentication...');
+    transcriptAAD = await buildTranscriptAAD();
+    console.log('✅ SessionTranscript built, length:', transcriptAAD.length, 'bytes');
+
     // Step 2: Prepare to capture wallet response
     window.sessionResponseReceived = false;
     window.sessionResponseData = null;
@@ -6671,6 +7607,10 @@ if (btnEstablishAlt) btnEstablishAlt.addEventListener('click', async () => {
     await exportReaderPublicToCoseKey();
     log('✅ Generated ephemeral key pair');
     
+    // Build SessionTranscript immediately (needed for reader authentication)
+    console.log('Building SessionTranscript for reader authentication...');
+    transcriptAAD = await buildTranscriptAAD();
+    console.log('✅ SessionTranscript built, length:', transcriptAAD.length, 'bytes');
 
     const legacyMessage = await buildLegacySessionEstablishmentWithData();
     console.log('SessionEstablishment message length:', legacyMessage.length);
@@ -6760,7 +7700,7 @@ if (btnSend) btnSend.addEventListener('click', async () => {
       throw new Error('Connection lost during preparation. Please reconnect.');
     }
     
-    const req = buildRequestByType(selectedType);
+    const req = await buildRequestByType(selectedType);
     
     // Debug: Log the request structure with comprehensive analysis
     try {
@@ -7059,7 +7999,7 @@ if (btnTestRequest) btnTestRequest.addEventListener('click', async () => {
     log('⚠️ WARNING: This violates ISO 18013-5 but helps debug');
     
     const selectedType = document.querySelector('input[name="requestType"]:checked')?.value || 'basic';
-    const req = buildRequestByType(selectedType);
+    const req = await buildRequestByType(selectedType);
     
     // Decode and show what we're sending
     const decoded = CBOR.decode(req);
