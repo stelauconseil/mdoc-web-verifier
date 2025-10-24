@@ -1,7 +1,7 @@
 // Service Worker for ISO 18013-5 Web Proximity Reader PWA
 // IMPORTANT: Increment version number when you update files to trigger cache refresh
 // ALSO UPDATE: APP_VERSION in index.html (line ~395) must match this value
-const CACHE_VERSION = 13; // <-- INCREMENT THIS NUMBER WHEN UPDATING
+const CACHE_VERSION = 14; // <-- INCREMENT THIS NUMBER WHEN UPDATING
 const CACHE_NAME = `mdocreader-v${CACHE_VERSION}`;
 const RUNTIME_CACHE = `mdoc-runtime-v${CACHE_VERSION}`;
 
@@ -9,6 +9,7 @@ const RUNTIME_CACHE = `mdoc-runtime-v${CACHE_VERSION}`;
 const PRECACHE_URLS = [
   "/",
   "/index.html",
+  "/noble-curves.min.js",
   "/manifest.json",
   "/assets/icon-192.png",
   "/assets/icon-512.png",
@@ -18,6 +19,7 @@ const PRECACHE_URLS = [
 const CDN_URLS = [
   "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js",
   "https://cdn.jsdelivr.net/npm/cbor-web@9.0.2/dist/cbor.js",
+  "https://cdn.jsdelivr.net/npm/@noble/curves@1.6.0",
 ];
 
 // Install event - cache essential files

@@ -8,7 +8,7 @@
   <!-- SEO Meta Tags -->
   <meta name="description" content="Free web-based ISO 18013-5 mobile Driver's License (mDL) and mDoc reader and verifier. Scan QR codes, connect via Web Bluetooth, verify digital credentials, and validate IACA certificates. Works offline as a Progressive Web App.">
   <meta name="keywords" content="ISO 18013-5, mobile driver's license, mDL, mdoc, digital identity, digital credentials, Web Bluetooth, QR code scanner, IACA, certificate validation, PWA, progressive web app, CBOR, COSE, AES-GCM encryption, eIDAS, EU Digital Identity Wallet">
-  <meta name="author" content="ISO 18013-5 Web Reader">
+  <meta name="author" content="Nicolas Chalanset">
   <meta name="robots" content="index, follow">
   <meta name="language" content="English">
   <meta name="revisit-after" content="7 days">
@@ -353,6 +353,12 @@
 
     <section class="card" id="logsSection">
       <h2>3. Activity Log</h2>
+      <div class="row" style="margin-bottom: 0.5rem; align-items:center; gap: 12px;">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none;">
+          <input type="checkbox" id="toggleDebugCert" />
+          <span class="muted">Verbose log in the console</span>
+        </label>
+      </div>
       <div class="log" id="log" role="log" aria-live="polite" aria-label="Session activity log"></div>
     </section>
 
@@ -366,6 +372,8 @@
           <div class="muted" style="font-style: italic;">Loading...</div>
         </div>
       </div>
+
+      
 
       <div style="margin-top: 1.5rem;">
         <strong>Add New IACA Certificate:</strong>
@@ -395,10 +403,22 @@
 <!-- Load libs BEFORE the module -->
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/cbor-web@9.0.2/dist/cbor.min.js"></script>
+<script src="/noble-curves.min.js"></script>
+<script>
+  // Setup noble-curves global access for all elliptic curves
+  // The minified bundle should expose: p256, p384, p521, brainpoolP256r1, brainpoolP384r1, brainpoolP512r1
+  if (typeof nobleCurves !== 'undefined') {
+    window.nobleCurves = nobleCurves;
+    console.log('✅ @noble/curves loaded from local file');
+    console.log('Available curves:', Object.keys(nobleCurves));
+  } else {
+    console.warn('⚠️ noble-curves.min.js not loaded - curve cryptography will not work');
+  }
+</script>
 
 <script type="module">
 // ==== App Version (must match CACHE_VERSION in sw.js) ====
-const APP_VERSION = 13; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
+const APP_VERSION = 14; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
 
 // ==== CBOR bootstrap (works even if global isn't set) ====
 let CBORRef = self.CBOR || self.cbor;
@@ -530,6 +550,7 @@ const iacaListEl = document.getElementById('iacaList');
 const iacaInput = document.getElementById('iacaInput');
 const btnAddIaca = document.getElementById('btnAddIaca');
 const btnClearIacaInput = document.getElementById('btnClearIacaInput');
+const toggleDebugCert = document.getElementById('toggleDebugCert');
 
 // Removed buttons (kept as null for legacy code compatibility)
 const btnAdvertise = null;
@@ -577,6 +598,26 @@ function hex(buf) { return [...new Uint8Array(buf)].map(b=>b.toString(16).padSta
 function concatUint8(...arrs){ const n=arrs.reduce((s,a)=>s+a.length,0); const out=new Uint8Array(n); let o=0; for(const a of arrs){out.set(a,o);o+=a.length;} return out; }
 
 // ==== BLE transport (GATT) ====
+
+// Initialize debug toggle state
+try {
+  // Prefer general verbose key; fallback to legacy key
+  let saved = localStorage.getItem('debug_verbose');
+  if (saved === null) saved = localStorage.getItem('debug_cert');
+  const initial = saved === null ? false : saved === 'true';
+  window.DEBUG_CERT = initial;      // kept for existing gates
+  window.DEBUG_VERBOSE = initial;   // general console verbose flag
+  if (toggleDebugCert) {
+    toggleDebugCert.checked = initial;
+    toggleDebugCert.addEventListener('change', (e) => {
+      const on = !!e.target.checked;
+      window.DEBUG_CERT = on;
+      window.DEBUG_VERBOSE = on;
+      localStorage.setItem('debug_verbose', String(on));
+      log(`Verbose console logging: ${on ? 'ON' : 'OFF'}`);
+    });
+  }
+} catch {}
 const UUIDS = { // characteristic UUIDs used by common 18013-5 demos/drafts
   state: '00000001-a123-48ce-896b-4c76973373e6',
   c2s:   '00000002-a123-48ce-896b-4c76973373e6',
@@ -678,7 +719,7 @@ async function decryptAndDisplayResponse(encryptedData) {
   console.log('Encrypted data hex:', hex(encryptedData));
   
   // Decode COSE_Encrypt0 structure
-  const coseEnc0 = CBOR.decode(encryptedData.buffer);
+  const coseEnc0 = CBOR.decode(encryptedData);
   
   if (!Array.isArray(coseEnc0) || coseEnc0.length !== 3) {
     throw new Error('Invalid COSE_Encrypt0 structure - expected 3-element array');
@@ -693,7 +734,7 @@ async function decryptAndDisplayResponse(encryptedData) {
   // Decode protected header
   let protectedHeader = {};
   if (protectedHeaderBytes && protectedHeaderBytes.length > 0) {
-    protectedHeader = CBOR.decode(protectedHeaderBytes.buffer);
+    protectedHeader = CBOR.decode(protectedHeaderBytes);
     console.log('Decoded protected header:', protectedHeader);
   }
   
@@ -715,7 +756,7 @@ async function decryptAndDisplayResponse(encryptedData) {
   console.log('Plaintext hex:', hex(plaintext));
   
   // Decode the DeviceResponse
-  const deviceResponse = CBOR.decode(plaintext.buffer);
+  const deviceResponse = CBOR.decode(plaintext);
   console.log('Decoded DeviceResponse:', deviceResponse);
   
   // Display the response
@@ -764,132 +805,136 @@ async function aesGcmDecrypt(ciphertextWithTag, keyBytes, iv, aad) {
 // ===== SIGNATURE VERIFICATION FUNCTIONS =====
 
 // Extract public key from X.509 certificate (DER format)
+// Supports NIST curves (P-256, P-384) via Web Crypto API
+// Supports Brainpool curves (P-256r1, P-384r1, P-512r1) via @noble/curves
 async function extractPublicKeyFromCert(certDer) {
   try {
     console.log('Extracting public key from certificate, size:', certDer.length);
     
-    // Parse the certificate to find the Subject Public Key Info
-    // X.509 structure: SEQUENCE { tbsCertificate, signatureAlgorithm, signature }
-    // We need to extract the public key from tbsCertificate
-    
-    // Support both P-256 (65 bytes) and P-384 (97 bytes) EC public keys
-    // EC public key format: 0x04 || X || Y (uncompressed point)
-    // - P-256: 0x04 + 32 bytes X + 32 bytes Y = 65 bytes
-    // - P-384: 0x04 + 48 bytes X + 48 bytes Y = 97 bytes
-    
     const cert = new Uint8Array(certDer);
     
-    // Check for Brainpool curve OIDs (not supported by Web Crypto API)
+    // Detect curve type from OID
+    // NIST P-256: 1.2.840.10045.3.1.7 -> 0x2A 0x86 0x48 0xCE 0x3D 0x03 0x01 0x07
+    // NIST P-384: 1.3.132.0.34 -> 0x2B 0x81 0x04 0x00 0x22
+    // NIST P-521: 1.3.132.0.35 -> 0x2B 0x81 0x04 0x00 0x23
     // Brainpool P256r1: 1.3.36.3.3.2.8.1.1.7  -> 0x2B 0x24 0x03 0x03 0x02 0x08 0x01 0x01 0x07
     // Brainpool P384r1: 1.3.36.3.3.2.8.1.1.11 -> 0x2B 0x24 0x03 0x03 0x02 0x08 0x01 0x01 0x0B
     // Brainpool P512r1: 1.3.36.3.3.2.8.1.1.13 -> 0x2B 0x24 0x03 0x03 0x02 0x08 0x01 0x01 0x0D
-    const brainpoolP256r1 = [0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x07];
-    const brainpoolP384r1 = [0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x0B];
-    const brainpoolP512r1 = [0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x0D];
     
-    const hasBrainpool = (oid) => {
-      for (let i = 0; i < cert.length - oid.length; i++) {
-        if (cert.slice(i, i + oid.length).every((byte, idx) => byte === oid[idx])) {
-          return true;
-        }
-      }
-      return false;
+    const curveOIDs = {
+      'P-256': [0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07],
+      'P-384': [0x2B, 0x81, 0x04, 0x00, 0x22],
+      'P-521': [0x2B, 0x81, 0x04, 0x00, 0x23],
+      'brainpoolP256r1': [0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x07],
+      'brainpoolP384r1': [0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x0B],
+      'brainpoolP512r1': [0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x0D]
     };
     
-    if (hasBrainpool(brainpoolP256r1)) {
-      console.error('❌ Certificate uses brainpoolP256r1 curve - NOT supported by Web Crypto API');
-      console.error('   Web Crypto API only supports NIST curves: P-256, P-384, P-521');
-      return null;
-    }
-    if (hasBrainpool(brainpoolP384r1)) {
-      console.error('❌ Certificate uses brainpoolP384r1 curve - NOT supported by Web Crypto API');
-      console.error('   Web Crypto API only supports NIST curves: P-256, P-384, P-521');
-      return null;
-    }
-    if (hasBrainpool(brainpoolP512r1)) {
-      console.error('❌ Certificate uses brainpoolP512r1 curve - NOT supported by Web Crypto API');
-      console.error('   Web Crypto API only supports NIST curves: P-256, P-384, P-521');
-      return null;
+    const findOID = (oid) => {
+      for (let i = 0; i < cert.length - oid.length; i++) {
+        if (cert.slice(i, i + oid.length).every((byte, idx) => byte === oid[idx])) {
+          return i;
+        }
+      }
+      return -1;
+    };
+    
+    // Detect which curve is used
+    let detectedCurve = null;
+    for (const [curveName, oid] of Object.entries(curveOIDs)) {
+      if (findOID(oid) !== -1) {
+        detectedCurve = curveName;
+        console.log(`✓ Detected curve: ${curveName}`);
+        break;
+      }
     }
     
+    if (!detectedCurve) {
+      throw new Error('Could not detect EC curve from certificate OID');
+    }
+    
+    // Determine expected key size based on curve
+    const keySizes = {
+      'P-256': 65,
+      'P-384': 97,
+      'P-521': 133,
+      'brainpoolP256r1': 65,
+      'brainpoolP384r1': 97,
+      'brainpoolP512r1': 129
+    };
+    
+    const coordSizes = {
+      'P-256': 32,
+      'P-384': 48,
+      'P-521': 66,
+      'brainpoolP256r1': 32,
+      'brainpoolP384r1': 48,
+      'brainpoolP512r1': 64
+    };
+    
+    const keySize = keySizes[detectedCurve];
+    const coordSize = coordSizes[detectedCurve];
+    
+    // Find the uncompressed EC public key (starts with 0x04)
     let publicKeyBytes = null;
-    let curve = null;
-    
-    // Look for P-384 public key first (97 bytes)
-    for (let i = 0; i < cert.length - 97; i++) {
+    for (let i = 0; i < cert.length - keySize; i++) {
       if (cert[i] === 0x04) {
-        const candidate = cert.slice(i, i + 97);
+        const candidate = cert.slice(i, i + keySize);
         
         // Verify it's preceded by reasonable DER structure
         // Typically: 0x03 (BIT STRING tag), length, 0x00 (no unused bits), 0x04...
-        if (i >= 2 && cert[i - 1] === 0x00 && cert[i - 2] >= 98) {
+        if (i >= 2 && cert[i - 1] === 0x00 && cert[i - 2] >= keySize + 1) {
           publicKeyBytes = candidate;
-          curve = 'P-384';
-          console.log('Found P-384 public key at offset', i);
+          console.log(`Found ${detectedCurve} public key at offset ${i}`);
           break;
         }
       }
     }
     
-    // If no P-384 key found, look for P-256 (65 bytes)
     if (!publicKeyBytes) {
-      for (let i = 0; i < cert.length - 65; i++) {
-        if (cert[i] === 0x04) {
-          const candidate = cert.slice(i, i + 65);
-          
-          // Verify it's preceded by reasonable DER structure
-          if (i >= 2 && cert[i - 1] === 0x00 && cert[i - 2] >= 66) {
-            publicKeyBytes = candidate;
-            curve = 'P-256';
-            console.log('Found P-256 public key at offset', i);
-            break;
-          }
-        }
-      }
-    }
-    
-    if (!publicKeyBytes) {
-      throw new Error('Could not find EC public key (P-256 or P-384) in certificate');
+      throw new Error(`Could not find ${detectedCurve} public key in certificate`);
     }
     
     // Extract X and Y coordinates (skip the 0x04 prefix)
-    const coordSize = curve === 'P-384' ? 48 : 32;
     const x = publicKeyBytes.slice(1, 1 + coordSize);
     const y = publicKeyBytes.slice(1 + coordSize, 1 + 2 * coordSize);
     
-    console.log(`Extracted ${curve} X:`, hex(x));
-    console.log(`Extracted ${curve} Y:`, hex(y));
+    console.log(`Extracted ${detectedCurve} X:`, hex(x));
+    console.log(`Extracted ${detectedCurve} Y:`, hex(y));
     
-    // Import as public key for ECDSA verification
-    const jwk = {
-      kty: 'EC',
-      crv: curve,
-      x: base64UrlEncode(x),
-      y: base64UrlEncode(y)
-    };
-    
-    try {
-      const publicKey = await crypto.subtle.importKey(
-        'jwk',
-        jwk,
-        { name: 'ECDSA', namedCurve: curve },
-        true,
-        ['verify']
-      );
-      
-      console.log(`✅ ${curve} public key imported successfully`);
-      return publicKey;
-    } catch (importErr) {
-      if (importErr.name === 'DataError') {
-        console.error('❌ DataError: Invalid key format or unsupported curve.');
-        console.error('   Web Crypto API only supports NIST curves (P-256, P-384, P-521).');
-        console.error('   Brainpool curves (brainpoolP256r1, brainpoolP384r1, etc.) are NOT supported.');
-        console.error('   This certificate cannot be verified in the browser using native Web Crypto.');
-      } else {
-        console.error('❌ Failed to import public key:', importErr.message);
-      }
+    // Use @noble/curves for all curves (both NIST and Brainpool)
+    if (!window.nobleCurves) {
+      console.error('❌ @noble/curves library not loaded');
       return null;
     }
+    
+    // Map curve names to noble-curves property names
+    const curveMap = {
+      'P-256': 'p256',
+      'P-384': 'p384',
+      'P-521': 'p521',
+      'brainpoolP256r1': 'brainpoolP256r1',
+      'brainpoolP384r1': 'brainpoolP384r1',
+      'brainpoolP512r1': 'brainpoolP512r1'
+    };
+    
+    const nobleCurveName = curveMap[detectedCurve];
+    if (!nobleCurveName || !window.nobleCurves[nobleCurveName]) {
+      console.error(`❌ Curve ${detectedCurve} (${nobleCurveName}) not available in @noble/curves`);
+      console.log('Available curves:', Object.keys(window.nobleCurves));
+      return null;
+    }
+    
+    // Return raw key data for noble-curves verification
+    console.log(`✅ ${detectedCurve} public key extracted (using @noble/curves for verification)`);
+    return {
+      key: publicKeyBytes, // Full uncompressed point (0x04 || X || Y)
+      curve: detectedCurve,
+      nobleCurveName: nobleCurveName,
+      type: 'noble',
+      x: x,
+      y: y
+    };
     
   } catch (err) {
     console.error('Error extracting public key:', err.message);
@@ -1304,7 +1349,7 @@ async function verifyCoseSign1(coseSign1, publicKey) {
     let curve = 'P-256';
     
     try {
-      const decodedHeader = CBOR.decode(protectedHeaderBytes.buffer);
+  const decodedHeader = CBOR.decode(protectedHeaderBytes);
       console.log('Decoded protected header:', decodedHeader);
       
       // Handle both Map and plain object
@@ -1377,10 +1422,16 @@ async function verifyCoseSign1(coseSign1, publicKey) {
     const contextBytes = new TextEncoder().encode(contextStr);
     sigStructureParts.push(new Uint8Array([0x6A, ...contextBytes])); // 0x6A = text(10)
     
-    // Element 2: protected header as bstr
-    sigStructureParts.push(encodeBstr(protectedHeaderBytes));
+    // Element 2: body_protected as bstr
+    // protectedHeaderBytes is the serialized CBOR map (e.g., a1 01 26 for {1: -7})
+    // For Sig_structure, we wrap it as a bstr
+    console.log('DEBUG: protectedHeaderBytes for Sig_structure:', hex(protectedHeaderBytes));
+    console.log('DEBUG: protectedHeaderBytes length:', protectedHeaderBytes.length);
+    const encodedProtected = encodeBstr(protectedHeaderBytes);
+    console.log('DEBUG: encoded protected (with bstr wrapper):', hex(encodedProtected));
+    sigStructureParts.push(encodedProtected);
     
-    // Element 3: empty AAD as bstr
+    // Element 3: external_aad as bstr (empty for COSE_Sign1)
     sigStructureParts.push(new Uint8Array([0x40])); // empty byte string
     
     // Element 4: payload as bstr
@@ -1411,19 +1462,88 @@ async function verifyCoseSign1(coseSign1, publicKey) {
       console.warn(`⚠️ Expected ${expectedSigLength}-byte signature for ${algName}, got`, signatureBytes.length);
     }
     
-    // Verify the signature
-    // Web Crypto will hash the data with the appropriate hash algorithm internally
-    const isValid = await crypto.subtle.verify(
-      {
-        name: 'ECDSA',
-        hash: { name: hashAlg }
-      },
-      publicKey,
-      signatureBytes,
-      sigStructureBytes // Verify against the original Sig_structure (will be hashed internally)
-    );
+    // Use @noble/curves for all signature verification
+    if (!publicKey || typeof publicKey !== 'object' || publicKey.type !== 'noble') {
+      throw new Error('Invalid public key format - expected noble-curves key object');
+    }
     
-    console.log('Signature verification result:', isValid);
+    if (!window.nobleCurves) {
+      throw new Error('@noble/curves library not loaded');
+    }
+    
+    const curveLib = window.nobleCurves[publicKey.nobleCurveName];
+    if (!curveLib) {
+      throw new Error(`Curve ${publicKey.nobleCurveName} not available in @noble/curves`);
+    }
+    
+    console.log(`Using @noble/curves (${publicKey.nobleCurveName}) for signature verification`);
+    
+    console.log('🔍 Verification inputs:');
+    console.log('  Signature bytes:', hex(signatureBytes).substring(0, 64) + '...');
+    console.log('  Message (Sig_structure):', hex(sigStructureBytes).substring(0, 64) + '...');
+    console.log('  Public key (with 0x04 prefix):', hex(publicKey.key).substring(0, 66) + '...');
+    console.log('  Curve library:', publicKey.nobleCurveName);
+    
+  // Verify using noble-curves
+  let isValid = false;
+    try {
+      // @noble/curves verify signature:
+      // verify(signature: Hex | Signature, message: Hex, publicKey: Hex)
+      // IMPORTANT: Noble-curves hashes the message internally!
+      // We pass the raw Sig_structure, NOT the hash
+      // signature: Uint8Array (raw r||s)
+      // message: the message to verify (noble will hash it)
+      // publicKey: public key WITH 0x04 prefix (uncompressed point format)
+      
+      isValid = curveLib.verify(
+        signatureBytes,
+        sigStructureBytes, // Pass the MESSAGE, not the hash!
+        publicKey.key // Keep 0x04 prefix - noble-curves expects full uncompressed point
+      );
+      
+      console.log('✓ Noble-curves verify() completed without error');
+    } catch (verifyErr) {
+      console.error('✗ Noble-curves verification threw error:', verifyErr);
+      console.error('  Error details:', {
+        name: verifyErr.name,
+        message: verifyErr.message,
+        stack: verifyErr.stack?.substring(0, 200)
+      });
+      isValid = false;
+    }
+    
+    // Low-S normalization fallback for ECDSA (some libs enforce canonical low-S)
+    if (!isValid && (publicKey.nobleCurveName === 'p256' || publicKey.nobleCurveName === 'p384') &&
+        (signatureBytes.length === 64 || signatureBytes.length === 96)) {
+      try {
+        const halfLen = signatureBytes.length / 2;
+        const rBytes = signatureBytes.slice(0, halfLen);
+        const sBytes = signatureBytes.slice(halfLen);
+        const bytesToBigIntBE = (arr) => arr.reduce((n,b)=> (n<<8n) | BigInt(b), 0n);
+        const bigIntToBytesBE = (num, len) => { const out = new Uint8Array(len); let n = num; for (let i=len-1;i>=0;i--){out[i]=Number(n&0xffn); n>>=8n;} return out; };
+        let curveOrder = null;
+        if (publicKey.nobleCurveName === 'p256') {
+          curveOrder = BigInt('0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551');
+        } else if (publicKey.nobleCurveName === 'p384') {
+          curveOrder = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52973');
+        }
+        if (curveOrder) {
+          const half = curveOrder >> 1n;
+          const sVal = bytesToBigIntBE(sBytes);
+          if (sVal > half) {
+            const sNorm = bigIntToBytesBE(curveOrder - sVal, sBytes.length);
+            const sigNorm = new Uint8Array(signatureBytes.length);
+            sigNorm.set(rBytes, 0); sigNorm.set(sNorm, rBytes.length);
+            if (window.DEBUG_VERBOSE) console.log('Attempting low-S normalized verification for COSE_Sign1');
+            try {
+              isValid = curveLib.verify(sigNorm, sigStructureBytes, publicKey.key);
+            } catch {}
+          }
+        }
+      } catch {}
+    }
+    
+  console.log('Signature verification result:', isValid);
     return isValid;
     
   } catch (err) {
@@ -1469,6 +1589,7 @@ function parseX509Certificate(certBytes) {
     const certStart = pos;
     
     // TBSCertificate is the first SEQUENCE
+    const tbsStart = pos;  // Save position BEFORE reading TBS SEQUENCE tag
     if (certBytes[pos++] !== 0x30) {
       throw new Error('Invalid certificate: Expected TBSCertificate SEQUENCE');
     }
@@ -1487,7 +1608,6 @@ function parseX509Certificate(certBytes) {
     }
     
     // TBSCertificate includes the SEQUENCE tag and length
-    const tbsStart = certStart;
     const tbsEnd = pos + tbsLength;
     const tbsCertificate = certBytes.slice(tbsStart, tbsEnd);
     
@@ -1531,8 +1651,17 @@ function parseX509Certificate(certBytes) {
     
     const signature = certBytes.slice(pos, pos + sigLength);
     
+    console.log('🔍 [X.509 Signature Extraction DEBUG]:');
+    console.log('  Signature from BIT STRING (first 16 bytes):', Array.from(signature.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' '));
+    console.log('  Signature length:', signature.length);
+    console.log('  First byte:', '0x' + signature[0].toString(16).padStart(2, '0'), signature[0] === 0x30 ? '(DER SEQUENCE ✓)' : '(NOT DER SEQUENCE!)');
+    
     // For ECDSA, signature is DER-encoded, need to convert to raw r||s format
     const rawSignature = convertDERSignatureToRaw(signature);
+    
+    console.log('  After convertDERSignatureToRaw():');
+    console.log('  Raw signature (first 16 bytes):', Array.from(rawSignature.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' '));
+    console.log('  Raw signature length:', rawSignature.length);
     
     return {
       tbsCertificate,
@@ -1554,6 +1683,9 @@ function convertDERSignatureToRaw(derSig) {
     // DER signature: SEQUENCE { r INTEGER, s INTEGER }
     let pos = 0;
     
+    console.log(`🔍 [DER to Raw Conversion]`);
+    console.log(`   Input DER (first 32 bytes): ${hex(derSig.slice(0, Math.min(32, derSig.length)))}`);
+    
     if (derSig[pos++] !== 0x30) {
       throw new Error('Invalid DER signature: Expected SEQUENCE');
     }
@@ -1569,17 +1701,22 @@ function convertDERSignatureToRaw(derSig) {
       seqLength = derSig[pos++];
     }
     
+    console.log(`   SEQUENCE length: ${seqLength}`);
+    
     // Read r
     if (derSig[pos++] !== 0x02) {
       throw new Error('Invalid DER signature: Expected INTEGER for r');
     }
     let rLength = derSig[pos++];
+    console.log(`   r length: ${rLength}`);
     let r = derSig.slice(pos, pos + rLength);
+    console.log(`   r raw (with potential padding): ${hex(r)}`);
     pos += rLength;
     
     // Remove leading zero if present (DER encoding adds it for positive numbers with high bit set)
     if (r[0] === 0x00 && r.length > 1) {
       r = r.slice(1);
+      console.log(`   r after removing 0x00 padding: ${hex(r)}`);
     }
     
     // Read s
@@ -1587,11 +1724,14 @@ function convertDERSignatureToRaw(derSig) {
       throw new Error('Invalid DER signature: Expected INTEGER for s');
     }
     let sLength = derSig[pos++];
+    console.log(`   s length: ${sLength}`);
     let s = derSig.slice(pos, pos + sLength);
+    console.log(`   s raw (with potential padding): ${hex(s)}`);
     
     // Remove leading zero if present
     if (s[0] === 0x00 && s.length > 1) {
       s = s.slice(1);
+      console.log(`   s after removing 0x00 padding: ${hex(s)}`);
     }
     
     // Determine curve based on component size
@@ -1627,8 +1767,92 @@ function convertDERSignatureToRaw(derSig) {
 }
 
 /**
+ * Extract Authority Key Identifier (AKI) from X.509 certificate
+ * AKI is in extensions and identifies the public key of the CA that signed this cert
+ * OID: 2.5.29.15 (0x55 0x1d 0x23)
+ * 
+ * @param {Uint8Array} certBytes - The certificate bytes
+ * @returns {string|null} Hex string of the key identifier, or null if not found
+ */
+function extractAuthorityKeyIdentifier(certBytes) {
+  try {
+    // Extensions are in TBSCertificate at the end
+    // Structure: TBSCertificate SEQUENCE {
+    //   version, serialNumber, signature, issuer, validity, subject, subjectPublicKeyInfo,
+    //   [3] EXPLICIT Extensions OPTIONAL
+    // }
+    
+    const hex = Array.from(certBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    
+    // Look for Authority Key Identifier OID: 55 1d 23
+    // Typically in format: SEQUENCE { OID, OCTET STRING { [0] keyIdentifier } }
+    const akiOidPattern = '551d23';
+    const akiIndex = hex.indexOf(akiOidPattern);
+    
+    if (akiIndex === -1) {
+      return null;
+    }
+    
+    // After OID, there's usually an OCTET STRING (04), then inside that another [0] tag (80)
+    // Extract the key identifier which is typically 20 bytes (40 hex chars)
+    const afterOid = hex.substring(akiIndex + akiOidPattern.length);
+    
+    // Look for context tag [0] (0x80) followed by length 14 (0x14 = 20 bytes)
+    const keyIdMatch = afterOid.match(/8014([0-9a-f]{40})/);
+    
+    if (keyIdMatch) {
+      return keyIdMatch[1];
+    }
+    
+    return null;
+  } catch (e) {
+    console.error('Failed to extract AKI:', e);
+    return null;
+  }
+}
+
+/**
+ * Extract Subject Key Identifier (SKI) from X.509 certificate
+ * SKI identifies the public key in this certificate
+ * OID: 2.5.29.14 (0x55 0x1d 0x0e)
+ * 
+ * @param {Uint8Array} certBytes - The certificate bytes
+ * @returns {string|null} Hex string of the key identifier, or null if not found
+ */
+function extractSubjectKeyIdentifier(certBytes) {
+  try {
+    const hex = Array.from(certBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    
+    // Look for Subject Key Identifier OID: 55 1d 0e
+    const skiOidPattern = '551d0e';
+    const skiIndex = hex.indexOf(skiOidPattern);
+    
+    if (skiIndex === -1) {
+      return null;
+    }
+    
+    // After OID, there's an OCTET STRING (04) containing another OCTET STRING (04) with the key ID
+    // Format: 04 <length> 04 14 <20 bytes>
+    const afterOid = hex.substring(skiIndex + skiOidPattern.length);
+    
+    // Look for OCTET STRING tag (04) followed by length 14 (20 bytes)
+    const keyIdMatch = afterOid.match(/0414([0-9a-f]{40})/);
+    
+    if (keyIdMatch) {
+      return keyIdMatch[1];
+    }
+    
+    return null;
+  } catch (e) {
+    console.error('Failed to extract SKI:', e);
+    return null;
+  }
+}
+
+/**
  * Validate that the mDoc issuer certificate is signed by one of our IACA root certificates
  * This establishes the trust chain: mDoc data → Issuer Certificate → IACA Root
+ * Uses Authority Key Identifier (AKI) to match the correct IACA certificate
  * 
  * @param {Uint8Array} issuerCertBytes - The issuer certificate from the mDoc's COSE signature header
  * @returns {Object} Validation result with { valid, matchedIACA, chain, errors }
@@ -1640,6 +1864,7 @@ async function validateCertificateChain(issuerCertBytes) {
     chain: [],
     errors: []
   };
+  const DEBUG_VERBOSE = (typeof window !== 'undefined' && window.DEBUG_VERBOSE === true);
   
   try {
     console.log('=== VALIDATING ISSUER CERTIFICATE AGAINST IACA ROOTS ===');
@@ -1655,7 +1880,7 @@ async function validateCertificateChain(issuerCertBytes) {
     console.log(`Testing issuer certificate against ${activeIACAs.length} active IACA(s)`);
     
     // Parse the issuer certificate to extract signature and TBS
-    console.log('Parsing issuer certificate...');
+  if (DEBUG_VERBOSE) console.log('Parsing issuer certificate...');
     const parsedCert = parseX509Certificate(issuerCertBytes);
     
     if (!parsedCert) {
@@ -1664,21 +1889,165 @@ async function validateCertificateChain(issuerCertBytes) {
     }
     
     console.log('✓ Parsed issuer certificate');
-    console.log('  TBS length:', parsedCert.tbsCertificate.length, 'bytes');
-    console.log('  Signature length:', parsedCert.signature.length, 'bytes');
+  if (DEBUG_VERBOSE) {
+      console.log('  TBS length:', parsedCert.tbsCertificate.length, 'bytes');
+      console.log('  Signature length:', parsedCert.signature.length, 'bytes');
+    }
     
-    // Determine hash algorithm based on signature length
-    // P-256 (ES256): 64-byte signature (32+32) → SHA-256
-    // P-384 (ES384): 96-byte signature (48+48) → SHA-384
-    const hashAlgorithm = parsedCert.signature.length === 96 ? 'SHA-384' : 'SHA-256';
-    const algName = parsedCert.signature.length === 96 ? 'ES384' : 'ES256';
-    console.log(`  Detected algorithm: ${algName} with ${hashAlgorithm}`);
+    // Parse Certificate.signatureAlgorithm OID to select the correct hash (e.g., SHA-384)
+    function parseCertSignatureAlgorithmOID(certBytes) {
+      try {
+        let pos = 0;
+        if (certBytes[pos++] !== 0x30) return null; // Certificate SEQUENCE
+        // Certificate length
+        if (certBytes[pos] & 0x80) {
+          const n = certBytes[pos++] & 0x7f;
+          for (let i = 0; i < n; i++) pos++;
+        } else {
+          pos++; // short form length
+        }
+        // TBSCertificate SEQUENCE
+        if (certBytes[pos++] !== 0x30) return null;
+        // TBS length
+        if (certBytes[pos] & 0x80) {
+          const n = certBytes[pos++] & 0x7f;
+          let tbsLen = 0; for (let i = 0; i < n; i++) tbsLen = (tbsLen << 8) | certBytes[pos++];
+          pos += tbsLen;
+        } else {
+          const tbsLen = certBytes[pos++];
+          pos += tbsLen;
+        }
+        // signatureAlgorithm SEQUENCE
+        if (certBytes[pos++] !== 0x30) return null;
+        // sigAlg length
+        let sigAlgLen = 0;
+        if (certBytes[pos] & 0x80) {
+          const n = certBytes[pos++] & 0x7f;
+          for (let i = 0; i < n; i++) sigAlgLen = (sigAlgLen << 8) | certBytes[pos++];
+        } else {
+          sigAlgLen = certBytes[pos++];
+        }
+        const sigAlgEnd = pos + sigAlgLen;
+        // Inside AlgorithmIdentifier: OID (06 len value) [parameters may be absent]
+        if (certBytes[pos++] !== 0x06) return null;
+        let oidLen = certBytes[pos++];
+        const oidBytes = certBytes.slice(pos, pos + oidLen);
+        // Convert OID bytes to dot string for logging
+        function decodeOID(bytes) {
+          if (!bytes || bytes.length === 0) return '';
+          const out = [];
+          const first = bytes[0];
+          out.push(Math.floor(first / 40));
+          out.push(first % 40);
+          let value = 0;
+          for (let i = 1; i < bytes.length; i++) {
+            const b = bytes[i];
+            value = (value << 7) | (b & 0x7f);
+            if ((b & 0x80) === 0) { out.push(value); value = 0; }
+          }
+          return out.join('.');
+        }
+        const oidStr = decodeOID(oidBytes);
+        return { oidStr, oidBytes: new Uint8Array(oidBytes) };
+      } catch (e) {
+        console.warn('Failed to parse signatureAlgorithm OID:', e.message);
+        return null;
+      }
+    }
+    const sigAlg = parseCertSignatureAlgorithmOID(issuerCertBytes);
+    if (sigAlg) {
+      console.log(`  Signature Algorithm: ${sigAlg.oidStr}`);
+  if (DEBUG_VERBOSE) console.log(`  OID hex: ${hex(sigAlg.oidBytes)}`);
+    } else {
+      console.log('  Signature Algorithm OID: unavailable');
+    }
     
-    // For each active IACA, attempt to verify the issuer certificate was signed by it
-    for (const iaca of activeIACAs) {
-      console.log(`Testing IACA: ${iaca.name}`);
+    // Extract Authority Key Identifier (AKI) from DS certificate
+    const aki = extractAuthorityKeyIdentifier(issuerCertBytes);
+    console.log('  Authority Key Identifier (AKI):', aki || 'not found');
+    
+    // Choose hash from OID (don’t guess from signature size)
+    // 1.2.840.10045.4.3.1 = ecdsa-with-SHA224
+    // 1.2.840.10045.4.3.2 = ecdsa-with-SHA256
+    // 1.2.840.10045.4.3.3 = ecdsa-with-SHA384
+    // 1.2.840.10045.4.3.4 = ecdsa-with-SHA512
+    const certSigLength = parsedCert.signature.length;
+    const hashFromOID = sigAlg?.oidStr === '1.2.840.10045.4.3.1' ? 'SHA-224'
+      : sigAlg?.oidStr === '1.2.840.10045.4.3.2' ? 'SHA-256'
+      : sigAlg?.oidStr === '1.2.840.10045.4.3.3' ? 'SHA-384'
+      : sigAlg?.oidStr === '1.2.840.10045.4.3.4' ? 'SHA-512'
+      : 'SHA-256';
+    const algName = hashFromOID.replace('SHA-', 'ES');
+  console.log(`  Using hash: ${hashFromOID}`);
+  if (DEBUG_VERBOSE) console.log(`  Certificate signature length: ${certSigLength} bytes`);
+    
+    // Map signature length to expected curves
+    const expectedCurves = certSigLength === 96 
+      ? ['p384', 'brainpoolP384r1']  // 96-byte signature = P-384 or Brainpool P-384
+      : ['p256', 'brainpoolP256r1'];  // 64-byte signature = P-256 or Brainpool P-256
+    
+    console.log(`  Expected IACA curves: ${expectedCurves.join(', ')}`);
+
+    // (UI cert debug removed) – keep console logs only
+    
+    // If AKI is available, use it to find the matching IACA by SKI
+    let matchingIACAs = activeIACAs;
+    
+    if (aki) {
+      console.log(`🔍 Searching for IACA with matching SKI...`);
+      const iacasWithSKI = [];
+      
+      for (const iaca of activeIACAs) {
+        try {
+          // Decode PEM to bytes
+          const b64 = iaca.pem.replace(/-----BEGIN CERTIFICATE-----/, '')
+                             .replace(/-----END CERTIFICATE-----/, '')
+                             .replace(/\s+/g, '');
+          const binaryString = atob(b64);
+          const iacaBytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            iacaBytes[i] = binaryString.charCodeAt(i);
+          }
+          
+          const ski = extractSubjectKeyIdentifier(iacaBytes);
+          
+          if (ski) {
+            console.log(`  ${iaca.name}: SKI = ${ski}`);
+            if (ski.toLowerCase() === aki.toLowerCase()) {
+              console.log(`  ✅ MATCH! This IACA signed the DS certificate`);
+              iacasWithSKI.push(iaca);
+            }
+          } else {
+            console.log(`  ${iaca.name}: No SKI found`);
+          }
+        } catch (e) {
+          console.warn(`  ${iaca.name}: Error extracting SKI:`, e.message);
+        }
+      }
+      
+      if (iacasWithSKI.length > 0) {
+        matchingIACAs = iacasWithSKI;
+        console.log(`✓ Found ${matchingIACAs.length} IACA(s) with matching SKI`);
+      } else {
+        console.warn('⚠️ No IACA found with matching SKI, will try all IACAs');
+      }
+    }
+    
+    // Test the matching IACA(s)
+    for (const iaca of matchingIACAs) {
+      console.log(`Testing IACA: ${iaca.name}${matchingIACAs.length === 1 ? ' (matched by AKI/SKI)' : ''}`);
       
       try {
+        // Decode IACA PEM to bytes for self-verification test
+        const iacaB64 = iaca.pem.replace(/-----BEGIN CERTIFICATE-----/, '')
+                                 .replace(/-----END CERTIFICATE-----/, '')
+                                 .replace(/\s+/g, '');
+        const iacaBinaryString = atob(iacaB64);
+        const iacaCertBytes = new Uint8Array(iacaBinaryString.length);
+        for (let i = 0; i < iacaBinaryString.length; i++) {
+          iacaCertBytes[i] = iacaBinaryString.charCodeAt(i);
+        }
+        
         // Extract IACA public key from PEM
         const iacaPublicKey = await pemToCryptoKey(iaca.pem);
         
@@ -1688,19 +2057,329 @@ async function validateCertificateChain(issuerCertBytes) {
           continue;
         }
         
-        console.log('  ✓ Imported IACA public key');
+        console.log(`  ✓ Imported IACA public key (curve: ${iacaPublicKey.nobleCurveName})`);
+        // (UI cert debug removed)
         
-        // Verify that the issuer certificate's signature was created by this IACA
-        // This proves the issuer certificate was signed by the IACA
-        const isValid = await crypto.subtle.verify(
-          {
-            name: 'ECDSA',
-            hash: { name: hashAlgorithm }
-          },
-          iacaPublicKey,
-          parsedCert.signature,
-          parsedCert.tbsCertificate
-        );
+        // Use @noble/curves for all verification
+        if (!iacaPublicKey || iacaPublicKey.type !== 'noble') {
+          console.log('  ✗ Invalid IACA public key format');
+          result.errors.push(`${iaca.name}: Invalid key format`);
+          continue;
+        }
+        
+        // Check if IACA curve matches certificate signature length
+        if (!expectedCurves.includes(iacaPublicKey.nobleCurveName)) {
+          console.log(`  ⊘ Skipping: IACA curve ${iacaPublicKey.nobleCurveName} incompatible with ${algName} signature (${certSigLength} bytes)`);
+          continue; // Skip incompatible curves without logging as error
+        }
+        
+        if (!window.nobleCurves) {
+          console.log('  ✗ @noble/curves library not loaded');
+          result.errors.push(`${iaca.name}: Crypto library not available`);
+          continue;
+        }
+        
+        const curveLib = window.nobleCurves[iacaPublicKey.nobleCurveName];
+        if (!curveLib) {
+          console.log(`  ✗ Curve ${iacaPublicKey.nobleCurveName} not available`);
+          result.errors.push(`${iaca.name}: Curve ${iacaPublicKey.nobleCurveName} not supported`);
+          continue;
+        }
+        
+  if (DEBUG_VERBOSE) console.log(`  Using @noble/curves (${iacaPublicKey.nobleCurveName}) for certificate verification`);
+        
+        // CRITICAL: X.509 certificates contain ECDSA signatures over the HASH of the TBS certificate
+        // Noble-curves verify() expects a MESSAGE (which it will hash internally)
+        // But X.509 already has the hash, so we need to convert it to look like the "message"
+        // that would produce that hash when hashed by noble-curves
+        
+        // Actually, the proper way is to NOT hash the TBS certificate ourselves
+        // Instead, pass the RAW TBS bytes to verify() and let noble-curves hash it
+        // This is different from COSE_Sign1 because:
+        // - COSE_Sign1: Signs the raw Sig_structure → pass raw bytes → noble hashes → works ✓
+        // - X.509: Signs the raw TBS → pass raw bytes → noble hashes → should work ✓
+        
+  if (DEBUG_VERBOSE) {
+          console.log(`  TBS certificate length: ${parsedCert.tbsCertificate.length} bytes`);
+          console.log(`  TBS hex (first 64 bytes):`, hex(parsedCert.tbsCertificate.slice(0, 64)));
+          console.log(`  TBS hex (last 32 bytes):`, hex(parsedCert.tbsCertificate.slice(-32)));
+        }
+        
+        // DIAGNOSTIC: Verify TBS extraction is correct
+  if (DEBUG_VERBOSE) console.log(`  🔍 Diagnostic: Verifying TBS structure...`);
+  if (DEBUG_VERBOSE) console.log(`     First byte: 0x${parsedCert.tbsCertificate[0].toString(16)} (should be 0x30 = SEQUENCE)`);
+  if (DEBUG_VERBOSE) console.log(`     Second byte: 0x${parsedCert.tbsCertificate[1].toString(16)} (length indicator)`);
+        if (parsedCert.tbsCertificate[1] === 0x82) {
+          const tbsLengthFromTag = (parsedCert.tbsCertificate[2] << 8) | parsedCert.tbsCertificate[3];
+          if (DEBUG_VERBOSE) console.log(`     TBS length from tag: ${tbsLengthFromTag} (should be ${parsedCert.tbsCertificate.length - 4})`);
+          if (tbsLengthFromTag + 4 === parsedCert.tbsCertificate.length) {
+            if (DEBUG_VERBOSE) console.log(`     ✓ TBS length is correct`);
+          } else {
+            console.log(`     ✗ TBS length mismatch! Expected ${tbsLengthFromTag + 4}, got ${parsedCert.tbsCertificate.length}`);
+          }
+        }
+        
+  if (DEBUG_VERBOSE) {
+          console.log(`  Certificate signature (raw r||s):`, hex(parsedCert.signature));
+          console.log(`  Certificate signature length: ${parsedCert.signature.length} bytes`);
+          console.log(`  IACA public key (with 0x04 prefix):`, hex(iacaPublicKey.key));
+          console.log(`  IACA public key length: ${iacaPublicKey.key.length} bytes`);
+          console.log(`  IACA X coordinate:`, hex(iacaPublicKey.key.slice(1, 33)));
+          console.log(`  IACA Y coordinate:`, hex(iacaPublicKey.key.slice(33, 65)));
+        }
+        console.log(`  Attempting verification`);
+        
+        // Debug: Compute chosen hash manually
+        let preHash = null;
+        try {
+          const h = await crypto.subtle.digest(hashFromOID, parsedCert.tbsCertificate);
+          preHash = new Uint8Array(h);
+          if (DEBUG_VERBOSE) console.log(`  📊 ${hashFromOID}(TBS) computed`);
+        } catch (e) {
+          console.log(`  ⚠️ Unable to compute ${hashFromOID} digest: ${e.message}`);
+        }
+        
+        // Verify signature using noble-curves
+        // Pass the RAW TBS certificate bytes (not pre-hashed)
+  let isValid = false;
+  let lowSUsed = false;
+        try {
+          if (DEBUG_VERBOSE) {
+            console.log(`  🔬 Calling ${iacaPublicKey.nobleCurveName}.verify()...`);
+            console.log(`     - signature length: ${parsedCert.signature.length}`);
+            console.log(`     - message length: ${parsedCert.tbsCertificate.length}`);
+            console.log(`     - publicKey length: ${iacaPublicKey.key.length}`);
+          }
+          
+          // DIAGNOSTIC: Verify the public key looks structurally correct
+          if (DEBUG_VERBOSE) console.log(`  🔍 Diagnostic: Verifying IACA public key is valid...`);
+          try {
+            if (curveLib.ProjectivePoint && typeof curveLib.ProjectivePoint.fromHex === 'function') {
+              const _ = curveLib.ProjectivePoint.fromHex(iacaPublicKey.key);
+              if (DEBUG_VERBOSE) console.log(`     ✓ Public key is a valid point on ${iacaPublicKey.nobleCurveName}`);
+            } else {
+              if (DEBUG_VERBOSE) console.log(`     (Skipping ProjectivePoint check: API not available)`);
+            }
+          } catch (pointErr) {
+            console.log(`     ✗ Public key is NOT a valid point: ${pointErr.message}`);
+          }
+          
+          // DIAGNOSTIC: Let's check the signature format
+          if (DEBUG_VERBOSE) {
+            console.log(`  🔍 Diagnostic: Checking signature format...`);
+            const halfLen = parsedCert.signature.length/2;
+            const r = parsedCert.signature.slice(0, halfLen);
+            const s = parsedCert.signature.slice(halfLen);
+            console.log(`     r first byte: 0x${r[0].toString(16)}`);
+            console.log(`     s first byte: 0x${s[0].toString(16)}`);
+            if (r[0] === 0x00) {
+              console.log(`     ⚠️ WARNING: r has leading zero - might be padding issue`);
+            }
+            if (s[0] === 0x00) {
+              console.log(`     ⚠️ WARNING: s has leading zero - might be padding issue`);
+            }
+          }
+          
+          
+          // Streamlined verification order
+          // 1) OID pre-hash
+          if (preHash) {
+            if (DEBUG_VERBOSE) console.log(`  🧪 Verify: signature vs ${hashFromOID}(TBS)`);
+            isValid = curveLib.verify(parsedCert.signature, preHash, iacaPublicKey.key);
+          }
+          
+          // 2) low-S normalization with pre-hash
+          if (!isValid && preHash) {
+            try {
+              let curveOrder = curveLib?.CURVE?.n;
+              if (!curveOrder) {
+                if (iacaPublicKey.nobleCurveName === 'p256') {
+                  curveOrder = BigInt('0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551');
+                } else if (iacaPublicKey.nobleCurveName === 'p384') {
+                  curveOrder = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52973');
+                }
+              }
+              if (curveOrder) {
+                const half = curveOrder >> 1n;
+                const bytesToBigIntBE = (arr) => arr.reduce((n,b)=> (n<<8n) | BigInt(b), 0n);
+                const bigIntToBytesBE = (num, len) => { const out = new Uint8Array(len); let n = num; for (let i=len-1;i>=0;i--){out[i]=Number(n&0xffn); n>>=8n;} return out; };
+                const halfLen = parsedCert.signature.length / 2;
+                const rBytes = parsedCert.signature.slice(0, halfLen);
+                const sBytes = parsedCert.signature.slice(halfLen);
+                const sVal = bytesToBigIntBE(sBytes);
+                if (sVal > half) {
+                  lowSUsed = true;
+                  const sNorm = bigIntToBytesBE(curveOrder - sVal, sBytes.length);
+                  const sigNorm = new Uint8Array(parsedCert.signature.length);
+                  sigNorm.set(rBytes, 0); sigNorm.set(sNorm, rBytes.length);
+                  if (DEBUG_VERBOSE) console.log(`  🧪 Verify: low-S signature vs ${hashFromOID}(TBS)`);
+                  isValid = curveLib.verify(sigNorm, preHash, iacaPublicKey.key);
+                }
+              }
+            } catch {}
+          }
+
+          // 3) RAW TBS (library hashes internally)
+          if (!isValid) {
+            try {
+              if (DEBUG_VERBOSE) console.log(`  🧪 Verify: signature vs RAW_TBS`);
+              isValid = curveLib.verify(parsedCert.signature, parsedCert.tbsCertificate, iacaPublicKey.key);
+            } catch (e) {
+              if (DEBUG_VERBOSE) console.log(`     verify threw: ${e.message}`);
+            }
+          }
+
+          // 4) RAW TBS with low-S
+          if (!isValid) {
+            try {
+              let curveOrder = curveLib?.CURVE?.n;
+              if (!curveOrder) {
+                if (iacaPublicKey.nobleCurveName === 'p256') {
+                  curveOrder = BigInt('0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551');
+                } else if (iacaPublicKey.nobleCurveName === 'p384') {
+                  curveOrder = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52973');
+                }
+              }
+              if (curveOrder) {
+                const half = curveOrder >> 1n;
+                const bytesToBigIntBE = (arr) => arr.reduce((n,b)=> (n<<8n) | BigInt(b), 0n);
+                const bigIntToBytesBE = (num, len) => { const out = new Uint8Array(len); let n = num; for (let i=len-1;i>=0;i--){out[i]=Number(n&0xffn); n>>=8n;} return out; };
+                const halfLen = parsedCert.signature.length / 2;
+                const rBytes = parsedCert.signature.slice(0, halfLen);
+                const sBytes = parsedCert.signature.slice(halfLen);
+                const sVal = bytesToBigIntBE(sBytes);
+                if (sVal > half) {
+                  lowSUsed = true;
+                  const sNorm = bigIntToBytesBE(curveOrder - sVal, sBytes.length);
+                  const sigNorm = new Uint8Array(parsedCert.signature.length);
+                  sigNorm.set(rBytes, 0); sigNorm.set(sNorm, rBytes.length);
+                  if (DEBUG_VERBOSE) console.log(`  🧪 Verify: low-S signature vs RAW_TBS`);
+                  isValid = curveLib.verify(sigNorm, parsedCert.tbsCertificate, iacaPublicKey.key);
+                }
+              }
+            } catch {}
+          }
+
+          // Deep diagnostics behind verbose flag
+          if (!isValid && DEBUG_VERBOSE) {
+            try {
+              console.log(`  🧪 Attempt E: verify(signature_DER, RAW_TBS, publicKey)`);
+              const res = curveLib.verify(
+                parsedCert.signatureDER,
+                parsedCert.tbsCertificate,
+                iacaPublicKey.key
+              );
+              console.log(`     Result: ${res}`);
+              isValid = res;
+            } catch (e) {
+              console.log(`     Attempt E threw: ${e.message}`);
+            }
+          }
+
+          if (!isValid && DEBUG_VERBOSE) {
+            try {
+              console.log(`  🧪 Attempt F: verify(signature_DER, ${hashFromOID}(TBS), publicKey)`);
+              const preHashBuf = await crypto.subtle.digest(hashFromOID, parsedCert.tbsCertificate);
+              const preHash = new Uint8Array(preHashBuf);
+              const res = curveLib.verify(
+                parsedCert.signatureDER,
+                preHash,
+                iacaPublicKey.key
+              );
+              console.log(`     Result: ${res}`);
+              isValid = res;
+            } catch (e) {
+              console.log(`     Attempt F threw: ${e.message}`);
+            }
+          }
+
+          if (!isValid && DEBUG_VERBOSE && window.crypto?.subtle) {
+            try {
+              console.log(`  🧪 Attempt G: WebCrypto.verify(ECDSA, ${hashFromOID})`);
+              const namedCurve = iacaPublicKey.nobleCurveName === 'p256' ? 'P-256'
+                : iacaPublicKey.nobleCurveName === 'p384' ? 'P-384'
+                : null;
+              if (namedCurve) {
+                const wcKey = await crypto.subtle.importKey(
+                  'raw',
+                  iacaPublicKey.key,
+                  { name: 'ECDSA', namedCurve },
+                  false,
+                  ['verify']
+                );
+                const ok = await crypto.subtle.verify(
+                  { name: 'ECDSA', hash: { name: hashFromOID } },
+                  wcKey,
+                  parsedCert.signatureDER,
+                  parsedCert.tbsCertificate
+                );
+                console.log(`     WebCrypto verify result: ${ok}`);
+                isValid = ok;
+              } else {
+                console.log(`     (Skipping Attempt G: unsupported curve ${iacaPublicKey.nobleCurveName})`);
+              }
+            } catch (e) {
+              console.log(`     Attempt G threw: ${e.message}`);
+            }
+          }
+          
+          // If still failing, optionally do DS/IACA sanity checks (verbose only)
+          if (!isValid && DEBUG_VERBOSE) {
+            console.log(`  🧪 Attempt 3: Sanity check - re-verify DS certificate COSE_Sign1`);
+            console.log(`     (This should succeed since it worked earlier)`);
+            
+            // We know the DS certificate public key verified successfully
+            // Let's extract it properly (skip the 04 prefix at offset 382)
+            console.log(`     DS cert byte at 382: 0x${issuerCertBytes[382].toString(16)} (should be 0x04)`);
+            console.log(`     DS cert public key X: ${hex(issuerCertBytes.slice(383, 383+32))}`);
+            console.log(`     DS cert public key Y: ${hex(issuerCertBytes.slice(383+32, 383+64))}`);
+            
+            // Compare with what we extracted earlier during COSE_Sign1 verification
+            console.log(`     Previously verified: COSE_Sign1 with DS cert public key = WORKS ✓`);
+            console.log(`     Now failing: X.509 cert with IACA public key = FAILS ✗`);
+            console.log(`     But wait - let's check if the issue is with IACA cert or DS cert...`);
+            
+            // Ultimate test: Verify the IACA certificate itself (should be self-signed)
+            console.log(`  🧪 Attempt 4: Verify IACA is self-signed (sanity check)`);
+            try {
+              // Parse the IACA certificate
+              const iacaParsed = parseX509Certificate(iacaCertBytes);
+              if (iacaParsed) {
+                console.log(`     IACA TBS length: ${iacaParsed.tbsCertificate.length}`);
+                console.log(`     IACA signature length: ${iacaParsed.signature.length}`);
+                
+                // Verify IACA cert with its own public key (self-signed)
+                const iacaSelfVerify = curveLib.verify(
+                  iacaParsed.signature,
+                  iacaParsed.tbsCertificate,
+                  iacaPublicKey.key
+                );
+                console.log(`     IACA self-signed verification: ${iacaSelfVerify}`);
+                
+                if (iacaSelfVerify) {
+                  console.log(`     ✓ IACA is properly self-signed!`);
+                  console.log(`     This means the IACA public key is correct.`);
+                  console.log(`     Therefore, the DS certificate signature or TBS must be wrong.`);
+                } else {
+                  console.log(`     ✗ IACA self-signed verification failed!`);
+                  console.log(`     This could mean:`);
+                  console.log(`       1. IACA public key extraction is wrong`);
+                  console.log(`       2. Our signature/TBS extraction is fundamentally broken`);
+                  console.log(`       3. noble-curves verification has an issue`);
+                }
+              }
+            } catch (iacaErr) {
+              console.log(`     Error verifying IACA: ${iacaErr.message}`);
+            }
+          }
+          
+          console.log(`  ✅ Certificate verify result: ${isValid}`);
+          // (UI cert debug removed)
+        } catch (verifyErr) {
+          console.log(`  ✗ verify() threw error: ${verifyErr.message}`);
+          console.error(verifyErr);
+          isValid = false;
+        }
         
         if (isValid) {
           console.log(`  ✅ Issuer certificate is signed by this IACA!`);
@@ -1716,6 +2395,7 @@ async function validateCertificateChain(issuerCertBytes) {
             `↓ signed by`,
             `IACA Root: ${iaca.name}${iaca.test ? ' (TEST)' : ''}`
           ];
+          // (UI cert debug removed)
           
           console.log(`✅ Issuer certificate validated with IACA: ${iaca.name}${iaca.test ? ' (TEST)' : ''}`);
           return result;
@@ -1930,6 +2610,28 @@ oah58AIhAL+KWRF8FwT4JBblyZdmuoVVXJ36LMmAUcs5YwJpMiQW
 -----END CERTIFICATE-----`,
     issuer: 'CN=Autorité de Certification France Attestations, C=FR',
     test: true,
+    active: true
+  },
+  {
+    name: 'IACA NL mDL',
+    pem: `-----BEGIN CERTIFICATE-----
+MIIChzCCAg6gAwIBAgIUNKLqlwyPhbMOSD0kBpBVr/8nR3wwCgYIKoZIzj0EAwMw
+PjELMAkGA1UEBhMCTkwxDDAKBgNVBAoMA1JEVzELMAkGA1UEBRMCMDExFDASBgNV
+BAMMC0lBQ0EgTkwgbURMMB4XDTIxMTIxNDEzMTMxMFoXDTI5MTIxNDEzMTMwOVow
+PjELMAkGA1UEBhMCTkwxDDAKBgNVBAoMA1JEVzELMAkGA1UEBRMCMDExFDASBgNV
+BAMMC0lBQ0EgTkwgbURMMHowFAYHKoZIzj0CAQYJKyQDAwIIAQELA2IABD0oIkWG
+2SCr1imaAe1b41erTis67NlSA60xehE8IsYPVEzcn6FW5+gWrQ1p8+4ZizqdHFd3
+v84WWSe7W19tjqUurnTFMKG5NxZ2KFxpDc1YZCmB128PgeyJ2KzC2aFZ16OByDCB
+xTASBgNVHRMBAf8ECDAGAQH/AgEAMB8GA1UdIwQYMBaAFNLoPEtlzS8edYK61ZVE
+b0WqBUlAMEAGA1UdHwQ5MDcwNaAzoDGGL2h0dHA6Ly93d3ctZGllbnN0ZW4ucmR3
+Lm5sL2NybC9JQUNBTkxtREwtMDEuY3JsMB0GA1UdDgQWBBTS6DxLZc0vHnWCutWV
+RG9FqgVJQDAOBgNVHQ8BAf8EBAMCAQYwHQYDVR0SBBYwFIYSaHR0cHM6Ly93d3cu
+cmR3Lm5sMAoGCCqGSM49BAMDA2cAMGQCMCG8ctJf3PUfSB2LoYqgoy2iWe1Nqzjo
+0FJxc9ePVPVeFfI2t2Mqe2mo50hJ9EKMqwIwBtek1Tpw/SRjLjI+L0PMBtiE9Tse
+C6oqwQPIIuSJLgUWByKywFFlK+i8EqosLCVT
+-----END CERTIFICATE-----`,
+    issuer: 'C=NL, O=RDW, serialNumber=01, CN=IACA NL mDL',
+    test: false,
     active: true
   }
 ];
@@ -2169,37 +2871,6 @@ async function updateIACAList() {
     const bgOpacity = isActive ? '1' : '0.6';
     const testBadge = isTest ? '<div style="font-size: 0.8rem; color: #f59e0b; margin-top: 0.25rem; font-weight: 500;">⚠️ Test/Development Certificate</div>' : '';
     
-    // Check for Brainpool curves in the certificate
-    let brainpoolWarning = '';
-    try {
-      const certInfo = parsePEMCertificate(iaca.pem);
-      if (certInfo) {
-        const cert = new Uint8Array(certInfo.bytes);
-        const brainpoolP256r1 = [0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x07];
-        const brainpoolP384r1 = [0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x0B];
-        const brainpoolP512r1 = [0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x0D];
-        
-        const hasBrainpool = (oid) => {
-          for (let i = 0; i < cert.length - oid.length; i++) {
-            if (cert.slice(i, i + oid.length).every((byte, idx) => byte === oid[idx])) {
-              return true;
-            }
-          }
-          return false;
-        };
-        
-        if (hasBrainpool(brainpoolP256r1)) {
-          brainpoolWarning = '<div style="font-size: 0.8rem; color: #dc2626; margin-top: 0.25rem; font-weight: 500;">❌ Brainpool P-256 (NOT supported by Web Crypto API)</div>';
-        } else if (hasBrainpool(brainpoolP384r1)) {
-          brainpoolWarning = '<div style="font-size: 0.8rem; color: #dc2626; margin-top: 0.25rem; font-weight: 500;">❌ Brainpool P-384 (NOT supported by Web Crypto API)</div>';
-        } else if (hasBrainpool(brainpoolP512r1)) {
-          brainpoolWarning = '<div style="font-size: 0.8rem; color: #dc2626; margin-top: 0.25rem; font-weight: 500;">❌ Brainpool P-512 (NOT supported by Web Crypto API)</div>';
-        }
-      }
-    } catch (e) {
-      // Ignore errors during Brainpool detection
-    }
-    
     // Parse certificate for detailed info
     let certDetails = '';
     try {
@@ -2220,14 +2891,32 @@ async function updateIACAList() {
         
         // Use full DN if available, otherwise fall back to CN
         const subjectDisplay = certInfo.subjectDN || iaca.issuer;
+
+        // Determine crypto used (curve) by the IACA public key
+        let cryptoLabel = null;
+        try {
+          const pubKey = await extractPublicKeyFromCert(certInfo.bytes);
+          if (pubKey && pubKey.nobleCurveName) {
+            const map = {
+              p256: 'ECDSA P-256 (secp256r1)',
+              p384: 'ECDSA P-384 (secp384r1)',
+              brainpoolP256r1: 'ECDSA brainpoolP256r1',
+              brainpoolP384r1: 'ECDSA brainpoolP384r1'
+            };
+            cryptoLabel = map[pubKey.nobleCurveName] || `ECDSA (${pubKey.nobleCurveName})`;
+          }
+        } catch {}
+        const defaultBadge = isDefault ? '<div style="font-size: 0.8rem; color: #059669; margin: 0.25rem 0 0.5rem;">✓ Default certificate</div>' : '';
         
         certDetails = `
           <div id="iaca-details-${index}" style="display: none; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid rgba(148,163,184,0.25);">
             <div style="font-size: 0.85rem; color: #475569;">
+              ${defaultBadge}
               <div style="margin-bottom: 0.5rem;">
                 <strong>Subject:</strong>
                 <div style="color: #1e293b; font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.8rem; margin-top: 0.25rem; word-break: break-all; line-height: 1.4;">${escapeHtml(subjectDisplay)}</div>
               </div>
+              ${cryptoLabel ? `<div style="margin-bottom: 0.5rem;"><strong>Crypto:</strong> <span style="color: #1e293b;">${cryptoLabel}</span></div>` : ''}
               ${validity.notBefore ? `<div style="margin-bottom: 0.5rem;">
                 <strong>Valid From:</strong> <span style="color: #1e293b;">${validity.notBefore.toLocaleString()}</span>
               </div>` : ''}
@@ -2263,9 +2952,7 @@ async function updateIACAList() {
               <div style="font-size: 0.8rem; color: ${statusColor}; font-weight: 500;">${statusText}</div>
             </div>
             <div style="font-size: 0.85rem; color: #64748b; margin-top: 0.25rem;">${escapeHtml(iaca.issuer)}</div>
-            ${isDefault ? '<div style="font-size: 0.8rem; color: #059669; margin-top: 0.25rem;">✓ Default certificate</div>' : ''}
             ${testBadge}
-            ${brainpoolWarning}
           </div>
           <div style="display: flex; gap: 0.5rem; align-items: center;">
             ${certDetails ? `<button onclick="toggleIACADetails(${index})" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: #64748b; display: inline-flex; align-items: center; gap: 0.35rem;">
@@ -2432,7 +3119,7 @@ function convertToJSON(obj) {
     } else if (obj.tag === 24) {
       // Encoded CBOR data item
       try {
-        const decoded = CBOR.decode(new Uint8Array(obj.value).buffer);
+        const decoded = CBOR.decode(new Uint8Array(obj.value));
         return convertToJSON(decoded);
       } catch (e) {
         return { _type: 'encoded-cbor', _tag: obj.tag, value: Array.from(new Uint8Array(obj.value)) };
@@ -2581,7 +3268,7 @@ function displayDeviceResponse(deviceResponse) {
           // Unwrap tag(24) if present
           if (item instanceof CBOR.Tagged && item.tag === 24) {
             const itemBytes = new Uint8Array(item.value);
-            issuerSignedItem = CBOR.decode(itemBytes.buffer);
+            issuerSignedItem = CBOR.decode(itemBytes);
           }
           
           // Extract fields from IssuerSignedItem
@@ -2760,7 +3447,7 @@ function displayDeviceResponse(deviceResponse) {
           console.log('Unwrapping tag(24)...');
           const coseBytes = new Uint8Array(issuerAuth.value);
           console.log('COSE bytes length:', coseBytes.length);
-          coseSign1 = CBOR.decode(coseBytes.buffer);
+          coseSign1 = CBOR.decode(coseBytes);
           console.log('Decoded COSE_Sign1:', coseSign1);
         }
         
@@ -2781,7 +3468,7 @@ function displayDeviceResponse(deviceResponse) {
               // protectedHeader is a Uint8Array view, we need to copy it to decode correctly
               const protectedHeaderCopy = new Uint8Array(protectedHeader);
               console.log('Protected header bytes to decode:', hex(protectedHeaderCopy));
-              const decoded = CBOR.decode(protectedHeaderCopy.buffer);
+              const decoded = CBOR.decode(protectedHeaderCopy);
               console.log('Decoded protected header:', decoded);
               if (decoded instanceof Map) {
                 protectedData = Object.fromEntries(decoded);
@@ -2917,19 +3604,28 @@ function displayDeviceResponse(deviceResponse) {
                 
                 statusEl.innerHTML = '<span style="color: #6c757d;">🔄 Verifying ECDSA signature...</span>';
                 const isValid = await verifyCoseSign1(capturedCoseSign1, publicKey);
+                console.log('Direct signature verification result:', isValid);
                 
                 // Verify issuer certificate against IACA roots
                 statusEl.innerHTML = '<span style="color: #6c757d;">🔄 Validating issuer certificate...</span>';
                 const chainResult = await verifyCOSESign1SignatureWithChain(capturedCoseSign1);
+                console.log('Chain verification result:', chainResult);
                 
                 // Build detailed status message
+                // Per requirements: signature is valid if EITHER:
+                // 1. Signature verifies with certificate in signed object, OR
+                // 2. Certificate chain is verified against IACA
                 let statusHTML = '';
-                if (isValid && chainResult.signatureValid) {
+                const signatureValid = isValid || chainResult.signatureValid;
+                console.log('Final signature valid status:', signatureValid, '(isValid:', isValid, 'chainResult.signatureValid:', chainResult.signatureValid, ')');
+                
+                if (signatureValid) {
                   statusHTML += '<span style="color: #28a745;">✅ Signature: Valid</span><br>';
                   log(`✅ Document ${docIndex + 1} signature verified`);
                 } else {
                   statusHTML += '<span style="color: #dc3545;">❌ Signature: Invalid</span><br>';
                   log(`❌ Document ${docIndex + 1} signature verification failed`);
+                  console.error('Both verification methods failed. isValid:', isValid, 'chainResult:', chainResult);
                 }
                 
                 // Add chain validation status
@@ -2981,7 +3677,7 @@ function displayDeviceResponse(deviceResponse) {
             // Decode MSO to extract metadata
             try {
               const payloadBytes = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
-              const mso = CBOR.decode(payloadBytes.buffer);
+              const mso = CBOR.decode(payloadBytes);
               console.log('Decoded MSO:', mso);
               
               // MSO structure: { version, digestAlgorithm, valueDigests, deviceKeyInfo, docType, validityInfo }
@@ -3369,7 +4065,7 @@ async function decryptSessionEstablishmentData(encryptedData) {
     console.log('Plaintext hex (first 64 bytes):', hex(plaintext.slice(0, 64)));
     
     // Decode the DeviceResponse
-    const deviceResponse = CBOR.decode(plaintext.buffer);
+    const deviceResponse = CBOR.decode(plaintext);
     console.log('Decoded DeviceResponse:', deviceResponse);
     
     // Display the response
@@ -3399,7 +4095,7 @@ async function processSessionResponse(assembled) {
 
   let decoded;
   try {
-    decoded = CBOR.decode(assembled.buffer.slice(0));
+  decoded = CBOR.decode(assembled);
     console.log('Decoded session response:', decoded);
   } catch (decodeError) {
     console.warn('Session response is not valid CBOR:', decodeError.message);
@@ -3457,14 +4153,14 @@ async function processSessionResponse(assembled) {
       console.log('Wallet key is CBOR.Tagged - decoding value');
       const value = eDeviceKey.value;
       const bytes = value instanceof Uint8Array ? value : new Uint8Array(value);
-      walletKeyMap = toMap(CBOR.decode(bytes.buffer.slice(0)));
+  walletKeyMap = toMap(CBOR.decode(bytes));
     } else if (eDeviceKey instanceof Uint8Array) {
       console.log('Wallet key is raw Uint8Array - decoding');
-      walletKeyMap = toMap(CBOR.decode(eDeviceKey.buffer.slice(0)));
+  walletKeyMap = toMap(CBOR.decode(new Uint8Array(eDeviceKey.buffer, eDeviceKey.byteOffset, eDeviceKey.byteLength)));
     } else if (ArrayBuffer.isView(eDeviceKey)) {
       console.log('Wallet key is ArrayBuffer view - decoding');
       const bytes = new Uint8Array(eDeviceKey.buffer, eDeviceKey.byteOffset, eDeviceKey.byteLength);
-      walletKeyMap = toMap(CBOR.decode(bytes.buffer.slice(0)));
+  walletKeyMap = toMap(CBOR.decode(bytes));
     } else {
       walletKeyMap = toMap(eDeviceKey);
     }
@@ -4632,7 +5328,7 @@ async function buildTranscriptAAD() {
   
   // Verify by decoding
   try {
-    const decoded = CBOR.decode(trCbor.buffer);
+  const decoded = CBOR.decode(trCbor);
     console.log('Transcript decoded (verification):', decoded);
   } catch (e) {
     console.error('Failed to decode transcript:', e);
