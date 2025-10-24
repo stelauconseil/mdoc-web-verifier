@@ -1,7 +1,13 @@
-// Service Worker for ISO 18013-5 Web Proximity Reader PWA
-// IMPORTANT: Increment version number when you update files to trigger cache refresh
-// ALSO UPDATE: APP_VERSION in index.html (line ~395) must match this value
-const CACHE_VERSION = 18; // <-- INCREMENT THIS NUMBER WHEN UPDATING
+/*
+  Copyright (c) 2025 Stelau
+  Author: Nicolas Chalanset
+
+  Service Worker for ISO 18013-5 Web Proximity Reader PWA
+  IMPORTANT: Increment version number when you update files to trigger cache refresh
+  ALSO UPDATE: APP_VERSION in index.html (line ~395) must match this value
+*/
+
+const CACHE_VERSION = 19; // <-- INCREMENT THIS NUMBER WHEN UPDATING
 const CACHE_NAME = `mdocreader-v${CACHE_VERSION}`;
 const RUNTIME_CACHE = `mdoc-runtime-v${CACHE_VERSION}`;
 

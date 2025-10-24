@@ -2,7 +2,7 @@
 
 A single-page **Progressive Web App (PWA)** that implements ISO 18013-5 mobile Driver's License (mDL) reader functionality directly in the browser using Web Bluetooth. It scans QR codes, connects over BLE, establishes a secure session, and exchanges encrypted mDL data.
 
-This project is intentionally self-contained: everything lives in a single `index.html` file (HTML, CSS, and JavaScript). No build step is required. **Install it as an app** for offline access and native-like experience!
+This project is intentionally self-contained and has **no build step**. The UI lives in `index.html` and the logic is organized into small feature files under `js/`. **Install it as an app** for offline access and a native-like experience!
 
 ## Features
 
@@ -13,7 +13,11 @@ This project is intentionally self-contained: everything lives in a single `inde
 - 🔒 AES-256-GCM encryption with per-spec IV generation
 - 📦 CBOR encoding/decoding for protocol messages
 - 🔍 X.509 certificate validation with IACA trust anchors
-- 🛠️ Diagnostics view and extensive console logging
+- ✅ COSE_Sign1 verification using @noble/curves (ES256/ES384/ES512) with DER→raw conversion and low‑S normalization
+- 🧭 IACA selection via AKI/SKI matching, OID-based curve/hash detection
+- � Per-document Verification Status (Signature/Chain) with effective algorithm + curve display
+- 📄 MSO viewer with classic toggle/copy and decoded JSON (bytes rendered as base64)
+- �🛠️ Diagnostics view and extensive console logging
 - ⚡ Fast loading with intelligent Service Worker caching strategies
 - 🔔 Automatic update notifications when new versions are available
 - ✨ Glassmorphic floating badge showing app status (installed/offline mode)
@@ -46,7 +50,7 @@ When installed or running with offline support, a beautiful floating badge appea
 
 The badge uses a glassmorphic design with backdrop blur and smooth slide-in animation. On mobile, it automatically scales down for better usability.
 
-See [PWA_SETUP.md](PWA_SETUP.md) for detailed installation and development guide, or [PWA_README.md](PWA_README.md) for a quick overview of all PWA features.
+If you want to explore PWA capabilities locally, see `pwa-test.html` in this repo for quick checks (HTTPS, SW, manifest, install status).
 
 ## Quickstart
 
@@ -100,11 +104,11 @@ Note: The browser may prompt to trust Caddy’s local CA on first run.
 
 1. Open the app over HTTPS in a supported browser.
 2. **(Optional)** Install the app for offline access and native experience.
-3. Click **Scan QR** and present the wallet's Device Engagement QR (or paste an `mdoc://` URI if supported).
-4. The app parses Device Engagement to find BLE options (service UUID and optional address).
-5. Click **Connect** to establish a GATT connection to the wallet.
-6. The protocol state machine starts; the session is established by exchanging ephemeral keys.
-7. Select which document fields to request and send the request.
+3. Select which document fields to request and send the request.
+4. Click **Scan QR** and present the wallet's Device Engagement QR (or paste an `mdoc://` URI if supported).
+5. The app parses Device Engagement to find BLE options (service UUID and optional address).
+6. Click **Connect** to establish a GATT connection to the wallet.
+7. The protocol state machine starts; the session is established by exchanging ephemeral keys.
 8. Approve the request on the wallet app; the response is received and decrypted.
 9. Use the **Diagnostics** button and browser DevTools for detailed logs and session info.
 
@@ -123,14 +127,20 @@ Or run a Lighthouse audit in Chrome DevTools for a comprehensive PWA score.
 
 ## Architecture overview
 
-This project follows a single-file architecture with Progressive Web App enhancements. The core app resides in `index.html` and is loaded directly in the browser via CDNs.
+This project follows a self-contained, browser-run architecture with Progressive Web App enhancements. The core UI resides in `index.html` and feature logic is split across a few small files in `js/`. Everything loads directly in the browser (no bundler).
 
 ### Core Files
 
-- **index.html** — Full app with UI, BLE, crypto, CBOR, QR logic, and PWA integration
+- **index.html** — UI, wiring, and PWA integration
+- **js/activity-log.js** — UI logging helpers
+- **js/device-engagement.js** — Parse mdoc URI + Device Engagement, BLE options, eSenderKey
+- **js/request-builder.js** — Build document requests (mDL, EU PID, Age/Photo ID, mICOV, mVC)
+- **js/wallet-response.js** — Decrypt/display responses, Verification Status, MSO viewer
+- **js/iaca-management.js** — IACA storage and selection (AKI/SKI)
+- **noble-curves.min.js** — Local ECDSA verification library (@noble/curves)
 - **manifest.json** — Web app manifest for PWA installation (name, icons, theme)
 - **sw.js** — Service Worker with intelligent caching strategies
-- **icon-192.svg** / **icon-512.svg** — App icons with branded design
+- **assets/icon-192.png** / **assets/icon-512.png** — App icons
 
 ### PWA Architecture
 
@@ -141,80 +151,19 @@ This project follows a single-file architecture with Progressive Web App enhance
 - **Update Mechanism**: Version-based cache invalidation with user notifications
 - **Offline Support**: Full functionality preserved with cached assets
 
-### Key External Dependencies (CDN)
+### Key Dependencies
 
-- jsQR@1.4.0 — QR code scanning via camera frames
-- cbor-web@9.0.2 — CBOR encoding/decoding for ISO 18013-5
-- Web Crypto API — ECDH, HKDF, AES-GCM
+- jsQR@1.4.0 (CDN) — QR code scanning via camera frames
+- cbor-web@9.0.2 (CDN) — CBOR encoding/decoding for ISO 18013-5
+- @noble/curves (local `noble-curves.min.js`) — COSE_Sign1 ECDSA verification (P‑256/384/521 + brainpool mapping)
+- Web Crypto API — ECDH, HKDF, AES‑GCM
 - Web Bluetooth API — BLE GATT communication
-
-## Protocol highlights (ISO 18013-5)
-
-### 1) Device Engagement processing
-
-- `extractCborFromMdocUri(uri)` — extracts CBOR from mdoc URIs (including data URIs, hex/base64)
-- `parseMdocUriAndDE(uri)` — parses CBOR into (service UUID, mdoc public key)
-- `tryExtractBleOptions(root)` — finds BLE service UUID (DE field 10/11) and optional address (field 20)
-
-### 2) Session establishment
-
-- Ephemeral key pair: `makeReaderEphemeralKeyPair()` (P-256 ECDH)
-- Transcript AAD: `buildTranscriptAAD()` (SessionTranscript = [DeviceEngagement, EReaderKey, Handover])
-- Session keys: `deriveSessionKey()` via HKDF → SKReader (requests) + SKDevice (responses)
-
-SessionEstablishment object per spec:
-
-- eReaderKey: tag(24, bstr .cbor COSE_Key)
-- data: bstr (encrypted request payload)
-
-### 3) Encryption model
-
-- Algorithm: AES-256-GCM (NIST SP 800-38D)
-- Reader encrypts requests with SKReader
-- mdoc encrypts responses with SKDevice
-- IV: 12 bytes = identifier(8) || counter(4 big-endian)
-  - Reader identifier: 00 00 00 00 00 00 00 00
-  - mdoc identifier: 00 00 00 00 00 00 00 01
-  - Message counter starts at 1; increment before each subsequent encryption with the same key
-- AAD: empty
-- Output: ciphertext || 16-byte tag
-
-Most request/response payloads are wrapped in COSE_Encrypt0. The notable exception is SessionEstablishment.data (see below).
-
-## Important compatibility note: SessionEstablishment.data format
-
-Some wallets (e.g., Multipaz) expect the SessionEstablishment `data` field to be the raw AES-GCM output (ciphertext || tag), not a COSE_Encrypt0 structure. The ISO 18013-5 spec states that the value shall be the concatenation of the ciphertext and all 16 bytes of the authentication tag.
-
-Implemented fix in this project:
-
-- The `buildLegacySessionEstablishmentWithData()` path uses raw AES-GCM output for `data`.
-- A helper such as `aesGcmEncryptRaw()` returns the raw bytes (ciphertext || auth_tag) using the per-spec IV derivation.
-- Regular encrypted requests/responses after SessionEstablishment still use COSE_Encrypt0.
-
-Testing checklist:
-
-- data starts with ciphertext (not a CBOR array marker 0x83)
-- length = plaintext_length + 16 bytes
-- IV = identifier(8) || counter(4), big-endian
-- AAD = empty
-
-## BLE communication flow
-
-1. QR scan → extract BLE service UUID from Device Engagement
-2. BLE connect → GATT with 3 characteristics (state, C2S, S2C)
-3. State machine → writeState(0x01) to start protocol
-4. Session establishment → exchange ephemeral keys
-5. Encrypted requests → send document requests
-
-Protocol state machine:
-
-- IDLE (0x00) → START (0x01) → DATA_TRANSFER → END (0x02)
 
 ## Development guide
 
 Adding new request types:
 
-- In `buildRequestByType()`, add a new case and set fields to true to request (false = intent-to-retain only).
+- In `buildRequestByType()`, add a new case and set fields to true to request (false = intent‑to‑retain only). Existing builders cover mDL, EU PID, age verification, photo ID, mICOV, and mVC.
 
 Supporting new document types:
 
@@ -256,17 +205,22 @@ Common issues:
 
 ```
 mdoc-web-verifier/
-├── index.html              # Main application (HTML/CSS/JS)
-├── manifest.json           # PWA manifest (app metadata)
-├── sw.js                   # Service Worker (offline support)
-├── icon-192.svg            # App icon (192×192)
-├── icon-512.svg            # App icon (512×512)
-├── generate-icons.sh       # Script to generate PNG icons
-├── pwa-test.html          # PWA testing utilities
-├── PWA_SETUP.md           # Comprehensive PWA guide
-├── PWA_CONVERSION.md      # Technical PWA documentation
-├── PWA_README.md          # Quick PWA overview
-└── README.md              # This file
+├── index.html               # Main UI, wiring, PWA integration
+├── js/
+│   ├── activity-log.js     # UI logging
+│   ├── device-engagement.js# DeviceEngagement + BLE options
+│   ├── iaca-management.js  # IACA trust store helpers
+│   ├── request-builder.js  # Request builders (mDL, EU PID, age, photo, mICOV, mVC)
+│   └── wallet-response.js  # Decrypt/display, verification, MSO viewer
+├── noble-curves.min.js     # @noble/curves (local)
+├── assets/
+│   ├── icon-192.png        # App icon (192×192)
+│   └── icon-512.png        # App icon (512×512)
+├── manifest.json           # PWA manifest
+├── sw.js                   # Service Worker
+├── pwa-test.html           # PWA testing utilities
+├── backup/                 # Saved snapshots of index.html
+└── README.md               # This file
 ```
 
 There is no build system; the page runs directly in the browser. PWA features work seamlessly without compilation or bundling.
@@ -280,9 +234,20 @@ There is no build system; the page runs directly in the browser. PWA features wo
 - UX improvements and field presets
 - Additional wallet compatibility tests
 - Automated tests for crypto and CBOR encoding
-- Push notifications for updates (requires backend)
-- Share target API for receiving QR codes from other apps
 
 ## Contributing
 
-Contributions and bug reports are welcome. Given the single-file architecture, please keep changes scoped and well-commented. If adding new flows or external dependencies, prefer CDN-based, widely-used libraries and document the rationale in this README.
+Contributions and bug reports are welcome. Given the no-build, browser-run architecture, please keep changes scoped and well‑commented. If adding new flows or external dependencies, prefer CDN‑based or single-file libraries and document the rationale in this README.
+
+---
+
+### CHANGES
+
+#### version 19
+
+- Split the monolith into clear modules under `js/` while keeping zero build.
+- COSE_Sign1 verification via @noble/curves with DER→raw conversion and low‑S normalization.
+- OID‑based curve/hash detection; IACA selection via AKI/SKI.
+- ES384 support end‑to‑end (and ES512 when curve dictates); display effective algorithm and curve.
+- Fixed SessionEstablishment.data to use raw AES‑GCM output (ciphertext || tag) per ISO 18013‑5.
+- Restored and improved UI: per‑document Verification Status and classic MSO viewer with decoded JSON and copy.
