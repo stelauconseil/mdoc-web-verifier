@@ -306,6 +306,24 @@
           <input type="checkbox" name="requestType" value="photoid_full"> Photo ID Full
         </label>
       </div>
+
+      <div style="margin: 15px 0 15px 0;">
+        <strong>mICOV (Mobile International Certificate of Vaccination)</strong>
+      </div>
+      <div class="radio-group request-type">
+        <label class="radio-chip small">
+          <input type="checkbox" name="requestType" value="micov_full"> mICOV Full
+        </label>
+      </div>
+
+      <div style="margin: 15px 0 15px 0;">
+        <strong>mVC (Mobile Vehicle Registration Certificate)</strong>
+      </div>
+      <div class="radio-group request-type">
+        <label class="radio-chip small">
+          <input type="checkbox" name="requestType" value="mvc_full"> mVC Full
+        </label>
+      </div>
     </section>
 
     <section class="card" id="qrSection">
@@ -5884,6 +5902,7 @@ function buildRequestByType(requestTypes) {
 // Helper: Build a single document request based on type
 function buildSingleDocRequest(requestType) {
   let docType, namespace, fields;
+  let micovAttestationFields = null; // for org.micov.attestation.1
   
   // Determine document type and namespace
   if (requestType.startsWith('pid_')) {
@@ -5896,6 +5915,16 @@ function buildSingleDocRequest(requestType) {
     docType = "org.iso.23220.photoID.1";
     namespace = "org.iso.23220.1";
     console.log('📸 Building Photo ID request - docType:', docType, 'namespace:', namespace);
+  } else if (requestType.startsWith('micov_')) {
+    // Per user: mICOV identifiers
+    docType = "org.micov.1";
+    namespace = "org.micov.vtr.1";
+    console.log('💉 Building mICOV request - docType:', docType, 'namespace:', namespace);
+  } else if (requestType.startsWith('mvc_')) {
+    // Per user: mVC identifiers
+    docType = "org.iso.7367.1.mVC";
+    namespace = "org.iso.7367.1";
+    console.log('🚗 Building mVC request - docType:', docType, 'namespace:', namespace);
   } else {
     docType = "org.iso.18013.5.1.mDL";
     namespace = "org.iso.18013.5.1";
@@ -6062,24 +6091,93 @@ function buildSingleDocRequest(requestType) {
       console.log('📸 Photo ID fields:', Object.keys(fields).length, 'attributes requested');
       break;
 
+    // mICOV (Mobile International Certificate of Vaccination)
+    case 'micov_full':
+      fields = {
+        // Holder identity
+        "fn": true, // ok
+        "gn": true, // ok
+        "dob": true, // ok
+        "sex": true, // ok
+        "pid_PPN": true, // ok
+        "pid_DL": true, // ok
+        // Vaccination details (generic keys, may vary by issuer spec)
+        "v_RA01_1": true, // ok
+        "v_RA01_2": true, // ok
+      };
+      // Attestation namespace fields (org.micov.attestation.1)
+      micovAttestationFields = {
+        "1D47_vaccinated": true,
+        "RA01_vaccinated": true,
+        "RA01_test": true,
+        "safeEntry_Leisure": true,
+        "fac": true, // jpeg portrait
+        "fni": true,
+        "gni": true,
+        "by": true,
+        "bm": true,
+        "bd": true
+      };
+      console.log('💉 mICOV VTR fields:', Object.keys(fields).length, '• Attestation fields:', Object.keys(micovAttestationFields).length);
+      break;
+
+    // mVC (Mobile Vehicle Registration Certificate)
+    case 'mvc_full':
+      fields = {
+        // Vehicle and registration
+        "registration_number": true, // ok
+        "issue_date": true, // ok
+        "expiry_date": true, // ok
+        "issuing_country": true, // ok
+        "issuing_authority_unicode": true, // ok
+        "document_number": true, // ok
+        "un_distinguishing_signs": true, // ok
+        "date_of_registration": true, // ok
+        "date_of_first_registration": true, // ok
+        // Vehicle characteristics
+        "vehicle_identification_number": true, // ok
+        "basic_vehicle_info": true, // ok
+        "mass_info": true, // ok
+        "trailer_mass_info": true, // ok
+        "engine_info": true, // ok 
+        "seating_info": true, // ok
+        // Owner
+         "registered_users": true, // ok
+      };
+      console.log('🚗 mVC fields:', Object.keys(fields).length, 'attributes requested');
+      break;
+
     default:
       console.warn('Unknown request type:', requestType);
       return null;
   }
   
   // Build the itemsRequest
+  // Special handling: mICOV uses two namespaces (vtr + attestation)
+  let nameSpacesObj;
+  if (requestType.startsWith('micov_')) {
+    nameSpacesObj = {
+      'org.micov.vtr.1': fields,
+      'org.micov.attestation.1': micovAttestationFields || {}
+    };
+  } else {
+    nameSpacesObj = {
+      [namespace]: fields
+    };
+  }
+
   const itemsRequest = {
     docType: docType,
-    nameSpaces: {
-      [namespace]: fields
-    },
+    nameSpaces: nameSpacesObj,
     requestInfo: {}
   };
   
+  const nsKeys = Object.keys(nameSpacesObj);
+  const totalFields = nsKeys.reduce((sum, k) => sum + Object.keys(nameSpacesObj[k]).length, 0);
   console.log('📋 ItemsRequest built:', {
     docType,
-    namespace,
-    fieldCount: Object.keys(fields).length
+    namespaces: nsKeys,
+    fieldCount: totalFields
   });
   
   // Per ISO 18013-5, itemsRequest must be tag(24, bstr .cbor ItemsRequest)
@@ -6143,6 +6241,12 @@ requestTypeCheckboxes.forEach(checkbox => {
         case 'photoid_full':
           description = 'ISO 23220 Photo ID: name, birth_date, portrait, nationality, physical characteristics, address';
           break;
+        case 'micov_full':
+          description = 'mICOV: identity + vaccination details (vtr) plus attestation namespace';
+          break;
+        case 'mvc_full':
+          description = 'mVC: vehicle registration details, vehicle characteristics, owner';
+          break;
       }
       log(`Selected request type: ${type.toUpperCase()} - ${description}`);
     } else {
@@ -6151,6 +6255,8 @@ requestTypeCheckboxes.forEach(checkbox => {
         if (t.startsWith('pid_')) return 'EU PID';
         if (t.startsWith('age_verify_')) return 'Age Verification';
         if (t.startsWith('photoid_')) return 'Photo ID';
+        if (t.startsWith('micov_')) return 'mICOV';
+        if (t.startsWith('mvc_')) return 'mVC';
         return 'mDL';
       });
       const uniqueTypes = [...new Set(docTypes)];
