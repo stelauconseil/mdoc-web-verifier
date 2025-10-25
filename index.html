@@ -448,7 +448,7 @@
 
 <script type="module">
 // ==== App Version (must match CACHE_VERSION in sw.js) ====
-const APP_VERSION = 20; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
+const APP_VERSION = 21; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
 // Expose globally for auxiliary modules
 window.APP_VERSION = APP_VERSION;
 
@@ -3874,7 +3874,7 @@ updateBleRoleUI();
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', async () => {
     try {
-      const registration = await navigator.serviceWorker.register('/js/sw.js', {
+      const registration = await navigator.serviceWorker.register('/sw.js', {
         scope: '/'
       });
       
