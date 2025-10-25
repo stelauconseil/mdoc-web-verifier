@@ -7,7 +7,7 @@
   ALSO UPDATE: APP_VERSION in index.html (line ~395) must match this value
 */
 
-const CACHE_VERSION = 21; // <-- INCREMENT THIS NUMBER WHEN UPDATING
+const CACHE_VERSION = 22; // <-- INCREMENT THIS NUMBER WHEN UPDATING
 const CACHE_NAME = `mdocreader-v${CACHE_VERSION}`;
 const RUNTIME_CACHE = `mdoc-runtime-v${CACHE_VERSION}`;
 
@@ -15,7 +15,12 @@ const RUNTIME_CACHE = `mdoc-runtime-v${CACHE_VERSION}`;
 const PRECACHE_URLS = [
   "/",
   "/index.html",
-  "/noble-curves.min.js",
+  "/js/activity-log.js",
+  "/js/device-management.js",
+  "/js/iaca-management.js",
+  "/js/noble-curves.min.js",
+  "/js/request-builder.js",
+  "/js/wallet-response.js",
   "/manifest.json",
   "/assets/icon-192.png",
   "/assets/icon-512.png",
