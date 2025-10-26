@@ -243,6 +243,10 @@ Contributions and bug reports are welcome. Given the no-build, browser-run archi
 
 ### CHANGES
 
+#### version 23
+
+- support VICAL import (upload and URI)
+
 #### version 19
 
 - Split the monolith into clear modules under `js/` while keeping zero build.

@@ -414,6 +414,24 @@
           </div>
         </div>
       </div>
+
+      <div style="margin-top: 1.5rem;">
+        <strong>Import Verified Issuer CA List (VICAL):</strong>
+        <p class="muted" style="margin-top: 0.35rem;">Provide a VICAL URI or upload a CBOR file containing one or more IACA certificates.</p>
+        <div class="row" style="gap: 0.5rem; align-items: center; margin-top: 0.5rem; flex-wrap: wrap;">
+          <input id="vicalUri" type="url" placeholder="https://example.org/vical.cbor or data:application/cbor;base64,..." style="flex: 1 1 380px; min-width: 260px; padding: 0.55rem 0.75rem; border-radius: 8px; border: 1px solid rgba(148,163,184,0.45); background: #f8fafc; font-size: 0.9rem;" />
+          <button id="btnImportVicalUri">Import from URI</button>
+        </div>
+        <div class="row" style="gap: 0.5rem; align-items: center; margin-top: 0.5rem; flex-wrap: wrap;">
+          <input id="vicalFile" type="file" accept=".cbor,application/cbor,application/octet-stream" />
+          <button id="btnImportVicalFile">Import from File</button>
+          <label style="display: flex; align-items: center; cursor: pointer; user-select: none; gap: 0.35rem;">
+            <input type="checkbox" id="vicalMarkTest" />
+            <span class="muted">Mark imported as test</span>
+          </label>
+        </div>
+        <div id="vicalImportStatus" class="muted" style="margin-top: 0.5rem; font-size: 0.9rem;"></div>
+      </div>
     </section>
 
   </main>
@@ -448,7 +466,7 @@
 
 <script type="module">
 // ==== App Version (must match CACHE_VERSION in sw.js) ====
-const APP_VERSION = 22; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
+const APP_VERSION = 23; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
 // Expose globally for auxiliary modules
 window.APP_VERSION = APP_VERSION;
 
@@ -585,6 +603,13 @@ const iacaInput = document.getElementById('iacaInput');
 const btnAddIaca = document.getElementById('btnAddIaca');
 const btnClearIacaInput = document.getElementById('btnClearIacaInput');
 const toggleDebugCert = document.getElementById('toggleDebugCert');
+// VICAL elements
+const vicalUri = document.getElementById('vicalUri');
+const btnImportVicalUri = document.getElementById('btnImportVicalUri');
+const vicalFile = document.getElementById('vicalFile');
+const btnImportVicalFile = document.getElementById('btnImportVicalFile');
+const vicalMarkTest = document.getElementById('vicalMarkTest');
+const vicalImportStatus = document.getElementById('vicalImportStatus');
 
 // Request type elements (now checkboxes for multi-document selection)
 const requestTypeCheckboxes = document.querySelectorAll('input[name="requestType"]');
@@ -3182,6 +3207,87 @@ btnClearIacaInput.addEventListener('click', () => {
   iacaInput.value = '';
   document.getElementById('iacaIsTest').checked = false;
   iacaInput.focus();
+});
+
+// ==== VICAL Import Event Listeners ====
+function setVicalStatus(message, isError = false) {
+  if (!vicalImportStatus) return;
+  vicalImportStatus.textContent = message;
+  vicalImportStatus.style.color = isError ? '#b91c1c' : '#64748b';
+}
+
+async function handleVicalResult(result) {
+  try {
+    updateIACAList();
+  } catch {}
+  if (!result || typeof result !== 'object') {
+    setVicalStatus('Import completed.');
+    return;
+  }
+  const total = result.total ?? result.count ?? result.entries ?? undefined;
+  const added = result.imported ?? result.added ?? result.success ?? undefined;
+  const skipped = result.skipped ?? result.duplicates ?? undefined;
+  const errors = Array.isArray(result.errors) ? result.errors.length : (result.errors ?? 0);
+  const unknown = result.unknown ?? undefined;
+  const parts = [];
+  if (total !== undefined) parts.push(`${total} item(s)`);
+  if (added !== undefined) parts.push(`${added} imported`);
+  if (skipped !== undefined) parts.push(`${skipped} skipped`);
+  if (unknown !== undefined) parts.push(`${unknown} unknown`);
+  if (errors) parts.push(`${errors} error(s)`);
+  const summary = parts.length ? parts.join(', ') : 'completed';
+  setVicalStatus(`VICAL import ${summary}.`);
+}
+
+btnImportVicalUri?.addEventListener('click', async () => {
+  const uri = (vicalUri?.value || '').trim();
+  if (!uri) {
+    alert('Please enter a VICAL URI (https://... or data:application/cbor;base64,...)');
+    vicalUri?.focus();
+    return;
+  }
+  if (!window.IacaManager || typeof window.IacaManager.importVICALFromUri !== 'function') {
+    setVicalStatus('VICAL import not available in this build.', true);
+    return;
+  }
+  btnImportVicalUri.disabled = true;
+  setVicalStatus('Importing from URI…');
+  try {
+    const res = await window.IacaManager.importVICALFromUri(uri, !!vicalMarkTest?.checked);
+    await handleVicalResult(res);
+  } catch (e) {
+    console.error('VICAL import (URI) failed:', e);
+    setVicalStatus(`Import failed: ${e.message || e}`, true);
+  } finally {
+    btnImportVicalUri.disabled = false;
+  }
+});
+
+btnImportVicalFile?.addEventListener('click', async () => {
+  const file = vicalFile?.files && vicalFile.files[0];
+  if (!file) {
+    alert('Please select a VICAL CBOR file to import.');
+    vicalFile?.focus();
+    return;
+  }
+  if (!window.IacaManager || typeof window.IacaManager.importVICALFromBytes !== 'function') {
+    setVicalStatus('VICAL import not available in this build.', true);
+    return;
+  }
+  btnImportVicalFile.disabled = true;
+  setVicalStatus('Importing from file…');
+  try {
+    const buf = await file.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    const res = await window.IacaManager.importVICALFromBytes(bytes, !!vicalMarkTest?.checked);
+    await handleVicalResult(res);
+  } catch (e) {
+    console.error('VICAL import (file) failed:', e);
+    setVicalStatus(`Import failed: ${e.message || e}`, true);
+  } finally {
+    btnImportVicalFile.disabled = false;
+    try { if (vicalFile) vicalFile.value = ''; } catch {}
+  }
 });
 
 // Initialize IACA list on page load

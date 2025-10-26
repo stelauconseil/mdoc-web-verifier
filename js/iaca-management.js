@@ -7,6 +7,9 @@
 */
 
 (function () {
+  function getCBOR() {
+    return window.CBOR || self.CBOR || self.cbor;
+  }
   // Storage keys
   const IACA_STORAGE_KEY = "mdoc_iaca_certificates";
   const IACA_VERSION_KEY = "mdoc_iaca_version";
@@ -165,6 +168,630 @@
     iacas.push(newIACA);
     localStorage.setItem(IACA_STORAGE_KEY, JSON.stringify(iacas));
     return newIACA;
+  }
+
+  // === VICAL (Verified Issuer CA List) import ===
+  function derToPem(derBytes) {
+    const b64 = btoa(String.fromCharCode(...derBytes));
+    const lines = b64.match(/.{1,64}/g) || [];
+    return [
+      "-----BEGIN CERTIFICATE-----",
+      ...lines,
+      "-----END CERTIFICATE-----",
+      "",
+    ].join("\n");
+  }
+
+  function normalizeBytesMaybeArray(val) {
+    if (val instanceof Uint8Array) return val;
+    if (Array.isArray(val) && val.length && typeof val[0] === "number")
+      return new Uint8Array(val);
+    if (val && val.buffer && typeof val.length === "number")
+      return new Uint8Array(val);
+    return null;
+  }
+
+  function extractPemFromEntry(entry) {
+    // Returns an array of normalized entries: [{pem, name?, test?}, ...]
+    const out = [];
+
+    // Helper: base64url decode
+    const b64urlToBytes = (s) => {
+      try {
+        const b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+        const pad =
+          b64.length % 4 === 2 ? "==" : b64.length % 4 === 3 ? "=" : "";
+        const raw = atob(b64 + pad);
+        const bytes = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+        return bytes;
+      } catch (_) {
+        return null;
+      }
+    };
+
+    // Accept various shapes: pem string, base64/base64url DER, DER bytes, { certificate, der, pem, x5c }
+    if (typeof entry === "string") {
+      if (entry.includes("BEGIN CERTIFICATE")) {
+        out.push({ pem: entry });
+        return out;
+      }
+      // Try base64 and base64url
+      let der = null;
+      try {
+        der = Uint8Array.from(atob(entry.replace(/\s+/g, "")), (c) =>
+          c.charCodeAt(0)
+        );
+      } catch (_) {}
+      if (!der) der = b64urlToBytes(entry);
+      if (der && der.length > 100) {
+        out.push({ pem: derToPem(der) });
+        return out;
+      }
+    }
+    const CBOR = getCBOR();
+    if (entry instanceof CBOR?.Tagged && entry.tag === 24) {
+      try {
+        const inner = CBOR.decode(new Uint8Array(entry.value));
+        const nested = extractPemFromEntry(inner);
+        if (nested && nested.length) out.push(...nested);
+        return out;
+      } catch (_) {}
+    }
+    if (entry instanceof Uint8Array) {
+      out.push({ pem: derToPem(entry) });
+      return out;
+    }
+    if (Array.isArray(entry)) {
+      // Could be a byte array or an x5c array
+      const der = normalizeBytesMaybeArray(entry);
+      if (der && der.length > 100) {
+        out.push({ pem: derToPem(der) });
+        return out;
+      }
+      // If array of mixed cert candidates, try each
+      for (const it of entry) {
+        const nested = extractPemFromEntry(it);
+        if (nested && nested.length) out.push(...nested);
+      }
+      return out;
+    }
+    if (entry && typeof entry === "object") {
+      // Common direct keys
+      if (typeof entry.pem === "string")
+        out.push({ pem: entry.pem, name: entry.name, test: !!entry.test });
+      const der = normalizeBytesMaybeArray(
+        entry.der ||
+          entry.certificate ||
+          entry.iaca ||
+          entry.bytes ||
+          entry.cert
+      );
+      if (der && der.length > 100)
+        out.push({ pem: derToPem(der), name: entry.name, test: !!entry.test });
+
+      // x5c chains (array of base64/base64url DER strings or byte arrays)
+      if (Array.isArray(entry.x5c)) {
+        for (const c of entry.x5c) {
+          if (typeof c === "string") {
+            let bytes = null;
+            try {
+              bytes = Uint8Array.from(atob(c.replace(/\s+/g, "")), (ch) =>
+                ch.charCodeAt(0)
+              );
+            } catch (_) {}
+            if (!bytes) bytes = b64urlToBytes(c);
+            if (bytes && bytes.length > 100) out.push({ pem: derToPem(bytes) });
+          } else {
+            const b = normalizeBytesMaybeArray(c);
+            if (b && b.length > 100) out.push({ pem: derToPem(b) });
+          }
+        }
+      }
+
+      // Additional known keys with arrays of certs
+      const arrayKeys = [
+        "certs",
+        "certificates",
+        "iacaList",
+        "iacas",
+        "list",
+        "trustAnchors",
+        "trustedCAs",
+        "trustedCertificates",
+        "x509Certificates",
+        "anchors",
+        "roots",
+        "rootCAs",
+        "root_ca_certs",
+        "trusted_list",
+        "pemCertificates",
+        "derCertificates",
+        "certChain",
+        "chain",
+        "rootsPEM",
+        "rootsDER",
+      ];
+      for (const k of arrayKeys) {
+        if (Array.isArray(entry[k])) {
+          for (const it of entry[k]) {
+            const nested = extractPemFromEntry(it);
+            if (nested && nested.length) out.push(...nested);
+          }
+        }
+      }
+
+      if (out.length) return out;
+    }
+    return out;
+  }
+
+  function decodeVICALRoot(root) {
+    const out = [];
+    const pushMaybe = (item) => {
+      const norms = extractPemFromEntry(item);
+      if (Array.isArray(norms) && norms.length) {
+        for (const n of norms) if (n && n.pem) out.push(n);
+      }
+    };
+    if (!root) return out;
+    const CBOR = getCBOR();
+    // Unwrap tag(24, bstr .cbor ...)
+    if (root instanceof CBOR?.Tagged && root.tag === 24) {
+      try {
+        return decodeVICALRoot(CBOR.decode(new Uint8Array(root.value)));
+      } catch (_) {}
+    }
+    // Handle COSE_Sign1 wrapper: [protected, unprotected, payload(bstr), signature]
+    if (Array.isArray(root) && root.length === 4) {
+      const payload = root[2];
+      if (payload instanceof Uint8Array || (payload && payload.buffer)) {
+        try {
+          const inner = CBOR.decode(
+            new Uint8Array(
+              payload.buffer || payload,
+              payload.byteOffset || 0,
+              payload.byteLength || payload.length
+            )
+          );
+          return decodeVICALRoot(inner);
+        } catch (_) {
+          // fall through to generic array handling
+        }
+      }
+    }
+    // Generic array of entries
+    if (Array.isArray(root)) {
+      for (const it of root) pushMaybe(it);
+      return out;
+    }
+    // Map/object forms: search common keys that may hold arrays of certs
+    const keyCandidates = [
+      "certs",
+      "certificates",
+      "iacaList",
+      "iacas",
+      "list",
+      "trustAnchors",
+      "trustedCAs",
+      "trustedCertificates",
+      "x509Certificates",
+      "anchors",
+      "roots",
+      "rootCAs",
+      "root_ca_certs",
+      "trusted_list",
+    ];
+    if (root instanceof Map) {
+      for (const k of keyCandidates) {
+        const v = root.get(k);
+        if (Array.isArray(v)) {
+          v.forEach(pushMaybe);
+          return out;
+        }
+      }
+      // Or values of the map might themselves be entries
+      for (const v of root.values()) pushMaybe(v);
+      return out;
+    }
+    if (typeof root === "object") {
+      for (const k of keyCandidates) {
+        const v = root[k];
+        if (Array.isArray(v)) {
+          v.forEach(pushMaybe);
+          return out;
+        }
+      }
+      for (const v of Object.values(root)) pushMaybe(v);
+      return out;
+    }
+    // Fallback single entry
+    pushMaybe(root);
+    return out;
+  }
+
+  function countVICALCandidates(root) {
+    const CBOR = getCBOR();
+    // Unwrap tag(24)
+    if (root instanceof CBOR?.Tagged && root.tag === 24) {
+      try {
+        return countVICALCandidates(CBOR.decode(new Uint8Array(root.value)));
+      } catch (_) {}
+    }
+    // COSE_Sign1 wrapper
+    if (Array.isArray(root) && root.length === 4) {
+      const payload = root[2];
+      if (payload instanceof Uint8Array || (payload && payload.buffer)) {
+        try {
+          const inner = CBOR.decode(
+            new Uint8Array(
+              payload.buffer || payload,
+              payload.byteOffset || 0,
+              payload.byteLength || payload.length
+            )
+          );
+          return countVICALCandidates(inner);
+        } catch (_) {}
+      }
+      // Not a recognized COSE payload: fall back to array length
+      return root.length;
+    }
+    // Heuristic: only count items that look like cert candidates
+    const looksLikeCandidate = (val) => {
+      if (!val) return false;
+      if (typeof val === "string") {
+        if (val.includes("BEGIN CERTIFICATE")) return true;
+        // base64/base64url-ish and long enough
+        return (
+          /^[A-Za-z0-9_\-+=\/\s]+$/.test(val) &&
+          val.replace(/\s+/g, "").length > 80
+        );
+      }
+      if (val instanceof Uint8Array) return val.length > 80;
+      if (Array.isArray(val)) {
+        if (val.length && typeof val[0] === "number") return val.length > 80; // bytes
+        // array of sub-entries
+        return val.some(looksLikeCandidate);
+      }
+      if (val && typeof val === "object") {
+        if (typeof val.pem === "string") return true;
+        if (
+          normalizeBytesMaybeArray(
+            val.der || val.certificate || val.iaca || val.bytes || val.cert
+          )
+        )
+          return true;
+        if (Array.isArray(val.x5c)) return val.x5c.length > 0;
+        const keys = [
+          "certs",
+          "certificates",
+          "iacaList",
+          "iacas",
+          "list",
+          "trustAnchors",
+          "trustedCAs",
+          "trustedCertificates",
+          "x509Certificates",
+          "anchors",
+          "roots",
+          "rootCAs",
+          "root_ca_certs",
+          "trusted_list",
+          "pemCertificates",
+          "derCertificates",
+          "certChain",
+          "chain",
+          "rootsPEM",
+          "rootsDER",
+        ];
+        return keys.some((k) => Array.isArray(val[k]) && val[k].length > 0);
+      }
+      return false;
+    };
+    if (Array.isArray(root))
+      return root.filter(looksLikeCandidate).length || root.length;
+    const keyCandidates = [
+      "certs",
+      "certificates",
+      "iacaList",
+      "iacas",
+      "list",
+      "trustAnchors",
+      "trustedCAs",
+      "trustedCertificates",
+      "x509Certificates",
+      "anchors",
+      "roots",
+      "rootCAs",
+      "root_ca_certs",
+      "trusted_list",
+    ];
+    if (root instanceof Map) {
+      for (const k of keyCandidates) {
+        const v = root.get(k);
+        if (Array.isArray(v))
+          return (
+            v.reduce((acc, it) => acc + (looksLikeCandidate(it) ? 1 : 0), 0) ||
+            v.length
+          );
+      }
+      return (
+        [...root.values()].filter(looksLikeCandidate).length ||
+        [...root.values()].length
+      );
+    }
+    if (root && typeof root === "object") {
+      for (const k of keyCandidates) {
+        const v = root[k];
+        if (Array.isArray(v))
+          return (
+            v.reduce((acc, it) => acc + (looksLikeCandidate(it) ? 1 : 0), 0) ||
+            v.length
+          );
+      }
+      return (
+        Object.values(root).filter(looksLikeCandidate).length ||
+        Object.keys(root).length
+      );
+    }
+    return 1;
+  }
+
+  async function importVICALFromBytes(bytes, { markTest = false } = {}) {
+    const CBOR = getCBOR();
+    if (!CBOR) throw new Error("CBOR library not available");
+    let root = CBOR.decode(bytes);
+    if (root instanceof CBOR.Tagged && root.tag === 24) {
+      try {
+        root = CBOR.decode(new Uint8Array(root.value));
+      } catch (_) {}
+    }
+    const entries = decodeVICALRoot(root);
+    const candidates = countVICALCandidates(root);
+    let imported = 0,
+      skipped = 0,
+      errors = 0;
+    for (const e of entries) {
+      try {
+        const isTest = markTest || !!e.test;
+        addIACA(e.pem, e.name || null, isTest);
+        imported++;
+      } catch (err) {
+        if (/already installed/i.test(err.message)) skipped++;
+        else errors++;
+      }
+    }
+    localStorage.setItem(IACA_STORAGE_KEY, JSON.stringify(getIACAs()));
+    const unknown = Math.max(
+      0,
+      (typeof candidates === "number" ? candidates : entries.length) -
+        entries.length
+    );
+    if (unknown > 0 && (window.DEBUG_VERBOSE || window.DEBUG_CERT)) {
+      try {
+        console.warn(
+          `[VICAL] Unknown entries detected: ${unknown} (candidates=${candidates}, extracted=${entries.length})`
+        );
+      } catch {}
+    }
+    return {
+      total: entries.length,
+      imported,
+      skipped,
+      errors,
+      unknown,
+      candidates,
+    };
+  }
+
+  // Import from an already-parsed JS object (JSON shape). Mirrors importVICALFromBytes semantics.
+  async function importVICALFromObject(rootObject, { markTest = false } = {}) {
+    const entries = decodeVICALRoot(rootObject);
+    const candidates = countVICALCandidates(rootObject);
+    let imported = 0,
+      skipped = 0,
+      errors = 0;
+    for (const e of entries) {
+      try {
+        const isTest = markTest || !!e.test;
+        addIACA(e.pem, e.name || null, isTest);
+        imported++;
+      } catch (err) {
+        if (/already installed/i.test(err.message)) skipped++;
+        else errors++;
+      }
+    }
+    localStorage.setItem(IACA_STORAGE_KEY, JSON.stringify(getIACAs()));
+    const unknown = Math.max(
+      0,
+      (typeof candidates === "number" ? candidates : entries.length) -
+        entries.length
+    );
+    return {
+      total: entries.length,
+      imported,
+      skipped,
+      errors,
+      unknown,
+      candidates,
+    };
+  }
+
+  async function importVICALFromUri(uri, opts = {}) {
+    // Support data:application/cbor;base64,... or http(s) URIs
+    try {
+      if (/^data:application\/cbor;base64,/i.test(uri)) {
+        const b64 = uri.split(",")[1] || "";
+        const raw = atob(b64);
+        const bytes = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+        return await importVICALFromBytes(bytes, opts);
+      }
+    } catch (_) {}
+
+    // Helper: sleep with Promise
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    // Helper: parse Retry-After header (seconds or HTTP-date)
+    const parseRetryAfter = (val) => {
+      if (!val) return null;
+      const secs = parseInt(val, 10);
+      if (!Number.isNaN(secs)) return Math.max(0, secs * 1000);
+      const dateMs = Date.parse(val);
+      if (!Number.isNaN(dateMs)) return Math.max(0, dateMs - Date.now());
+      return null;
+    };
+
+    // Helper: perform fetch with sensible Accept headers and retry on transient errors
+    const doFetch = async (u, { attempts = 3, baseDelay = 800 } = {}) => {
+      let lastErr = null;
+      for (let i = 0; i < attempts; i++) {
+        try {
+          const res = await fetch(u, {
+            headers: {
+              Accept:
+                'application/cbor, application/cose; cose-type="cose-sign1", application/cwt, application/octet-stream, application/json;q=0.9, */*;q=0.8',
+            },
+            redirect: "follow",
+          });
+          if (res.ok) {
+            const contentType = (
+              res.headers.get("content-type") || ""
+            ).toLowerCase();
+            if (
+              contentType.includes("application/json") ||
+              contentType.includes("text/json")
+            ) {
+              const text = await res.text();
+              try {
+                const obj = JSON.parse(text);
+                return { kind: "json", value: obj };
+              } catch (e) {
+                const ab = new TextEncoder().encode(text).buffer;
+                return { kind: "bytes", value: new Uint8Array(ab) };
+              }
+            }
+            if (
+              contentType.includes("application/cbor") ||
+              contentType.includes("application/cose") ||
+              contentType.includes("application/cwt") ||
+              contentType.includes("application/octet-stream")
+            ) {
+              const ab = await res.arrayBuffer();
+              return { kind: "bytes", value: new Uint8Array(ab) };
+            }
+            // Unknown content-type: try bytes, then text
+            try {
+              const ab = await res.arrayBuffer();
+              return { kind: "bytes", value: new Uint8Array(ab) };
+            } catch (_) {
+              const text = await res.text();
+              return { kind: "text", value: text };
+            }
+          }
+          // Not ok: maybe transient? 429 or 5xx
+          const status = res.status;
+          const retryable = status === 429 || (status >= 500 && status <= 599);
+          if (retryable && i < attempts - 1) {
+            // Compute delay
+            const ra = parseRetryAfter(res.headers.get("retry-after"));
+            const delay =
+              ra != null
+                ? ra
+                : Math.floor(baseDelay * Math.pow(2, i) + Math.random() * 300);
+            if (window.DEBUG_VERBOSE) {
+              try {
+                console.warn(
+                  `[VICAL] Fetch ${status}, retrying in ${delay}ms (attempt ${
+                    i + 2
+                  }/${attempts})`
+                );
+              } catch {}
+            }
+            await sleep(delay);
+            continue;
+          }
+          // Non-retryable or out of attempts
+          lastErr = new Error(`Fetch failed: ${status}`);
+          break;
+        } catch (e) {
+          // Network/CORS errors present as TypeError in browsers; don't loop endlessly
+          lastErr = e;
+          break;
+        }
+      }
+      throw lastErr || new Error("Fetch failed");
+    };
+
+    // First try direct fetch
+    let fetched;
+    try {
+      fetched = await doFetch(uri);
+    } catch (err) {
+      // Likely a CORS/network error. If a proxy base is provided, attempt a retry via proxy.
+      if (opts && opts.corsProxyBase) {
+        const proxyUrl = `${opts.corsProxyBase}${encodeURIComponent(uri)}`;
+        try {
+          fetched = await doFetch(proxyUrl);
+        } catch (err2) {
+          throw err; // surface the original error
+        }
+      } else {
+        throw err;
+      }
+    }
+
+    // Decode based on fetched.kind
+    if (fetched.kind === "bytes") {
+      return await importVICALFromBytes(fetched.value, opts);
+    }
+    if (fetched.kind === "json") {
+      return await importVICALFromObject(fetched.value, opts);
+    }
+    if (fetched.kind === "text") {
+      const text = fetched.value || "";
+      // Heuristics: try data URI, base64, base64url, or JWT (JWS) payload
+      if (/^data:application\/cbor;base64,/i.test(text.trim())) {
+        return await importVICALFromUri(text.trim(), opts);
+      }
+      // Base64/base64url blob
+      const b64ish = text.trim().replace(/\s+/g, "");
+      const looksB64 =
+        /^[A-Za-z0-9_\-+=\/]+$/.test(b64ish) && b64ish.length > 80;
+      if (looksB64) {
+        try {
+          const raw = atob(b64ish.replace(/-/g, "+").replace(/_/g, "/"));
+          const bytes = new Uint8Array(raw.length);
+          for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+          return await importVICALFromBytes(bytes, opts);
+        } catch (_) {}
+      }
+      // Minimal JWS support: if it looks like a JWT, decode the payload and try JSON
+      const parts = text.trim().split(".");
+      if (parts.length === 3) {
+        try {
+          const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+          const pad =
+            b64.length % 4 === 2 ? "==" : b64.length % 4 === 3 ? "=" : "";
+          const payloadRaw = atob(b64 + pad);
+          const payloadText = new TextDecoder().decode(
+            new Uint8Array(Array.from(payloadRaw, (c) => c.charCodeAt(0)))
+          );
+          const obj = JSON.parse(payloadText);
+          return await importVICALFromObject(obj, opts);
+        } catch (_) {}
+      }
+      // Give up with a helpful error
+      throw new Error(
+        "Unsupported VICAL content from URI: not CBOR/COSE/JSON/text we can parse"
+      );
+    }
+    throw new Error("Unsupported VICAL response type");
+  }
+
+  async function importVICALFromFile(file, opts = {}) {
+    const ab = await file.arrayBuffer();
+    return await importVICALFromBytes(new Uint8Array(ab), opts);
   }
 
   function removeIACA(index) {
@@ -457,5 +1084,8 @@
     parsePEMCertificate,
     pemToCryptoKey,
     updateIACAList,
+    importVICALFromBytes,
+    importVICALFromUri,
+    importVICALFromFile,
   };
 })();
