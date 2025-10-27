@@ -538,7 +538,7 @@ openssl req -new -x509 -key reader_key.pem -out reader_cert.pem -days 365 \
 
 <script type="module">
 // ==== App Version (must match CACHE_VERSION in sw.js) ====
-const APP_VERSION = 26; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
+const APP_VERSION = 27; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
 // Expose globally for auxiliary modules
 window.APP_VERSION = APP_VERSION;
 
@@ -2922,21 +2922,43 @@ async function processSessionResponse(assembled) {
 
   // Now decrypt and display the documents from the 'data' field
   log('🔓 Decrypting wallet response to extract documents...');
-  
+
   // Get the 'data' field from the response (decodedMap already declared above)
   const responseData = decodedMap ? (decodedMap.get('data') || decodedMap.get(4)) : null;
-  
-  if (responseData && responseData.length > 0) {
+
+  // Normalize the 'data' into a Uint8Array for WebCrypto
+  const toBytes = (v) => {
+    try {
+      // Unwrap CBOR.Tagged(bstr .cbor ...) or Tagged(bstr ...)
+      if (v && typeof v === 'object' && v.constructor && v.constructor.name === 'Tagged') {
+        v = v.value;
+      }
+    } catch {}
+    if (v instanceof Uint8Array) return v;
+    if (ArrayBuffer.isView(v)) return new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+    if (v instanceof ArrayBuffer) return new Uint8Array(v);
+    if (Array.isArray(v)) return new Uint8Array(v);
+    // Last resort: try length + numeric indices
+    if (v && typeof v.length === 'number') {
+      try { return new Uint8Array(v); } catch {}
+    }
+    return null;
+  };
+
+  const dataBytes = toBytes(responseData);
+  if (dataBytes && dataBytes.length > 0) {
     try {
       // The 'data' field contains RAW encrypted DeviceResponse (not COSE_Encrypt0)
       // Per ISO 18013-5: SessionEstablishment response uses same format as request
       // Format: ciphertext || 16-byte auth tag (encrypted with SKDevice)
-      await decryptSessionEstablishmentData(responseData);
+      await decryptSessionEstablishmentData(dataBytes);
     } catch (decryptError) {
       console.error('Failed to decrypt documents:', decryptError);
       log('❌ Failed to decrypt documents: ' + decryptError.message);
     }
   } else {
+    const t = responseData ? (responseData.constructor && responseData.constructor.name) : 'null/undefined';
+    console.warn('No usable document data found in wallet response. Type:', t);
     log('⚠️ No document data found in wallet response');
   }
 }

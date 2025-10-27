@@ -349,6 +349,7 @@
         html += `
           <div class="signer-section" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff;">
             <div style="font-weight: bold; margin-bottom: 10px; color: #007bff;">🔐 Issuer Signature Information</div>
+            <div style="font-weight: 600; margin: 10px 0 8px; color:#0f172a;">🧾 Document signer</div>
         `;
         try {
           let coseSign1 = issuerAuth;
@@ -469,19 +470,21 @@
                 ? unprotectedHeader.get(33)
                 : unprotectedHeader?.[33];
             if (issuerCert) {
-              html += `
-                <div class="data-item">
-                  <div class="data-label">Issuer Certificate</div>
-                  <div class="data-value">✓ Certificate provided (${
-                    issuerCert.length || issuerCert.byteLength
-                  } bytes)</div>
-                </div>
-              `;
               try {
-                const cert = issuerCert;
-                if (cert instanceof Uint8Array || ArrayBuffer.isView(cert)) {
+                // Prefer the first certificate when a chain is present
+                const certDer =
+                  issuerCertFirst &&
+                  (issuerCertFirst instanceof Uint8Array ||
+                    ArrayBuffer.isView(issuerCertFirst))
+                    ? issuerCertFirst
+                    : issuerCert instanceof Uint8Array ||
+                      ArrayBuffer.isView(issuerCert)
+                    ? issuerCert
+                    : null;
+                if (certDer) {
+                  // Subject/Issuer details
                   const certInfo = window.extractCertInfo
-                    ? window.extractCertInfo(cert)
+                    ? window.extractCertInfo(certDer)
                     : {};
                   if (certInfo.subjectDN) {
                     html += `
@@ -521,10 +524,51 @@
                       </div>
                     `;
                   }
+                  // Certificate validity period
+                  try {
+                    const validity = window.extractCertValidity
+                      ? window.extractCertValidity(certDer)
+                      : null;
+                    if (validity) {
+                      const nf = validity.notBefore
+                        ? new Date(validity.notBefore)
+                        : null;
+                      const na = validity.notAfter
+                        ? new Date(validity.notAfter)
+                        : null;
+                      if (nf) {
+                        html += `
+                          <div class="data-item">
+                            <div class="data-label">Valid From</div>
+                            <div class="data-value">${escapeHtml(
+                              nf.toLocaleString()
+                            )}</div>
+                          </div>
+                        `;
+                      }
+                      if (na) {
+                        const expired = na < new Date();
+                        html += `
+                          <div class="data-item">
+                            <div class="data-label">Valid Until</div>
+                            <div class="data-value" style="${
+                              expired ? "color:#dc2626;font-weight:600;" : ""
+                            }">${expired ? "⚠️ " : ""}${escapeHtml(
+                          na.toLocaleString()
+                        )}</div>
+                          </div>
+                        `;
+                      }
+                    }
+                  } catch (_) {}
                 }
               } catch (_) {}
             }
 
+            // MSO subsection header
+            html += `
+              <div style="font-weight: 600; margin: 14px 0 8px; color:#0f172a; border-top: 1px dashed #cbd5e1; padding-top: 10px;">📦 MSO (Mobile Security Object)</div>
+            `;
             // Decode MSO (Mobile Security Object) from COSE_Sign1 payload if available
             let mso = null;
             try {

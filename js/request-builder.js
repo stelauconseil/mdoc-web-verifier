@@ -128,7 +128,7 @@
     }
 
     switch (requestType) {
-      case "basic":
+      case "mdl_basic":
         fields = {
           family_name: true,
           given_name: true,
@@ -136,10 +136,10 @@
           portrait: true,
         };
         break;
-      case "age":
+      case "mdl_age":
         fields = { age_over_18: true, age_over_21: true, birth_date: true };
         break;
-      case "driving":
+      case "mdl_driving":
         fields = {
           family_name: true,
           given_name: true,
@@ -151,7 +151,7 @@
           portrait: true,
         };
         break;
-      case "full":
+      case "mdl_full":
         fields = {
           family_name: true,
           given_name: true,
