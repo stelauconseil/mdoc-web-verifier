@@ -274,16 +274,16 @@
       </div>
       <div class="radio-group request-type">
         <label class="radio-chip small">
-          <input type="checkbox" name="requestType" value="basic"> mDL Basic
+          <input type="checkbox" name="requestType" value="mdl_basic"> mDL Basic
         </label>
         <label class="radio-chip small">
-          <input type="checkbox" name="requestType" value="age"> mDL Age Check
+          <input type="checkbox" name="requestType" value="mdl_age"> mDL Age Check
         </label>
         <label class="radio-chip small">
-          <input type="checkbox" name="requestType" value="driving"> mDL Driving
+          <input type="checkbox" name="requestType" value="mdl_driving"> mDL Driving
         </label>
         <label class="radio-chip small">
-          <input type="checkbox" name="requestType" value="full"> mDL Full
+          <input type="checkbox" name="requestType" value="mdl_full"> mDL Full
         </label>
       </div>
       
@@ -4109,16 +4109,16 @@ requestTypeCheckboxes.forEach(checkbox => {
       const type = selected[0];
       let description = '';
       switch(type) {
-        case 'basic':
+        case 'mdl_basic':
           description = 'Basic ID: name, birth_date, portrait';
           break;
-        case 'age':
+        case 'mdl_age':
           description = 'Age verification: age_over_18, age_over_21, birth_date';
           break;
-        case 'driving':
+        case 'mdl_driving':
           description = 'Driving license: name, birth_date, driving_privileges, license info, portrait';
           break;
-        case 'full':
+        case 'mdl_full':
           description = 'Full mDL: all available fields including address, physical characteristics';
           break;
         case 'pid_basic':
