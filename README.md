@@ -1,257 +1,66 @@
 # ISO 18013-5 Web Verifier (mDL Reader)
 
-A single-page **Progressive Web App (PWA)** that implements ISO 18013-5 mobile Driver's License (mDL) reader functionality directly in the browser using Web Bluetooth. It scans QR codes, connects over BLE, establishes a secure session, and exchanges encrypted mDL data.
+A single-page web app that reads ISO 18013-5 mobile Driver’s License (mDL) mDoc over Web Bluetooth. It scans the wallet’s Device Engagement QR, connects via BLE, establishes a secure session, and verifies COSE_Sign1 with X.509 trust anchors.
 
-This project is intentionally self-contained and has **no build step**. The UI lives in `index.html` and the logic is organized into small feature files under `js/`. **Install it as an app** for offline access and a native-like experience!
+- No build step. Runs directly in the browser.
+- Optional install as a PWA for offline use.
 
-## Features
+## Requirements
 
-- 📱 **Progressive Web App** - Install on desktop or mobile, works offline with elegant status badge
-- 📷 QR code scanning (camera) to extract Device Engagement data
-- 🔵 Web Bluetooth GATT communication with the wallet device
-- 🔐 ISO 18013-5 compliant session establishment
-- 🔒 AES-256-GCM encryption with per-spec IV generation
-- 📦 CBOR encoding/decoding for protocol messages
-- 🔍 X.509 certificate validation with IACA trust anchors
-- ✅ COSE_Sign1 verification using @noble/curves (ES256/ES384/ES512) with DER→raw conversion and low‑S normalization
-- 🧭 IACA selection via AKI/SKI matching, OID-based curve/hash detection
-- � Per-document Verification Status (Signature/Chain) with effective algorithm + curve display
-- 📄 MSO viewer with classic toggle/copy and decoded JSON (bytes rendered as base64)
-- �🛠️ Diagnostics view and extensive console logging
-- ⚡ Fast loading with intelligent Service Worker caching strategies
-- 🔔 Automatic update notifications when new versions are available
-- ✨ Glassmorphic floating badge showing app status (installed/offline mode)
-- 🌐 Works in modern Chromium browsers (secure context / HTTPS required)
+- Chromium browser (Chrome/Edge) over HTTPS
+- Camera access (QR scan) and Bluetooth access (BLE)
+- The wallet must implement “Server Peripheral” over BLE as defined by ISO 18013-5
 
-## PWA Installation
+## Quick start
 
-### Quick Install
+1. Open the app over HTTPS.
+2. Click Scan QR and show the wallet’s Device Engagement QR (or paste an mdoc:// URI).
+3. Connect over BLE when prompted; approve on the wallet.
+4. View the response and verification status in the UI.
 
-1. Visit the app over HTTPS
-2. Look for the **install prompt** or click the ⊕ icon in the address bar
-3. Click **"Install"** to add it to your device
-4. Enjoy the native app experience with a floating status badge showing "✨ Installed App"
+Tips
 
-### Benefits of Installing
+- Use Diagnostics for logs and session details.
+- Wallets may disconnect between steps; reconnect as needed.
 
-- ✅ **Works offline** - Full functionality after first visit
-- ✅ **Instant loading** - Cached assets for near-instant startup
-- ✅ **Native experience** - Fullscreen without browser UI
-- ✅ **Visual feedback** - Elegant floating badge shows app/offline status
-- ✅ **Auto updates** - Get notified when updates are available
-- ✅ **Quick access** - Launch from home screen or desktop
+## Features (short)
 
-### PWA Status Badge
+- QR scan → BLE connect → secure session (AES‑GCM with spec IV)
+- COSE_Sign1 verification via @noble/curves (ES256/ES384/ES512), DER→raw, low‑S
+- IACA trust store with AKI/SKI matching and OID-driven curve/hash detection
+- Classic MSO viewer and per-document Verification Status
+- Request presets incl. mDL, EU PID, age/photo ID, mICOV, mVC
 
-When installed or running with offline support, a beautiful floating badge appears in the top-right corner:
+## VICAL (Verified Issuer CA List)
 
-- **✨ Installed App** (green) - Running as installed PWA
-- **🔄 Offline Ready** (blue) - Service Worker active, offline support enabled
+You can bulk‑import issuer CAs:
 
-The badge uses a glassmorphic design with backdrop blur and smooth slide-in animation. On mobile, it automatically scales down for better usability.
+- Import from file: preferred and most reliable.
+- Import from URI: supported; the app handles CBOR/COSE/CWT, JSON, data URIs, and base64 blobs. It retries transient HTTP errors (503/5xx/429) and optionally supports a CORS proxy via `opts.corsProxyBase` if the server blocks cross‑origin requests. If fetch is blocked or unstable, download the file and use Import from file instead.
 
-If you want to explore PWA capabilities locally, see `pwa-test.html` in this repo for quick checks (HTTPS, SW, manifest, install status).
+Example URI: https://vical.dts.aamva.org/vical/vc/vc-2025-09-27-1758957681255
 
-## Quickstart
+The import summary shows imported, skipped (duplicates), unknown (non‑cert entries), and errors.
 
-Because Web Bluetooth requires a secure context, you must serve this page over HTTPS (file:// won’t work). Below are a few options for local development on macOS.
+## Security notes
 
-### Option A: Caddy (automatic local TLS)
+- Reader authentication not implemented (readerAuth: null)
+- Session keys kept in memory only; cleared on reload
+- SessionEstablishment.data uses raw AES‑GCM ciphertext||tag per ISO 18013‑5
 
-1. Install Caddy (one-time):
+## Troubleshooting
 
-- brew install caddy
+- CORS/503 when importing by URI → try again (automatic retries), or import by file; optionally pass a CORS proxy.
+- No prompt on the wallet → ensure requested fields are set to true.
+- Wrong docType → match the wallet’s exact supported type.
+- BLE disconnects → normal behavior for some wallets; reconnect.
 
-2. Start a file server from this folder:
+## Files
 
-- caddy file-server --browse --listen :8443
+- index.html — UI and wiring
+- js/ — feature modules (device engagement, requests, responses, IACA, logs)
+- sw.js / manifest.json — optional PWA
 
-3. Open https://localhost:8443 in Chrome.
+## Recent changes
 
-Note: The browser may prompt to trust Caddy’s local CA on first run.
-
-### Option B: mkcert + http-server
-
-1. Install prerequisites (one-time):
-
-- brew install mkcert nss
-- mkcert -install
-
-2. Generate a localhost certificate in this folder:
-
-- mkcert localhost
-  This creates `localhost.pem` and `localhost-key.pem`.
-
-3. Serve over HTTPS using any static server. For example, with http-server:
-
-- npx http-server -S -C localhost.pem -K localhost-key.pem -p 8443
-
-4. Open https://localhost:8443 in Chrome.
-
-> Tip: You can also host this on any HTTPS-capable static site (e.g., GitHub Pages). Ensure the origin is secure and Web Bluetooth is allowed.
-
-## Browser requirements
-
-- Chromium-based browser (Chrome/Edge) on desktop
-- Secure context (HTTPS)
-- Camera permission (for QR scanning)
-- Bluetooth permission (for BLE connection)
-- On macOS, some advertising APIs require Chrome Canary + flags; standard GATT connections work on stable Chrome
-
-## Using the app
-
-### Normal Usage Flow
-
-1. Open the app over HTTPS in a supported browser.
-2. **(Optional)** Install the app for offline access and native experience.
-3. Select which document fields to request and send the request.
-4. Click **Scan QR** and present the wallet's Device Engagement QR (or paste an `mdoc://` URI if supported).
-5. The app parses Device Engagement to find BLE options (service UUID and optional address).
-6. Click **Connect** to establish a GATT connection to the wallet.
-7. The protocol state machine starts; the session is established by exchanging ephemeral keys.
-8. Approve the request on the wallet app; the response is received and decrypted.
-9. Use the **Diagnostics** button and browser DevTools for detailed logs and session info.
-
-### Testing PWA Features
-
-Visit **pwa-test.html** to verify PWA functionality:
-
-- ✅ Check HTTPS and browser API support
-- ✅ Verify Service Worker registration
-- ✅ Test manifest loading and parsing
-- ✅ Check installation status
-- ✅ Inspect cache contents
-- 🛠️ Debug utilities (unregister SW, clear cache)
-
-Or run a Lighthouse audit in Chrome DevTools for a comprehensive PWA score.
-
-## Architecture overview
-
-This project follows a self-contained, browser-run architecture with Progressive Web App enhancements. The core UI resides in `index.html` and feature logic is split across a few small files in `js/`. Everything loads directly in the browser (no bundler).
-
-### Core Files
-
-- **index.html** — UI, wiring, and PWA integration
-- **js/activity-log.js** — UI logging helpers
-- **js/device-engagement.js** — Parse mdoc URI + Device Engagement, BLE options, eSenderKey
-- **js/request-builder.js** — Build document requests (mDL, EU PID, Age/Photo ID, mICOV, mVC)
-- **js/wallet-response.js** — Decrypt/display responses, Verification Status, MSO viewer
-- **js/iaca-management.js** — IACA storage and selection (AKI/SKI)
-- **noble-curves.min.js** — Local ECDSA verification library (@noble/curves)
-- **manifest.json** — Web app manifest for PWA installation (name, icons, theme)
-- **sw.js** — Service Worker with intelligent caching strategies
-- **assets/icon-192.png** / **assets/icon-512.png** — App icons
-
-### PWA Architecture
-
-- **Cache Strategy**:
-  - Cache-first for app shell (instant loading)
-  - Network-first for CDN resources (always fresh with fallback)
-  - Runtime caching for visited resources
-- **Update Mechanism**: Version-based cache invalidation with user notifications
-- **Offline Support**: Full functionality preserved with cached assets
-
-### Key Dependencies
-
-- jsQR@1.4.0 (CDN) — QR code scanning via camera frames
-- cbor-web@9.0.2 (CDN) — CBOR encoding/decoding for ISO 18013-5
-- @noble/curves (local `noble-curves.min.js`) — COSE_Sign1 ECDSA verification (P‑256/384/521 + brainpool mapping)
-- Web Crypto API — ECDH, HKDF, AES‑GCM
-- Web Bluetooth API — BLE GATT communication
-
-## Development guide
-
-Adding new request types:
-
-- In `buildRequestByType()`, add a new case and set fields to true to request (false = intent‑to‑retain only). Existing builders cover mDL, EU PID, age verification, photo ID, mICOV, and mVC.
-
-Supporting new document types:
-
-- Update `docType` and `nameSpaces` accordingly, e.g.:
-  - `baseRequest.docRequests[0].itemsRequest.docType = "your.new.doctype"`
-  - `baseRequest.docRequests[0].itemsRequest.nameSpaces = { "your.new.namespace": {} }`
-
-Debugging tips:
-
-- Use the Diagnostics button to view the full system state
-- Open DevTools and inspect:
-  - `window.sessionDebug.skReader` / `skDevice`
-  - `window.sessionDebug.lastEncrypt`
-  - `window.sessionEstablished`
-- Watch the Web Bluetooth connection state in DevTools
-
-Common issues:
-
-- No prompt on wallet: ensure requested fields are set to true
-- Connection drops: wallets often disconnect between operations (normal)
-- Wrong docType: must exactly match wallet’s supported types
-- Encryption mismatch: verify SessionTranscript and IV construction
-
-## Security considerations
-
-- Reader authentication is not implemented (readerAuth: null)
-- Session keys are kept only in memory and cleared on page reload
-- IV generation follows ISO 18013-5 (identifier(8) || counter(4))
-- Transcript AAD uses the SessionTranscript hash per spec
-- Use only in secure contexts; do not expose secrets or keys
-
-## Browser flags (macOS)
-
-- HTTPS is required for Web Bluetooth
-- For certain advertising APIs on macOS, Chrome Canary + experimental flags may be necessary
-- Standard GATT usage typically works on stable Chrome without flags
-
-## Project structure
-
-```
-mdoc-web-verifier/
-├── index.html               # Main UI, wiring, PWA integration
-├── js/
-│   ├── activity-log.js     # UI logging
-│   ├── device-engagement.js# DeviceEngagement + BLE options
-│   ├── iaca-management.js  # IACA trust store helpers
-│   ├── request-builder.js  # Request builders (mDL, EU PID, age, photo, mICOV, mVC)
-│   └── wallet-response.js  # Decrypt/display, verification, MSO viewer
-├── noble-curves.min.js     # @noble/curves (local)
-├── assets/
-│   ├── icon-192.png        # App icon (192×192)
-│   └── icon-512.png        # App icon (512×512)
-├── manifest.json           # PWA manifest
-├── sw.js                   # Service Worker
-├── pwa-test.html           # PWA testing utilities
-├── backup/                 # Saved snapshots of index.html
-└── README.md               # This file
-```
-
-There is no build system; the page runs directly in the browser. PWA features work seamlessly without compilation or bundling.
-
-## Roadmap / ideas
-
-- ✅ ~~Progressive Web App support~~ (Completed!)
-- ✅ ~~Offline functionality~~ (Completed!)
-- ✅ ~~Install prompts and update notifications~~ (Completed!)
-- Reader authentication (optional per ISO 18013-5)
-- UX improvements and field presets
-- Additional wallet compatibility tests
-- Automated tests for crypto and CBOR encoding
-
-## Contributing
-
-Contributions and bug reports are welcome. Given the no-build, browser-run architecture, please keep changes scoped and well‑commented. If adding new flows or external dependencies, prefer CDN‑based or single-file libraries and document the rationale in this README.
-
----
-
-### CHANGES
-
-#### version 23
-
-- support VICAL import (upload and URI)
-
-#### version 19
-
-- Split the monolith into clear modules under `js/` while keeping zero build.
-- COSE_Sign1 verification via @noble/curves with DER→raw conversion and low‑S normalization.
-- OID‑based curve/hash detection; IACA selection via AKI/SKI.
-- ES384 support end‑to‑end (and ES512 when curve dictates); display effective algorithm and curve.
-- Fixed SessionEstablishment.data to use raw AES‑GCM output (ciphertext || tag) per ISO 18013‑5.
-- Restored and improved UI: per‑document Verification Status and classic MSO viewer with decoded JSON and copy.
+- VICAL import by URI is more robust: content‑type aware (CBOR/COSE/JSON), retry/backoff for 503/5xx/429, optional CORS proxy fallback; import by file unchanged.
