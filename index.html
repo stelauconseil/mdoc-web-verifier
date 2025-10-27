@@ -419,7 +419,7 @@
 
         <div style="margin-bottom: 1rem;">
           <label class="muted" for="readerPrivateKey">Reader Private Key (PKCS#8 PEM format)</label>
-          <textarea id="readerPrivateKey" placeholder="-----BEGIN PRIVATE KEY-----&#10;MIGHAgEAMBMGByqGSM49...&#10;-----END PRIVATE KEY-----" style="width: 97%; min-height: 100px; padding: 0.75rem 0.9rem; border-radius: 12px; border: 1px solid rgba(148,163,184,0.45); font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.85rem; background: #f8fafc; resize: vertical; margin-top: 0.5rem;"></textarea>
+          <textarea id="readerPrivateKey" placeholder="-----BEGIN PRIVATE KEY-----&#10;MIGHAgEAMBMGByqGSM49...&#10;-----END PRIVATE KEY-----" style="width: 97%; min-height: 70px; padding: 0.75rem 0.9rem; border-radius: 12px; border: 1px solid rgba(148,163,184,0.45); font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.85rem; background: #f8fafc; resize: vertical; margin-top: 0.5rem;"></textarea>
         </div>
 
         <div class="row">
@@ -538,7 +538,7 @@ openssl req -new -x509 -key reader_key.pem -out reader_cert.pem -days 365 \
 
 <script type="module">
 // ==== App Version (must match CACHE_VERSION in sw.js) ====
-const APP_VERSION = 25; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
+const APP_VERSION = 26; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
 // Expose globally for auxiliary modules
 window.APP_VERSION = APP_VERSION;
 
@@ -3418,6 +3418,8 @@ enableReaderAuth?.addEventListener('change', (e) => {
   try { window.ReaderAuth?.setEnabled?.(on); } catch {}
   if (readerAuthConfig) readerAuthConfig.style.display = on ? 'block' : 'none';
   setReaderAuthStatus(on ? 'Reader Authentication enabled.' : 'Reader Authentication disabled.', 'info');
+  // Refresh CN display when toggling visibility
+  try { updateReaderCommonName(); } catch {}
 });
 
 btnSaveReaderCert?.addEventListener('click', () => {
@@ -3454,6 +3456,10 @@ btnClearReaderCert?.addEventListener('click', () => {
 
 // Initialize on load
 initReaderAuthUI();
+// Live-update CN preview as the user pastes/edits the certificate
+readerCertificate?.addEventListener('input', () => {
+  try { updateReaderCommonName(readerCertificate.value); } catch {}
+});
 
 // Helper: parse first CERTIFICATE block from PEM to DER bytes (Uint8Array)
 function pemFirstCertToDer(pem) {
