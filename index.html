@@ -406,8 +406,10 @@
 
       <div id="readerAuthConfig" style="margin-top: 1.5rem; display: none;">
         <div style="margin-bottom: 1rem;">
-          <label class="muted" for="readerOrgName">Organization Name</label>
-          <input type="text" id="readerOrgName" placeholder="e.g., Example Reader Organization" style="width: 97%; padding: 0.75rem 0.9rem; border-radius: 12px; border: 1px solid rgba(148,163,184,0.45); font-size: 0.95rem; margin-top: 0.5rem;">
+          <label class="muted">Reader Common Name (from certificate)</label>
+          <div id="readerCommonName" style="width: 97%; padding: 0.75rem 0.9rem; border-radius: 12px; border: 1px solid rgba(148,163,184,0.3); font-size: 0.95rem; margin-top: 0.5rem; background:#f8fafc; color:#0f172a;">
+            —
+          </div>
         </div>
 
         <div style="margin-bottom: 1rem;">
@@ -536,7 +538,7 @@ openssl req -new -x509 -key reader_key.pem -out reader_cert.pem -days 365 \
 
 <script type="module">
 // ==== App Version (must match CACHE_VERSION in sw.js) ====
-const APP_VERSION = 24; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
+const APP_VERSION = 25; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
 // Expose globally for auxiliary modules
 window.APP_VERSION = APP_VERSION;
 
@@ -687,7 +689,8 @@ const requestTypeCheckboxes = document.querySelectorAll('input[name="requestType
 // Reader Authentication UI elements
 const enableReaderAuth = document.getElementById('enableReaderAuth');
 const readerAuthConfig = document.getElementById('readerAuthConfig');
-const readerOrgName = document.getElementById('readerOrgName');
+// const readerOrgName = document.getElementById('readerOrgName'); // Removed
+const readerCommonNameEl = document.getElementById('readerCommonName');
 const readerCertificate = document.getElementById('readerCertificate');
 const readerPrivateKey = document.getElementById('readerPrivateKey');
 const btnSaveReaderCert = document.getElementById('btnSaveReaderCert');
@@ -3401,7 +3404,7 @@ function initReaderAuthUI() {
     if (!cfg) return;
     if (enableReaderAuth) enableReaderAuth.checked = !!cfg.enabled;
     if (readerAuthConfig) readerAuthConfig.style.display = cfg.enabled ? 'block' : 'none';
-    if (readerOrgName) readerOrgName.value = cfg.orgName || '';
+  // readerOrgName removed; show Common Name from certificate instead
     if (readerCertificate) readerCertificate.value = cfg.certsPem || '';
     if (readerPrivateKey) readerPrivateKey.value = cfg.keyPem || '';
     if (cfg.enabled) setReaderAuthStatus('Reader Authentication is enabled. Saved key and certificate will be used to sign requests.', 'info');
@@ -3418,7 +3421,6 @@ enableReaderAuth?.addEventListener('change', (e) => {
 });
 
 btnSaveReaderCert?.addEventListener('click', () => {
-  const org = (readerOrgName?.value || '').trim();
   const certPem = (readerCertificate?.value || '').trim();
   const keyPem = (readerPrivateKey?.value || '').trim();
   if (!certPem || !keyPem) {
@@ -3426,10 +3428,11 @@ btnSaveReaderCert?.addEventListener('click', () => {
     return;
   }
   try {
-    window.ReaderAuth?.setOrgName?.(org);
     window.ReaderAuth?.setCertsPem?.(certPem);
     window.ReaderAuth?.setKeyPem?.(keyPem);
     setReaderAuthStatus('Saved reader key and certificate. Requests will include a signed ReaderAuthentication COSE_Sign1.', 'success');
+    // Update CN display from the provided certificate
+    try { updateReaderCommonName(certPem); } catch {}
   } catch (e) {
     console.error('Failed to save reader auth config:', e);
     setReaderAuthStatus('Failed to save reader authentication settings: ' + (e.message || e), 'error');
@@ -3438,13 +3441,12 @@ btnSaveReaderCert?.addEventListener('click', () => {
 
 btnClearReaderCert?.addEventListener('click', () => {
   try {
-    if (readerOrgName) readerOrgName.value = '';
     if (readerCertificate) readerCertificate.value = '';
     if (readerPrivateKey) readerPrivateKey.value = '';
-    window.ReaderAuth?.setOrgName?.('');
     window.ReaderAuth?.setCertsPem?.('');
     window.ReaderAuth?.setKeyPem?.('');
     setReaderAuthStatus('Cleared reader authentication settings.', 'info');
+    if (readerCommonNameEl) readerCommonNameEl.textContent = '—';
   } catch (e) {
     setReaderAuthStatus('Failed to clear settings: ' + (e.message || e), 'error');
   }
@@ -3452,6 +3454,35 @@ btnClearReaderCert?.addEventListener('click', () => {
 
 // Initialize on load
 initReaderAuthUI();
+
+// Helper: parse first CERTIFICATE block from PEM to DER bytes (Uint8Array)
+function pemFirstCertToDer(pem) {
+  if (!pem) return null;
+  const m = pem.match(/-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/);
+  if (!m) return null;
+  const b64 = m[1].replace(/[^A-Za-z0-9+/=\-_]/g, '').replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(b64);
+  const out = new Uint8Array(raw.length);
+  for (let i=0;i<raw.length;i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+function updateReaderCommonName(certPemFromArg) {
+  try {
+    const pem = (certPemFromArg && certPemFromArg.trim()) || (window.ReaderAuth?.getConfig?.().certsPem || '').trim();
+    const der = pemFirstCertToDer(pem);
+    if (!der) { if (readerCommonNameEl) readerCommonNameEl.textContent = '—'; return; }
+    const info = extractCertInfo(der);
+    const cn = info?.subjectCN || '—';
+    if (readerCommonNameEl) readerCommonNameEl.textContent = cn;
+  } catch (e) {
+    console.warn('Failed to update Reader Common Name:', e);
+    if (readerCommonNameEl) readerCommonNameEl.textContent = '—';
+  }
+}
+
+// Populate CN at startup if cert is already saved
+try { updateReaderCommonName(); } catch {}
 
 // ==== Robust mdoc URI → CBOR extraction helpers ====
 function b64ToBytesBrowserSafe(...args){ return window.DeviceEngagement.b64ToBytesBrowserSafe(...args); }
