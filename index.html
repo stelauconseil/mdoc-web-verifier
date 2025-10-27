@@ -384,6 +384,73 @@
       <div class="log" id="log" role="log" aria-live="polite" aria-label="Session activity log"></div>
     </section>
 
+    <!-- Reader Authentication Configuration (moved above IACA) -->
+    <section class="card" id="readerAuthSection">
+      <h2>🔐 Reader Authentication (Optional)</h2>
+      <p class="muted">Configure reader authentication to prove your identity to the wallet. This adds a digitally signed certificate to document requests.</p>
+      
+      <div style="margin-top: 1rem; padding: 1rem; background: #fff3cd; border-radius: 8px; border: 1px solid #ffc107;">
+        <strong>⚠️ Security Warning:</strong>
+        <p class="muted" style="margin-top: 0.5rem; margin-bottom: 0;">
+          Reader authentication requires storing your <strong>private key</strong> in browser localStorage. 
+          Only use this feature for testing purposes. In production, private keys should be stored in secure hardware (HSM/TPM).
+        </p>
+      </div>
+
+      <div style="margin-top: 1.5rem;">
+        <label style="display: flex; align-items: center; cursor: pointer; user-select: none;">
+          <input type="checkbox" id="enableReaderAuth" style="margin-right: 0.5rem;">
+          <strong>Enable Reader Authentication</strong>
+        </label>
+      </div>
+
+      <div id="readerAuthConfig" style="margin-top: 1.5rem; display: none;">
+        <div style="margin-bottom: 1rem;">
+          <label class="muted" for="readerOrgName">Organization Name</label>
+          <input type="text" id="readerOrgName" placeholder="e.g., Example Reader Organization" style="width: 97%; padding: 0.75rem 0.9rem; border-radius: 12px; border: 1px solid rgba(148,163,184,0.45); font-size: 0.95rem; margin-top: 0.5rem;">
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+          <label class="muted" for="readerCertificate">Reader Certificate (PEM format)</label>
+          <textarea id="readerCertificate" placeholder="-----BEGIN CERTIFICATE-----&#10;MIICx...&#10;-----END CERTIFICATE-----" style="width: 97%; min-height: 100px; padding: 0.75rem 0.9rem; border-radius: 12px; border: 1px solid rgba(148,163,184,0.45); font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.85rem; background: #f8fafc; resize: vertical; margin-top: 0.5rem;"></textarea>
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+          <label class="muted" for="readerPrivateKey">Reader Private Key (PKCS#8 PEM format)</label>
+          <textarea id="readerPrivateKey" placeholder="-----BEGIN PRIVATE KEY-----&#10;MIGHAgEAMBMGByqGSM49...&#10;-----END PRIVATE KEY-----" style="width: 97%; min-height: 100px; padding: 0.75rem 0.9rem; border-radius: 12px; border: 1px solid rgba(148,163,184,0.45); font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.85rem; background: #f8fafc; resize: vertical; margin-top: 0.5rem;"></textarea>
+        </div>
+
+        <div class="row">
+          <button id="btnSaveReaderCert">💾 Save Reader Certificate</button>
+          <button id="btnClearReaderCert" class="secondary">🗑️ Clear</button>
+        </div>
+
+        <div id="readerAuthStatus" style="margin-top: 1rem; padding: 0.75rem; border-radius: 8px; display: none;">
+          <!-- Status messages will appear here -->
+        </div>
+
+        <div style="margin-top: 1.5rem; padding: 1rem; background: #e7f3ff; border-radius: 8px; border: 1px solid #2196f3;">
+          <strong>ℹ️ Testing Instructions:</strong>
+          <p class="muted" style="margin-top: 0.5rem; margin-bottom: 0.5rem;">
+            Generate a self-signed certificate for testing:
+          </p>
+          <pre style="background: #1e293b; color: #e2e8f0; padding: 0.75rem; border-radius: 6px; overflow-x: auto; font-size: 0.85rem; margin-top: 0.5rem;"><code># Generate P-256 private key
+openssl ecparam -name prime256v1 -genkey -noout -out reader_key.pem
+
+# Convert to PKCS#8 format (required)
+openssl pkcs8 -topk8 -nocrypt -in reader_key.pem -out reader_key_pkcs8.pem
+
+# Generate self-signed certificate
+openssl req -new -x509 -key reader_key.pem -out reader_cert.pem -days 365 \
+  -subj "/CN=Test Web Proximity Reader/O=ENCOM/C=US"</code></pre>
+          <p class="muted" style="margin-top: 0.5rem; margin-bottom: 0;">
+            Then paste the contents of <code>reader_cert.pem</code> and <code>reader_key_pkcs8.pem</code> into the fields above.
+          </p>
+        </div>
+
+      </div>
+    </section>
+
         <section class="card" id="iacaSection">
       <h2>⚙️ Issuer Certificate Management (IACA)</h2>
       <p class="muted">Manage Issuing Authority Certification Authority (IACA) certificates for signature verification. These are used to validate the mDoc issuer signatures.</p>
@@ -434,6 +501,8 @@
       </div>
     </section>
 
+    
+  
   </main>
   <footer>
     Built by <a href="https://stelau.com">Stelau</a> for ISO 18013-5 experimentation. Web Bluetooth requires HTTPS and a compatible browser.
@@ -459,14 +528,15 @@
 </script>
 <!-- Feature modules (globals) -->
 <script src="/js/activity-log.js"></script>
-<script src="/js/iaca-management.js"></script>
+  <script src="/js/iaca-management.js"></script>
+  <script src="/js/reader-authentication.js"></script>
 <script src="/js/device-engagement.js"></script>
 <script src="/js/wallet-response.js"></script>
 <script src="/js/request-builder.js"></script>
 
 <script type="module">
 // ==== App Version (must match CACHE_VERSION in sw.js) ====
-const APP_VERSION = 23; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
+const APP_VERSION = 24; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
 // Expose globally for auxiliary modules
 window.APP_VERSION = APP_VERSION;
 
@@ -613,6 +683,16 @@ const vicalImportStatus = document.getElementById('vicalImportStatus');
 
 // Request type elements (now checkboxes for multi-document selection)
 const requestTypeCheckboxes = document.querySelectorAll('input[name="requestType"]');
+
+// Reader Authentication UI elements
+const enableReaderAuth = document.getElementById('enableReaderAuth');
+const readerAuthConfig = document.getElementById('readerAuthConfig');
+const readerOrgName = document.getElementById('readerOrgName');
+const readerCertificate = document.getElementById('readerCertificate');
+const readerPrivateKey = document.getElementById('readerPrivateKey');
+const btnSaveReaderCert = document.getElementById('btnSaveReaderCert');
+const btnClearReaderCert = document.getElementById('btnClearReaderCert');
+const readerAuthStatus = document.getElementById('readerAuthStatus');
 
 // ==== State ====
 let scanRunning = false;
@@ -3292,6 +3372,86 @@ btnImportVicalFile?.addEventListener('click', async () => {
 
 // Initialize IACA list on page load
 updateIACAList();
+
+// ==== Reader Authentication UI Wiring ====
+function setReaderAuthStatus(message, level = 'info') {
+  if (!readerAuthStatus) return;
+  readerAuthStatus.textContent = message;
+  readerAuthStatus.style.display = 'block';
+  // Basic styling by level
+  if (level === 'error') {
+    readerAuthStatus.style.background = '#fee2e2';
+    readerAuthStatus.style.border = '1px solid #ef4444';
+    readerAuthStatus.style.color = '#991b1b';
+  } else if (level === 'success') {
+    readerAuthStatus.style.background = '#dcfce7';
+    readerAuthStatus.style.border = '1px solid #22c55e';
+    readerAuthStatus.style.color = '#14532d';
+  } else {
+    readerAuthStatus.style.background = '#e5e7eb';
+    readerAuthStatus.style.border = '1px solid #9ca3af';
+    readerAuthStatus.style.color = '#111827';
+  }
+}
+
+function initReaderAuthUI() {
+  try {
+    if (!window.ReaderAuth) return;
+    const cfg = window.ReaderAuth.getConfig ? window.ReaderAuth.getConfig() : null;
+    if (!cfg) return;
+    if (enableReaderAuth) enableReaderAuth.checked = !!cfg.enabled;
+    if (readerAuthConfig) readerAuthConfig.style.display = cfg.enabled ? 'block' : 'none';
+    if (readerOrgName) readerOrgName.value = cfg.orgName || '';
+    if (readerCertificate) readerCertificate.value = cfg.certsPem || '';
+    if (readerPrivateKey) readerPrivateKey.value = cfg.keyPem || '';
+    if (cfg.enabled) setReaderAuthStatus('Reader Authentication is enabled. Saved key and certificate will be used to sign requests.', 'info');
+  } catch (e) {
+    console.warn('ReaderAuth UI init failed:', e);
+  }
+}
+
+enableReaderAuth?.addEventListener('change', (e) => {
+  const on = !!e.target.checked;
+  try { window.ReaderAuth?.setEnabled?.(on); } catch {}
+  if (readerAuthConfig) readerAuthConfig.style.display = on ? 'block' : 'none';
+  setReaderAuthStatus(on ? 'Reader Authentication enabled.' : 'Reader Authentication disabled.', 'info');
+});
+
+btnSaveReaderCert?.addEventListener('click', () => {
+  const org = (readerOrgName?.value || '').trim();
+  const certPem = (readerCertificate?.value || '').trim();
+  const keyPem = (readerPrivateKey?.value || '').trim();
+  if (!certPem || !keyPem) {
+    setReaderAuthStatus('Please provide both a certificate (PEM) and a private key (PKCS#8 PEM).', 'error');
+    return;
+  }
+  try {
+    window.ReaderAuth?.setOrgName?.(org);
+    window.ReaderAuth?.setCertsPem?.(certPem);
+    window.ReaderAuth?.setKeyPem?.(keyPem);
+    setReaderAuthStatus('Saved reader key and certificate. Requests will include a signed ReaderAuthentication COSE_Sign1.', 'success');
+  } catch (e) {
+    console.error('Failed to save reader auth config:', e);
+    setReaderAuthStatus('Failed to save reader authentication settings: ' + (e.message || e), 'error');
+  }
+});
+
+btnClearReaderCert?.addEventListener('click', () => {
+  try {
+    if (readerOrgName) readerOrgName.value = '';
+    if (readerCertificate) readerCertificate.value = '';
+    if (readerPrivateKey) readerPrivateKey.value = '';
+    window.ReaderAuth?.setOrgName?.('');
+    window.ReaderAuth?.setCertsPem?.('');
+    window.ReaderAuth?.setKeyPem?.('');
+    setReaderAuthStatus('Cleared reader authentication settings.', 'info');
+  } catch (e) {
+    setReaderAuthStatus('Failed to clear settings: ' + (e.message || e), 'error');
+  }
+});
+
+// Initialize on load
+initReaderAuthUI();
 
 // ==== Robust mdoc URI → CBOR extraction helpers ====
 function b64ToBytesBrowserSafe(...args){ return window.DeviceEngagement.b64ToBytesBrowserSafe(...args); }

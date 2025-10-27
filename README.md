@@ -27,6 +27,7 @@ Tips
 
 - QR scan → BLE connect → secure session (AES‑GCM with spec IV)
 - COSE_Sign1 verification via @noble/curves (ES256/ES384/ES512), DER→raw, low‑S
+- Reader authentication
 - IACA trust store with AKI/SKI matching and OID-driven curve/hash detection
 - Classic MSO viewer and per-document Verification Status
 - Request presets incl. mDL, EU PID, age/photo ID, mICOV, mVC
@@ -44,7 +45,6 @@ The import summary shows imported, skipped (duplicates), unknown (non‑cert ent
 
 ## Security notes
 
-- Reader authentication not implemented (readerAuth: null)
 - Session keys kept in memory only; cleared on reload
 - SessionEstablishment.data uses raw AES‑GCM ciphertext||tag per ISO 18013‑5
 

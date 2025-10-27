@@ -35,6 +35,51 @@
     log(
       `→ Device Request with ${deviceRequest.docRequests.length} document(s)`
     );
+
+    // Optionally add Reader Authentication per spec (inside each DocRequest)
+    try {
+      console.log("Checking Reader Authentication status...");
+      console.log("ReaderAuth object:", window.ReaderAuth);
+      console.log("ReaderAuth.isEnabled():", window.ReaderAuth.isEnabled);
+      console.log(
+        "ReaderAuth.signReaderAuthentication:",
+        window.ReaderAuth.isEnabled()
+      );
+      if (
+        window.ReaderAuth &&
+        window.ReaderAuth.isEnabled &&
+        window.ReaderAuth.isEnabled()
+      ) {
+        let addedCount = 0;
+        for (const dr of deviceRequest.docRequests) {
+          if (dr && dr.itemsRequest && dr.itemsRequest.tag === 24) {
+            const itemsCbor = dr.itemsRequest.value; // raw ItemsRequest CBOR
+            try {
+              const cose = await window.ReaderAuth.signReaderAuthentication(
+                itemsCbor
+              );
+              dr.readerAuth = cose; // Per ISO 18013-5: readerAuth is inside DocRequest
+              addedCount++;
+            } catch (signErr) {
+              console.warn(
+                "ReaderAuth signing failed for a document:",
+                signErr?.message || signErr
+              );
+            }
+          }
+        }
+        if (addedCount > 0) {
+          log(`🔏 Added Reader Authentication to ${addedCount} document(s)`);
+        } else {
+          log(
+            "⚠️ ReaderAuth enabled but no itemsRequest found to sign in any DocRequest"
+          );
+        }
+      }
+    } catch (e) {
+      console.warn("Reader Authentication processing failed:", e.message || e);
+    }
+
     return CBOR.encode(deviceRequest);
   }
 
