@@ -222,7 +222,10 @@
                     .toLowerCase()
                     .includes("portrait") ||
                     String(elementIdentifier).toLowerCase().includes("image") ||
-                    String(elementIdentifier).toLowerCase().includes("photo"))
+                    String(elementIdentifier).toLowerCase().includes("photo") ||
+                    String(elementIdentifier)
+                      .toLowerCase()
+                      .includes("signature_usual_mark"))
                 )
                   return;
                 if (
@@ -230,7 +233,10 @@
                     .toLowerCase()
                     .includes("portrait") ||
                   String(elementIdentifier).toLowerCase().includes("image") ||
-                  String(elementIdentifier).toLowerCase().includes("photo")
+                  String(elementIdentifier).toLowerCase().includes("photo") ||
+                  String(elementIdentifier)
+                    .toLowerCase()
+                    .includes("signature_usual_mark")
                 ) {
                   let mimeType = "application/octet-stream";
                   let formatLabel = "Unknown";
