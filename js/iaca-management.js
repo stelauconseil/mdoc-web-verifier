@@ -819,6 +819,16 @@
     const iacas = getIACAs();
     if (!iacaListEl) return;
 
+    // Update summary counts in header, if present
+    try {
+      const summaryEl = document.getElementById("iacaSummaryCounts");
+      if (summaryEl) {
+        const live = iacas.filter((i) => i.test !== true).length;
+        const test = iacas.filter((i) => i.test === true).length;
+        summaryEl.textContent = `Installed: Live ${live} • Test ${test}`;
+      }
+    } catch {}
+
     if (iacas.length === 0) {
       iacaListEl.innerHTML =
         '<div class="muted" style="font-style: italic;">No certificates installed</div>';
@@ -993,6 +1003,25 @@
     iacaListEl.innerHTML = html;
   }
 
+  // Reset IACAs to defaults (removes all non-default certificates)
+  function resetToDefaults() {
+    try {
+      const defaults = Array.isArray(window.DEFAULT_IACA_CERTIFICATES)
+        ? window.DEFAULT_IACA_CERTIFICATES
+        : [];
+      localStorage.setItem(IACA_STORAGE_KEY, JSON.stringify(defaults));
+      localStorage.setItem(IACA_VERSION_KEY, String(window.APP_VERSION || 0));
+      (window.log || console.log)(
+        `♻️ IACA list reset to defaults (${defaults.length} certificate(s))`
+      );
+      updateIACAList();
+      return { count: defaults.length };
+    } catch (e) {
+      console.error("Failed to reset IACA list to defaults:", e);
+      return { error: e?.message || String(e) };
+    }
+  }
+
   // Global handlers used by HTML
   window.toggleIACACert = function (index) {
     const toggled = toggleIACAStatus(index);
@@ -1087,5 +1116,6 @@
     importVICALFromBytes,
     importVICALFromUri,
     importVICALFromFile,
+    resetToDefaults,
   };
 })();

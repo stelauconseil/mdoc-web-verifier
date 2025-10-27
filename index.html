@@ -369,42 +369,68 @@
     </section>
 
     <section class="card" id="responseSection" style="display: none;">
-      <h2>Wallet Response</h2>
+      <h2>3. Wallet Response</h2>
       <div id="responseDisplay"></div>
     </section>
 
     <section class="card" id="logsSection">
-      <h2>3. Activity Log</h2>
-      <div class="row" style="margin-bottom: 0.5rem; align-items:center; gap: 12px;">
-        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none;">
-          <input type="checkbox" id="toggleDebugCert" />
-          <span class="muted">Verbose log in the console</span>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap: 8px;">
+        <h2 style="margin:0;">💻 Activity Log</h2>
+        <label style="display:flex; align-items:center; gap:10px; cursor:pointer; user-select:none;">
+          <span class="muted">Verbose in console</span>
+          <span class="ra-switch">
+            <input type="checkbox" id="toggleDebugCert" />
+            <span class="ra-slider"></span>
+          </span>
         </label>
       </div>
       <div class="log" id="log" role="log" aria-live="polite" aria-label="Session activity log"></div>
     </section>
 
-    <!-- Reader Authentication Configuration (moved above IACA) -->
+    <!-- Reader Authentication Configuration (collapsible) -->
+    <style>
+      /* Reader Auth header toggle (switch style) */
+      .ra-switch { position: relative; display: inline-block; width: 42px; height: 24px; }
+      .ra-switch input { opacity: 0; width: 0; height: 0; }
+      .ra-slider { position: absolute; cursor: pointer; inset: 0; background: #cbd5e1; transition: .2s; border-radius: 9999px; }
+      .ra-slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; top: 3px; background: #ffffff; transition: .2s; border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+      .ra-switch input:checked + .ra-slider { background: #059669; }
+      .ra-switch input:focus + .ra-slider { box-shadow: 0 0 0 3px rgba(5,150,105,0.25); }
+      .ra-switch input:checked + .ra-slider:before { transform: translateX(18px); }
+    </style>
     <section class="card" id="readerAuthSection">
-      <h2>🔐 Reader Authentication (Optional)</h2>
-      <p class="muted">Configure reader authentication to prove your identity to the wallet. This adds a digitally signed certificate to document requests.</p>
-      
-      <div style="margin-top: 1rem; padding: 1rem; background: #fff3cd; border-radius: 8px; border: 1px solid #ffc107;">
-        <strong>⚠️ Security Warning:</strong>
-        <p class="muted" style="margin-top: 0.5rem; margin-bottom: 0;">
-          Reader authentication requires storing your <strong>private key</strong> in browser localStorage. 
-          Only use this feature for testing purposes. In production, private keys should be stored in secure hardware (HSM/TPM).
-        </p>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap: 8px;">
+        <h2 style="margin:0;">🔐 Reader Authentication (Optional)</h2>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <label style="display:flex; align-items:center; gap:10px; cursor:pointer; user-select:none;">
+            <span class="muted" style="font-size:0.9rem;">Enable</span>
+            <span class="ra-switch">
+              <input type="checkbox" id="enableReaderAuth">
+              <span class="ra-slider"></span>
+            </span>
+          </label>
+          <button 
+            onclick="toggleMSO('readerAuthDetails')"
+            class="secondary"
+            style="display:inline-flex; align-items:center; gap:6px; padding: 6px 10px;"
+          >
+            <span id="readerAuthDetails-icon">▶</span>
+            Details
+          </button>
+        </div>
       </div>
+      <p class="muted" style="margin-top: 0.5rem;">Configure reader authentication to prove your identity to the wallet. This adds a digitally signed certificate to document requests.</p>
 
-      <div style="margin-top: 1.5rem;">
-        <label style="display: flex; align-items: center; cursor: pointer; user-select: none;">
-          <input type="checkbox" id="enableReaderAuth" style="margin-right: 0.5rem;">
-          <strong>Enable Reader Authentication</strong>
-        </label>
-      </div>
+      <div id="readerAuthDetails" style="display:none; margin-top: 0.75rem;">
+        <div style="margin-top: 0.75rem; padding: 1rem; background: #fff3cd; border-radius: 8px; border: 1px solid #ffc107;">
+          <strong>⚠️ Security Warning:</strong>
+          <p class="muted" style="margin-top: 0.5rem; margin-bottom: 0;">
+            Reader authentication requires storing your <strong>private key</strong> in browser localStorage. 
+            Only use this feature for testing purposes. In production, private keys should be stored in secure hardware (HSM/TPM).
+          </p>
+        </div>
 
-      <div id="readerAuthConfig" style="margin-top: 1.5rem; display: none;">
+        <div id="readerAuthConfig" style="margin-top: 1.0rem; display: none;">
         <div style="margin-bottom: 1rem;">
           <label class="muted">Reader Common Name (from certificate)</label>
           <div id="readerCommonName" style="width: 97%; padding: 0.75rem 0.9rem; border-radius: 12px; border: 1px solid rgba(148,163,184,0.3); font-size: 0.95rem; margin-top: 0.5rem; background:#f8fafc; color:#0f172a;">
@@ -431,7 +457,7 @@
           <!-- Status messages will appear here -->
         </div>
 
-        <div style="margin-top: 1.5rem; padding: 1rem; background: #e7f3ff; border-radius: 8px; border: 1px solid #2196f3;">
+        <div style="margin-top: 1.0rem; padding: 1rem; background: #e7f3ff; border-radius: 8px; border: 1px solid #2196f3;">
           <strong>ℹ️ Testing Instructions:</strong>
           <p class="muted" style="margin-top: 0.5rem; margin-bottom: 0.5rem;">
             Generate a self-signed certificate for testing:
@@ -449,57 +475,85 @@ openssl req -new -x509 -key reader_key.pem -out reader_cert.pem -days 365 \
             Then paste the contents of <code>reader_cert.pem</code> and <code>reader_key_pkcs8.pem</code> into the fields above.
           </p>
         </div>
-
       </div>
     </section>
 
-        <section class="card" id="iacaSection">
-      <h2>⚙️ Issuer Certificate Management (IACA)</h2>
-      <p class="muted">Manage Issuing Authority Certification Authority (IACA) certificates for signature verification. These are used to validate the mDoc issuer signatures.</p>
-      
-      <div style="margin-top: 1rem;">
-        <strong>Installed IACAs:</strong>
-        <div id="iacaList" style="margin-top: 0.75rem; font-size: 0.9rem;">
-          <div class="muted" style="font-style: italic;">Loading...</div>
+    <section class="card" id="iacaSection">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap: 8px;">
+        <h2 style="margin:0;">⚙️ Issuer Certificate Management (IACA)</h2>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span id="iacaSummaryCounts" class="muted" style="font-size:0.9rem;">Installed: Live 0 • Test 0</span>
+          <button 
+            onclick="toggleMSO('iacaDetails')"
+            class="secondary"
+            style="display:inline-flex; align-items:center; gap:6px; padding: 6px 10px;"
+          >
+            <span id="iacaDetails-icon">▶</span>
+            Details
+          </button>
         </div>
       </div>
-
+      <p class="muted" style="margin-top:0.5rem;">Manage Issuing Authority Certification Authority (IACA) certificates for signature verification. These are used to validate the mDoc issuer signatures.</p>
       
-
-      <div style="margin-top: 1.5rem;">
-        <strong>Add New IACA Certificate:</strong>
-        <div style="margin-top: 0.75rem;">
-          <label class="muted" for="iacaInput">Paste PEM certificate (-----BEGIN CERTIFICATE-----)</label>
-          <textarea id="iacaInput" placeholder="-----BEGIN CERTIFICATE-----&#10;MIIDUzCCAvmgAwIBAgISESHtNjf+2KAQ0ttWtR9EhAAPMAoGCCqGSM49BAMCMIHF&#10;...&#10;-----END CERTIFICATE-----" style="width: 97%; min-height: 80px; padding: 0.75rem 0.9rem; border-radius: 12px; border: 1px solid rgba(148,163,184,0.45); font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.85rem; background: #f8fafc; resize: vertical; margin-top: 0.5rem;"></textarea>
+      <div id="iacaDetails" style="display:none; margin-top: 0.75rem;">
+        <!-- Move Add New and VICAL to top -->
+        <div style="margin-top: 0.5rem;">
+          <strong>Add New IACA Certificate:</strong>
           <div style="margin-top: 0.75rem;">
-            <label style="display: flex; align-items: center; cursor: pointer; user-select: none;">
-              <input type="checkbox" id="iacaIsTest" style="margin-right: 0.5rem;">
-              <span class="muted">This is a test/development certificate (not for production use)</span>
+            <label class="muted" for="iacaInput">Paste PEM certificate (-----BEGIN CERTIFICATE-----)</label>
+            <textarea id="iacaInput" placeholder="-----BEGIN CERTIFICATE-----&#10;MIIDUzCCAvmgAwIBAgISESHtNjf+2KAQ0ttWtR9EhAAPMAoGCCqGSM49BAMCMIHF&#10;...&#10;-----END CERTIFICATE-----" style="width: 97%; min-height: 80px; padding: 0.75rem 0.9rem; border-radius: 12px; border: 1px solid rgba(148,163,184,0.45); font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.85rem; background: #f8fafc; resize: vertical; margin-top: 0.5rem;"></textarea>
+            <div style="margin-top: 0.75rem;">
+              <label style="display: flex; align-items: center; cursor: pointer; user-select: none; gap:10px;">
+                <span class="muted">This is a test/development certificate</span>
+                <span class="ra-switch"><input type="checkbox" id="iacaIsTest"><span class="ra-slider"></span></span>
+              </label>
+            </div>
+            <div class="row" style="margin-top: 0.5rem;">
+              <button id="btnAddIaca">Add IACA Certificate</button>
+              <button id="btnClearIacaInput" class="secondary">Clear</button>
+            </div>
+          </div>
+        </div>
+
+        <hr style="border: none; border-top: 1px solid rgba(148,163,184,0.35); margin: 1rem 0;" />
+
+        <div style="margin-top: 1.0rem;">
+          <strong>Import Verified Issuer CA List (VICAL):</strong>
+          <p class="muted" style="margin-top: 0.35rem;">Provide a VICAL URI or upload a CBOR file containing one or more IACA certificates.</p>
+          <div class="row" style="gap: 0.5rem; align-items: center; margin-top: 0.5rem; flex-wrap: wrap;">
+            <input id="vicalUri" type="url" placeholder="https://example.org/vical.cbor or data:application/cbor;base64,..." style="flex: 1 1 380px; min-width: 260px; padding: 0.55rem 0.75rem; border-radius: 8px; border: 1px solid rgba(148,163,184,0.45); background: #f8fafc; font-size: 0.9rem;" />
+            <button id="btnImportVicalUri">Import from URI</button>
+          </div>
+          <div class="row" style="gap: 0.5rem; align-items: center; margin-top: 0.5rem; flex-wrap: wrap;">
+            <input id="vicalFile" type="file" accept=".cbor,application/cbor,application/octet-stream" />
+            <button id="btnImportVicalFile">Import from File</button>
+            <label style="display:flex; align-items:center; cursor:pointer; user-select:none; gap:10px;">
+              <span class="muted">Mark imported as test</span>
+              <span class="ra-switch"><input type="checkbox" id="vicalMarkTest"><span class="ra-slider"></span></span>
             </label>
           </div>
-          <div class="row" style="margin-top: 0.5rem;">
-            <button id="btnAddIaca">Add IACA Certificate</button>
-            <button id="btnClearIacaInput" class="secondary">Clear</button>
+          <div id="vicalImportStatus" class="muted" style="margin-top: 0.5rem; font-size: 0.9rem;"></div>
+        </div>
+
+        <hr style="border: none; border-top: 1px solid rgba(148,163,184,0.35); margin: 1rem 0;" />
+
+        <!-- Installed list moved below with Reset on same line -->
+        <div style="margin-top: 1.0rem;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+            <strong>Installed IACAs:</strong>
+            <button 
+              onclick="(function(){ if (confirm('Reset IACAs to defaults? This will remove all non-default certificates.')) { try { window.IacaManager?.resetToDefaults?.(); } catch(e) { alert('Reset failed: '+(e.message||e)); } } })()"
+              class="secondary"
+              title="Remove all non-default IACA certificates and restore defaults"
+              style="display:inline-flex; align-items:center; gap:6px; padding: 6px 10px;"
+            >
+              ♻️ Reset to Defaults
+            </button>
+          </div>
+          <div id="iacaList" style="margin-top: 0.75rem; font-size: 0.9rem;">
+            <div class="muted" style="font-style: italic;">Loading...</div>
           </div>
         </div>
-      </div>
-
-      <div style="margin-top: 1.5rem;">
-        <strong>Import Verified Issuer CA List (VICAL):</strong>
-        <p class="muted" style="margin-top: 0.35rem;">Provide a VICAL URI or upload a CBOR file containing one or more IACA certificates.</p>
-        <div class="row" style="gap: 0.5rem; align-items: center; margin-top: 0.5rem; flex-wrap: wrap;">
-          <input id="vicalUri" type="url" placeholder="https://example.org/vical.cbor or data:application/cbor;base64,..." style="flex: 1 1 380px; min-width: 260px; padding: 0.55rem 0.75rem; border-radius: 8px; border: 1px solid rgba(148,163,184,0.45); background: #f8fafc; font-size: 0.9rem;" />
-          <button id="btnImportVicalUri">Import from URI</button>
-        </div>
-        <div class="row" style="gap: 0.5rem; align-items: center; margin-top: 0.5rem; flex-wrap: wrap;">
-          <input id="vicalFile" type="file" accept=".cbor,application/cbor,application/octet-stream" />
-          <button id="btnImportVicalFile">Import from File</button>
-          <label style="display: flex; align-items: center; cursor: pointer; user-select: none; gap: 0.35rem;">
-            <input type="checkbox" id="vicalMarkTest" />
-            <span class="muted">Mark imported as test</span>
-          </label>
-        </div>
-        <div id="vicalImportStatus" class="muted" style="margin-top: 0.5rem; font-size: 0.9rem;"></div>
       </div>
     </section>
 

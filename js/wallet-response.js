@@ -354,8 +354,45 @@
       if (issuerAuth) {
         html += `
           <div class="signer-section" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff;">
-            <div style="font-weight: bold; margin-bottom: 10px; color: #007bff;">🔐 Issuer Signature Information</div>
-            <div style="font-weight: 600; margin: 10px 0 8px; color:#0f172a;">🧾 Document signer</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; gap: 8px;">
+              <div style="font-weight: bold; color: #007bff;">🔐 Issuer Signature Information</div>
+              <button 
+                onclick="toggleMSO('issuerDetails-${docIndex}')" 
+                style="
+                  background: #e2e8f0;
+                  color: #0f172a;
+                  border: 1px solid #cbd5e1;
+                  padding: 4px 10px;
+                  border-radius: 6px;
+                  cursor: pointer;
+                  font-size: 0.85rem;
+                  font-weight: 600;
+                  display: inline-flex;
+                  align-items: center;
+                  gap: 6px;
+                "
+                onmouseover="this.style.background='#cbd5e1'"
+                onmouseout="this.style.background='#e2e8f0'"
+              >
+                <span id="issuerDetails-${docIndex}-icon">▶</span>
+                <span>Details</span>
+              </button>
+            </div>
+
+            <div class="verification-section" style="margin-top: 12px; padding: 12px; background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0;">
+              <div style="font-weight: 600; margin-bottom: 8px; color: #0f172a;">✍️ Verification Status</div>
+              <div class="data-item">
+                <div class="data-label">Signature</div>
+                <div class="data-value" id="sigStatus-${docIndex}">… verifying</div>
+              </div>
+              <div class="data-item">
+                <div class="data-label">Chain</div>
+                <div class="data-value" id="chainStatus-${docIndex}">… validating</div>
+              </div>
+            </div>
+
+            <div id="issuerDetails-${docIndex}" style="display:none; margin-top: 10px;">
+              <div style="font-weight: 600; margin: 10px 0 8px; color:#0f172a;">🧾 Document signer</div>
         `;
         try {
           let coseSign1 = issuerAuth;
@@ -571,7 +608,7 @@
               } catch (_) {}
             }
 
-            // MSO subsection header
+            // MSO subsection header (placed inside details)
             html += `
               <div style="font-weight: 600; margin: 14px 0 8px; color:#0f172a; border-top: 1px dashed #cbd5e1; padding-top: 10px;">📦 MSO (Mobile Security Object)</div>
             `;
@@ -685,22 +722,7 @@
               }
             } catch (_) {}
 
-            // Add Verification Status UI placeholders (to be filled post-render)
-            html += `
-              <div class="verification-section" style="margin-top: 16px; padding: 12px; background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0;">
-                <div style="font-weight: 600; margin-bottom: 8px; color: #0f172a;">✍️ Verification Status</div>
-                <div class="data-item">
-                  <div class="data-label">Signature</div>
-                  <div class="data-value" id="sigStatus-${docIndex}">… verifying</div>
-                </div>
-                <div class="data-item">
-                  <div class="data-label">Chain</div>
-                  <div class="data-value" id="chainStatus-${docIndex}">… validating</div>
-                </div>
-              </div>
-            `;
-
-            // Add MSO structure viewer (classic toggle style) and copy button
+            // Add MSO structure viewer (classic toggle style) and copy button INSIDE details
             {
               const msoId = `mso-${docIndex}`;
               let src = mso || issuerSigned;
@@ -779,6 +801,9 @@
                 </div>
               `;
             }
+
+            // Close details container
+            html += `</div>`;
 
             // Queue post-render tasks for this document (verification only)
             postTasks.push({ docIndex, coseSign1 });
