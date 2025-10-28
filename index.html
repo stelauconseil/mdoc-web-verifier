@@ -755,6 +755,18 @@ const readerAuthStatus = document.getElementById('readerAuthStatus');
 let scanRunning = false;
 let device, server, service, chState, chC2S, chS2C;
 let rxBuffer = [];
+let rxTimer = null;                    // Flush timer for partial S→C messages
+const RX_FLUSH_TIMEOUT_MS = 1500;      // Timeout before attempting to process buffered data
+let rxLastLen = 0;                     // Track last buffered length across timeouts
+let rxStalledCount = 0;                // Count consecutive timeouts without growth
+
+// Adaptive timeout based on current buffered size (large payloads need more time)
+function calcRxTimeout(len) {
+  if (!len || len < 8192) return 1500;        // <8KB
+  if (len < 24576) return 2500;               // 8-24KB
+  if (len < 65536) return 4000;               // 24-64KB
+  return 6000;                                 // >=64KB
+}
 let svcUUID = null;
 let bleAddr = null;
 let currentBleRole = 'central'; // Always central mode now
@@ -789,6 +801,13 @@ function log(msg) {
 function hex(buf) { return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join(' '); }
 function concatUint8(...arrs){ const n=arrs.reduce((s,a)=>s+a.length,0); const out=new Uint8Array(n); let o=0; for(const a of arrs){out.set(a,o);o+=a.length;} return out; }
 
+// Clear response panel and activity log for a new scan/manual run
+function resetResponseAndLog() {
+  try { if (responseDisplayEl) responseDisplayEl.innerHTML = ''; } catch {}
+  try { if (responseSectionEl) responseSectionEl.style.display = 'none'; } catch {}
+  try { if (logEl) logEl.innerHTML = ''; } catch {}
+}
+
 // ==== BLE transport (GATT) ====
 
 // Initialize debug toggle state
@@ -816,6 +835,84 @@ const UUIDS = { // characteristic UUIDs used by common 18013-5 demos/drafts
   s2c:   '00000003-a123-48ce-896b-4c76973373e6'
 };
 
+// Assemble and process a complete S→C payload (called on final flag or timeout)
+async function processS2CAssembled(assembled, reason = 'final-flag') {
+  const len = assembled.length;
+  log(`S→C complete${reason ? ' (' + reason + ')' : ''}: ${len} bytes`);
+  
+  console.log('=== RECEIVED DATA FROM WALLET ===');
+  console.log('Length:', len);
+  console.log('Hex:', hex(assembled));
+  
+  // Try to decode the response
+  try {
+    const decoded = CBOR.decode(assembled);
+    console.log('Decoded wallet response:', decoded);
+    console.log('Response type:', typeof decoded);
+    console.log('Is Map:', decoded instanceof Map);
+    console.log('Is Object:', decoded && typeof decoded === 'object');
+    
+    // Check if this is a SessionEstablishment response (contains eDeviceKey)
+    let isSessionResponse = false;
+    
+    // Log all fields to see what we actually received
+    if (decoded instanceof Map) {
+      console.log('Response is a Map with keys:', Array.from(decoded.keys()));
+      if (decoded.has('eDeviceKey') || decoded.has('data') || decoded.has('status')) {
+        isSessionResponse = true;
+        console.log('✅ Detected SessionEstablishment response (Map)');
+      }
+    } else if (decoded && typeof decoded === 'object') {
+      console.log('Response object keys:', Object.keys(decoded));
+      if (decoded.eDeviceKey || decoded.eReaderKey || decoded.data || decoded.status) {
+        isSessionResponse = true;
+        console.log('✅ Detected SessionEstablishment response (Object)');
+      }
+    }
+    
+    // ANY response before session is established should be considered a session response
+    // Check if session keys are established (skReader and skDevice are set)
+    if (!skReader || !skDevice) {
+      isSessionResponse = true;
+      console.log('✅ Detected response before session established - treating as session response');
+    }
+    
+    if (isSessionResponse) {
+      log('📋 Received session establishment response from wallet');
+      log(`🔗 Response size: ${len} bytes`);
+      
+      // Signal to session establishment handler
+      window.sessionResponseReceived = true;
+      window.sessionResponseData = assembled;
+      
+      try {
+        await processSessionResponse(assembled);
+      } catch (processError) {
+        console.error('Failed to finalize session from response:', processError);
+        log('❌ Session finalization failed: ' + processError.message);
+      }
+      
+      console.log('Session response captured and signaled');
+      
+    } else if (skDevice && assembled.length > 20) {
+      // This might be an encrypted DeviceResponse
+      log('🔐 Received encrypted response - attempting to decrypt...');
+      try {
+        // Decrypt and display the response
+        await decryptAndDisplayResponse(assembled);
+      } catch (decryptError) {
+        console.error('Decryption failed:', decryptError);
+        log('❌ Decryption failed: ' + decryptError.message);
+      }
+    } else {
+      log(`📄 Received ${len}-byte response from wallet`);
+    }
+  } catch (e) {
+    console.log('Could not decode CBOR response:', e.message);
+    log(`📄 Received ${len}-byte binary response from wallet`);
+  }
+}
+
 async function handleServer2Client(event) {
   const data = new Uint8Array(event.target.value.buffer);
   if (data.length === 0) return;
@@ -823,84 +920,83 @@ async function handleServer2Client(event) {
   const chunk = data.slice(1);
   rxBuffer.push(chunk);
   log(`S→C notify: flag=0x${flag.toString(16)} len=${chunk.length}`);
+  
+  // Restart inactivity timer to avoid premature timeout while data is flowing
+  try { if (rxTimer) clearTimeout(rxTimer); } catch {}
+  const timeoutMs = calcRxTimeout(rxBuffer.reduce((n,a)=>n+a.length,0))
+  rxTimer = setTimeout(async () => {
+    try {
+      const pendingLen = rxBuffer.reduce((n,a)=>n+a.length,0);
+      if (pendingLen > 0) {
+        const assembled = new Uint8Array(pendingLen);
+        let o=0; for (const seg of rxBuffer) { assembled.set(seg,o); o+=seg.length; }
+        // On timeout, only process if CBOR decode appears complete; otherwise wait for more data
+        let decodedOk = false;
+        try {
+          // Dry-run decode to determine completeness
+          const tmp = CBOR.decode(assembled);
+          decodedOk = !!tmp;
+        } catch (e) {
+          const msg = (e && e.message) ? e.message : String(e);
+          const looksIncomplete = /insufficient data|unexpected end|not enough/i.test(msg);
+          if (looksIncomplete) {
+            // Buffer seems incomplete; keep rxBuffer intact and re-arm timer
+            if (pendingLen === rxLastLen) {
+              rxStalledCount++;
+            } else {
+              rxStalledCount = 0;
+              rxLastLen = pendingLen;
+            }
+            log(`⏳ Timeout reached but CBOR incomplete; waiting for more fragments (len=${pendingLen}, stalled=${rxStalledCount})`);
+            // Re-arm a new timer with same interval
+            try { if (rxTimer) clearTimeout(rxTimer); } catch {}
+            rxTimer = setTimeout(async () => {
+              try {
+                const plen2 = rxBuffer.reduce((n,a)=>n+a.length,0);
+                if (plen2 > 0) {
+                  const a2 = new Uint8Array(plen2);
+                  let o2=0; for (const seg2 of rxBuffer) { a2.set(seg2,o2); o2+=seg2.length; }
+                  // Second attempt: if still incomplete and stalled for multiple cycles, proceed anyway
+                  try {
+                    const tmp2 = CBOR.decode(a2);
+                    rxBuffer = [];
+                    await processS2CAssembled(a2, 'timeout');
+                  } catch (e2) {
+                    const msg2 = (e2 && e2.message) ? e2.message : String(e2);
+                    const incomplete2 = /insufficient data|unexpected end|not enough/i.test(msg2);
+                    if (incomplete2 && rxStalledCount < 3) {
+                      // Keep waiting
+                      rxStalledCount++;
+                      log(`⏳ Still incomplete after timeout; continuing to wait (stalled=${rxStalledCount})`);
+                      return; // Don't clear buffer
+                    }
+                    // Either not incomplete or stalled repeatedly: process as-is to avoid deadlock
+                    rxBuffer = [];
+                    await processS2CAssembled(a2, 'timeout');
+                  }
+                }
+              } catch (innerErr) {
+                console.warn('Timeout (2nd stage) processing failed:', innerErr);
+              }
+            }, calcRxTimeout(pendingLen));
+            return; // Important: don't clear buffer now
+          }
+        }
+        // If decode succeeded (or error not indicating incompleteness), process now
+        rxBuffer = [];
+        await processS2CAssembled(assembled, 'timeout');
+      }
+    } catch (e) {
+      console.warn('Timeout flush failed:', e);
+    }
+  }, timeoutMs);
   if (flag === 0x00) {
+    try { if (rxTimer) clearTimeout(rxTimer); } catch {}
     const len = rxBuffer.reduce((n,a)=>n+a.length,0);
     const assembled = new Uint8Array(len);
     let o=0; for (const seg of rxBuffer) { assembled.set(seg,o); o+=seg.length; }
     rxBuffer = [];
-    log(`S→C complete: ${len} bytes`);
-    
-    console.log('=== RECEIVED DATA FROM WALLET ===');
-    console.log('Length:', len);
-    console.log('Hex:', hex(assembled));
-    
-    // Try to decode the response
-    try {
-      const decoded = CBOR.decode(assembled);
-      console.log('Decoded wallet response:', decoded);
-      console.log('Response type:', typeof decoded);
-      console.log('Is Map:', decoded instanceof Map);
-      console.log('Is Object:', decoded && typeof decoded === 'object');
-      
-      // Check if this is a SessionEstablishment response (contains eDeviceKey)
-      let isSessionResponse = false;
-      
-      // Log all fields to see what we actually received
-      if (decoded instanceof Map) {
-        console.log('Response is a Map with keys:', Array.from(decoded.keys()));
-        if (decoded.has('eDeviceKey') || decoded.has('data') || decoded.has('status')) {
-          isSessionResponse = true;
-          console.log('✅ Detected SessionEstablishment response (Map)');
-        }
-      } else if (decoded && typeof decoded === 'object') {
-        console.log('Response object keys:', Object.keys(decoded));
-        if (decoded.eDeviceKey || decoded.eReaderKey || decoded.data || decoded.status) {
-          isSessionResponse = true;
-          console.log('✅ Detected SessionEstablishment response (Object)');
-        }
-      }
-      
-      // ANY response before session is established should be considered a session response
-      // Check if session keys are established (skReader and skDevice are set)
-      if (!skReader || !skDevice) {
-        isSessionResponse = true;
-        console.log('✅ Detected response before session established - treating as session response');
-      }
-      
-      if (isSessionResponse) {
-        log('📋 Received session establishment response from wallet');
-        log(`🔗 Response size: ${len} bytes`);
-        
-        // Signal to session establishment handler
-        window.sessionResponseReceived = true;
-        window.sessionResponseData = assembled;
-        
-        try {
-          await processSessionResponse(assembled);
-        } catch (processError) {
-          console.error('Failed to finalize session from response:', processError);
-          log('❌ Session finalization failed: ' + processError.message);
-        }
-        
-        console.log('Session response captured and signaled');
-        
-      } else if (skDevice && assembled.length > 20) {
-        // This might be an encrypted DeviceResponse
-        log('🔐 Received encrypted response - attempting to decrypt...');
-        try {
-          // Decrypt and display the response
-          await decryptAndDisplayResponse(assembled);
-        } catch (decryptError) {
-          console.error('Decryption failed:', decryptError);
-          log('❌ Decryption failed: ' + decryptError.message);
-        }
-      } else {
-        log(`📄 Received ${len}-byte response from wallet`);
-      }
-    } catch (e) {
-      console.log('Could not decode CBOR response:', e.message);
-      log(`📄 Received ${len}-byte binary response from wallet`);
-    }
+    await processS2CAssembled(assembled, 'final-flag');
   }
 }
 
@@ -3082,6 +3178,12 @@ function disconnectBLE() {
     }
   }
   
+  // Clear any pending RX flush timer
+  try { if (rxTimer) clearTimeout(rxTimer); } catch {}
+  rxTimer = null;
+  rxLastLen = 0;
+  rxStalledCount = 0;
+
   // Reset all connection state
   device = null;
   server = null;
@@ -3135,7 +3237,12 @@ function tick() {
   }
   requestAnimationFrame(tick);
 }
-btnScan.addEventListener('click', () => startCamera().catch(e => log('Camera error: '+e.message)));
+btnScan.addEventListener('click', () => {
+  // Ensure previous BLE session is fully closed so old notifications won't repopulate UI
+  try { disconnectBLE(); } catch {}
+  resetResponseAndLog();
+  startCamera().catch(e => log('Camera error: '+e.message));
+});
 
 // Normalize QR payloads coming from camera, manual paste, or laser scanner.
 async function handleQrPayload(raw, sourceLabel) {
@@ -3320,7 +3427,10 @@ async function autoConnectFlow() {
   }
 }
 
-btnParseQr.addEventListener('click', () => handleQrPayload(qrInput.value, 'manual input'));
+btnParseQr.addEventListener('click', () => { 
+  resetResponseAndLog();
+  handleQrPayload(qrInput.value, 'manual input');
+});
 btnClearQr.addEventListener('click', () => {
   qrInput.value = '';
   statusEl.textContent = 'Idle';
@@ -3330,6 +3440,7 @@ btnClearQr.addEventListener('click', () => {
 qrInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault();
+    resetResponseAndLog();
     handleQrPayload(qrInput.value, 'manual input');
   }
 });
@@ -4253,6 +4364,21 @@ updateBleRoleUI();
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', async () => {
     try {
+      // Skip SW registration if sw.js is not reachable (avoids addAll precache failures in dev)
+      let canRegister = true;
+      try {
+        const resp = await fetch('/sw.js', { cache: 'no-store' });
+        if (!resp.ok) {
+          canRegister = false;
+          console.warn('⚠️ Skipping Service Worker: /sw.js not reachable (status', resp.status, ')');
+        }
+      } catch (e) {
+        canRegister = false;
+        console.warn('⚠️ Skipping Service Worker: fetch(/sw.js) failed:', e?.message || e);
+      }
+
+      if (!canRegister) return;
+
       const registration = await navigator.serviceWorker.register('/sw.js', {
         scope: '/'
       });
