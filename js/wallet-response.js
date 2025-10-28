@@ -392,7 +392,6 @@
             </div>
 
             <div id="issuerDetails-${docIndex}" style="display:none; margin-top: 10px;">
-              <div style="font-weight: 600; margin: 10px 0 8px; color:#0f172a;">🧾 Document signer</div>
         `;
         try {
           let coseSign1 = issuerAuth;
@@ -403,6 +402,147 @@
           if (Array.isArray(coseSign1) && coseSign1.length >= 4) {
             const [protectedHeader, unprotectedHeader, payload, signature] =
               coseSign1;
+
+            // -- MSO FIRST --
+            html += `
+              <div style="font-weight: 600; margin: 10px 0 8px; color:#0f172a;">📦 MSO (Mobile Security Object)</div>
+            `;
+            let mso = null;
+            try {
+              if (payload) {
+                const payloadBytes =
+                  payload instanceof Uint8Array
+                    ? payload
+                    : new Uint8Array(payload);
+                mso = CBOR.decode(payloadBytes);
+                if (mso instanceof CBOR.Tagged && mso.tag === 24) {
+                  try {
+                    const inner = new Uint8Array(mso.value);
+                    mso = CBOR.decode(inner);
+                  } catch (_) {}
+                }
+                const getField = (obj, key) =>
+                  obj instanceof Map ? obj.get(key) : obj?.[key];
+                const msoDocType = getField(mso, "docType");
+                if (msoDocType) {
+                  html += `
+                    <div class="data-item">
+                      <div class="data-label">MSO DocType</div>
+                      <div class="data-value">${escapeHtml(
+                        String(msoDocType)
+                      )}</div>
+                    </div>
+                  `;
+                }
+                const validityInfo = getField(mso, "validityInfo");
+                if (validityInfo) {
+                  const vf = getField(validityInfo, "validFrom");
+                  const vu = getField(validityInfo, "validUntil");
+                  const signedAt = getField(validityInfo, "signed");
+                  const formatDate = (v, withTime = false) => {
+                    try {
+                      let val = v;
+                      if (v instanceof CBOR.Tagged) {
+                        if (v.tag === 0) val = v.value; // RFC 3339
+                        else if (v.tag === 1)
+                          val = new Date(v.value * 1000).toISOString();
+                      }
+                      const d = new Date(val);
+                      return withTime
+                        ? d.toLocaleString()
+                        : d.toLocaleDateString();
+                    } catch {
+                      return String(v);
+                    }
+                  };
+                  if (signedAt) {
+                    html += `
+                      <div class="data-item">
+                        <div class="data-label">📅 Signed</div>
+                        <div class="data-value">${escapeHtml(
+                          formatDate(signedAt, true)
+                        )}</div>
+                      </div>
+                    `;
+                  }
+                  if (vf) {
+                    html += `
+                      <div class="data-item">
+                        <div class="data-label">Valid From</div>
+                        <div class="data-value">${escapeHtml(
+                          formatDate(vf)
+                        )}</div>
+                      </div>
+                    `;
+                  }
+                  if (vu) {
+                    const vuStr = formatDate(vu);
+                    const isExpired = (() => {
+                      try {
+                        let val = vu;
+                        if (vu instanceof CBOR.Tagged) {
+                          if (vu.tag === 0) val = vu.value;
+                          else if (vu.tag === 1)
+                            val = new Date(vu.value * 1000).toISOString();
+                        }
+                        return new Date(val) < new Date();
+                      } catch {
+                        return false;
+                      }
+                    })();
+                    html += `
+                      <div class="data-item">
+                        <div class="data-label">Valid Until</div>
+                        <div class="data-value" style="${
+                          isExpired ? "color:#dc2626;font-weight:600;" : ""
+                        }">${isExpired ? "⚠️ " : ""}${escapeHtml(vuStr)}</div>
+                      </div>
+                    `;
+                  }
+                }
+                const digestAlgorithm = getField(mso, "digestAlgorithm");
+                if (digestAlgorithm) {
+                  html += `
+                    <div class="data-item">
+                      <div class="data-label">Digest Algorithm</div>
+                      <div class="data-value">${escapeHtml(
+                        String(digestAlgorithm)
+                      )}</div>
+                    </div>
+                  `;
+                }
+              }
+            } catch (_) {}
+
+            // MSO structure viewer
+            {
+              const msoId = `mso-${docIndex}`;
+              let src = mso || issuerSigned;
+              let msoStr = "{}";
+              try {
+                msoStr = JSON.stringify(convertToJSON(src), null, 2);
+              } catch (_) {}
+              const msoStrEsc = escapeHtml(msoStr);
+              html += `
+                <div style="margin-top: 1rem; border-top: 1px solid #e2e8f0; padding-top: 1rem;">
+                  <button onclick="toggleMSO('${msoId}')" style="background: #f1f5f9; color: #0f172a; border: 1px solid #cbd5e1; padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; width: 100%; justify-content: center; transition: background 0.2s ease;" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'">
+                    <span id="${msoId}-icon">▶</span>
+                    <span>View Complete MSO Structure</span>
+                  </button>
+                  <div id="${msoId}" style="display: none; margin-top: 0.75rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; max-height: 400px; overflow-y: auto;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                      <span style="font-size: 0.85rem; color: #64748b; font-weight: 600;">Complete MSO (JSON)</span>
+                      <button onclick="copyMSO('${msoId}-content')" style="background: #059669; color: white; border: none; padding: 0.35rem 0.75rem; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: 600;">📋 Copy</button>
+                    </div>
+                    <pre id="${msoId}-content" style="margin: 0; font-family: 'SFMono-Regular', 'JetBrains Mono', ui-monospace, monospace; font-size: 0.85rem; line-height: 1.5; color: #0f172a; white-space: pre-wrap; word-break: break-word;">${msoStrEsc}</pre>
+                  </div>
+                </div>
+              `;
+            }
+
+            // -- DOCUMENT SIGNER AFTER MSO --
+            html += `<div style="font-weight: 600; margin: 14px 0 8px; color:#0f172a; border-top: 1px dashed #cbd5e1; padding-top: 10px;">🧾 Document signer</div>`;
+
             let protectedData = {};
             if (protectedHeader && protectedHeader.length > 0) {
               try {
@@ -514,7 +654,6 @@
                 : unprotectedHeader?.[33];
             if (issuerCert) {
               try {
-                // Prefer the first certificate when a chain is present
                 const certDer =
                   issuerCertFirst &&
                   (issuerCertFirst instanceof Uint8Array ||
@@ -525,7 +664,6 @@
                     ? issuerCert
                     : null;
                 if (certDer) {
-                  // Subject/Issuer details
                   const certInfo = window.extractCertInfo
                     ? window.extractCertInfo(certDer)
                     : {};
@@ -567,7 +705,6 @@
                       </div>
                     `;
                   }
-                  // Certificate validity period
                   try {
                     const validity = window.extractCertValidity
                       ? window.extractCertValidity(certDer)
@@ -606,200 +743,6 @@
                   } catch (_) {}
                 }
               } catch (_) {}
-            }
-
-            // MSO subsection header (placed inside details)
-            html += `
-              <div style="font-weight: 600; margin: 14px 0 8px; color:#0f172a; border-top: 1px dashed #cbd5e1; padding-top: 10px;">📦 MSO (Mobile Security Object)</div>
-            `;
-            // Decode MSO (Mobile Security Object) from COSE_Sign1 payload if available
-            let mso = null;
-            try {
-              if (payload) {
-                const payloadBytes =
-                  payload instanceof Uint8Array
-                    ? payload
-                    : new Uint8Array(payload);
-                mso = CBOR.decode(payloadBytes);
-                // Some wallets wrap MSO in tag(24) with bstr .cbor; unwrap once
-                if (mso instanceof CBOR.Tagged && mso.tag === 24) {
-                  try {
-                    const inner = new Uint8Array(mso.value);
-                    mso = CBOR.decode(inner);
-                  } catch (_) {}
-                }
-                // Render a few friendly MSO fields
-                const getField = (obj, key) =>
-                  obj instanceof Map ? obj.get(key) : obj?.[key];
-                const msoDocType = getField(mso, "docType");
-                if (msoDocType) {
-                  html += `
-                    <div class="data-item">
-                      <div class="data-label">MSO DocType</div>
-                      <div class="data-value">${escapeHtml(
-                        String(msoDocType)
-                      )}</div>
-                    </div>
-                  `;
-                }
-                const validityInfo = getField(mso, "validityInfo");
-                if (validityInfo) {
-                  const vf = getField(validityInfo, "validFrom");
-                  const vu = getField(validityInfo, "validUntil");
-                  const signedAt = getField(validityInfo, "signed");
-                  const formatDate = (v, withTime = false) => {
-                    try {
-                      let val = v;
-                      if (v instanceof CBOR.Tagged) {
-                        if (v.tag === 0) val = v.value; // RFC 3339
-                        else if (v.tag === 1)
-                          val = new Date(v.value * 1000).toISOString();
-                      }
-                      const d = new Date(val);
-                      return withTime
-                        ? d.toLocaleString()
-                        : d.toLocaleDateString();
-                    } catch {
-                      return String(v);
-                    }
-                  };
-                  if (signedAt) {
-                    html += `
-                      <div class="data-item">
-                        <div class="data-label">📅 Signed</div>
-                        <div class="data-value">${escapeHtml(
-                          formatDate(signedAt, true)
-                        )}</div>
-                      </div>
-                    `;
-                  }
-                  if (vf) {
-                    html += `
-                      <div class="data-item">
-                        <div class="data-label">Valid From</div>
-                        <div class="data-value">${escapeHtml(
-                          formatDate(vf)
-                        )}</div>
-                      </div>
-                    `;
-                  }
-                  if (vu) {
-                    const vuStr = formatDate(vu);
-                    const isExpired = (() => {
-                      try {
-                        let val = vu;
-                        if (vu instanceof CBOR.Tagged) {
-                          if (vu.tag === 0) val = vu.value;
-                          else if (vu.tag === 1)
-                            val = new Date(vu.value * 1000).toISOString();
-                        }
-                        return new Date(val) < new Date();
-                      } catch {
-                        return false;
-                      }
-                    })();
-                    html += `
-                      <div class="data-item">
-                        <div class="data-label">Valid Until</div>
-                        <div class="data-value" style="${
-                          isExpired ? "color:#dc2626;font-weight:600;" : ""
-                        }">${isExpired ? "⚠️ " : ""}${escapeHtml(vuStr)}</div>
-                      </div>
-                    `;
-                  }
-                }
-                const digestAlgorithm = getField(mso, "digestAlgorithm");
-                if (digestAlgorithm) {
-                  html += `
-                    <div class="data-item">
-                      <div class="data-label">Digest Algorithm</div>
-                      <div class="data-value">${escapeHtml(
-                        String(digestAlgorithm)
-                      )}</div>
-                    </div>
-                  `;
-                }
-              }
-            } catch (_) {}
-
-            // Add MSO structure viewer (classic toggle style) and copy button INSIDE details
-            {
-              const msoId = `mso-${docIndex}`;
-              let src = mso || issuerSigned;
-              let msoStr = "{}";
-              try {
-                msoStr = JSON.stringify(convertToJSON(src), null, 2);
-              } catch (_) {}
-              const msoStrEsc = escapeHtml(msoStr);
-              html += `
-                <div style="margin-top: 1rem; border-top: 1px solid #e2e8f0; padding-top: 1rem;">
-                  <button 
-                    onclick="toggleMSO('${msoId}')" 
-                    style="
-                      background: #f1f5f9;
-                      color: #0f172a;
-                      border: 1px solid #cbd5e1;
-                      padding: 0.5rem 1rem;
-                      border-radius: 8px;
-                      cursor: pointer;
-                      font-size: 0.9rem;
-                      font-weight: 600;
-                      display: flex;
-                      align-items: center;
-                      gap: 0.5rem;
-                      width: 100%;
-                      justify-content: center;
-                      transition: background 0.2s ease;
-                    "
-                    onmouseover="this.style.background='#e2e8f0'"
-                    onmouseout="this.style.background='#f1f5f9'"
-                  >
-                    <span id="${msoId}-icon">▶</span>
-                    <span>View Complete MSO Structure</span>
-                  </button>
-                  <div 
-                    id="${msoId}" 
-                    style="
-                      display: none;
-                      margin-top: 0.75rem;
-                      background: #f8fafc;
-                      border: 1px solid #e2e8f0;
-                      border-radius: 8px;
-                      padding: 1rem;
-                      max-height: 400px;
-                      overflow-y: auto;
-                    "
-                  >
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                      <span style="font-size: 0.85rem; color: #64748b; font-weight: 600;">Complete MSO (JSON)</span>
-                      <button 
-                        onclick="copyMSO('${msoId}-content')"
-                        style="
-                          background: #059669;
-                          color: white;
-                          border: none;
-                          padding: 0.35rem 0.75rem;
-                          border-radius: 6px;
-                          cursor: pointer;
-                          font-size: 0.8rem;
-                          font-weight: 600;
-                        "
-                      >
-                        📋 Copy
-                      </button>
-                    </div>
-                    <pre id="${msoId}-content" style="
-                      margin: 0;
-                      font-family: 'SFMono-Regular', 'JetBrains Mono', ui-monospace, monospace;
-                      font-size: 0.85rem;
-                      line-height: 1.5;
-                      color: #0f172a;
-                      white-space: pre-wrap;
-                      word-break: break-word;
-                    ">${msoStrEsc}</pre>
-                  </div>
-                </div>
-              `;
             }
 
             // Close details container
