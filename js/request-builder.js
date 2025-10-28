@@ -87,6 +87,9 @@
     const CBOR = getCBOR();
     if (!CBOR) throw new Error("CBOR library not available");
     let docType, namespace, fields;
+    // Optional multi-namespace holders for specific doctypes
+    let photoIdFields = null; // org.iso.23220.photoID.1
+    let photoIdDGFields = null; // org.iso.23220.datagroups.1
     let micovAttestationFields = null;
 
     if (requestType.startsWith("pid_")) {
@@ -97,12 +100,12 @@
       namespace = "eu.europa.ec.av.1";
     } else if (requestType.startsWith("photoid_")) {
       docType = "org.iso.23220.photoID.1";
-      namespace = "org.iso.23220.1";
+      // This document type uses multiple namespaces; 'namespace' is unused in multi-namespace branch
+      namespace = "org.iso.23220.photoID.1";
       log(
         "📸 Building Photo ID request - docType: " +
           docType +
-          " namespace: " +
-          namespace
+          " (multi-namespace)"
       );
     } else if (requestType.startsWith("micov_")) {
       docType = "org.micov.1";
@@ -240,24 +243,47 @@
         };
         break;
       case "photoid_full":
+        // org.iso.23220.1
         fields = {
-          given_name: true,
           family_name: true,
+          given_name: true,
           birth_date: true,
           portrait: true,
-          issuing_country: true,
-          issuing_authority: true,
-          document_number: true,
-          issuance_date: true,
+          issue_date: true,
           expiry_date: true,
-          sex: true,
-          nationality: true,
-          height: true,
-          eye_colour: true,
+          issuing_authority: true,
+          issuing_authority_unicode: true,
+          issuing_country: true,
+          age_over_18: true,
+          age_in_years: true,
+          age_birth_year: true,
+          portrait_capture_date: true,
+          birthplace: true,
+          name_at_birth: true,
           resident_address: true,
           resident_city: true,
           resident_postal_code: true,
           resident_country: true,
+          sex: true,
+          nationality: true,
+          document_number: true,
+        };
+        // org.iso.23220.photoID.1
+        photoIdFields = {
+          person_id: true,
+          birth_country: true,
+          birth_state: true,
+          birth_city: true,
+          administrative_number: true,
+          resident_street: true,
+          resident_house_number: true,
+          travel_document_number: true,
+        };
+        //org.iso.23220.datagroups.1
+        photoIdDGFields = {
+          dg1: true,
+          dg2: true,
+          sod: true,
         };
         break;
       case "micov_full":
@@ -314,6 +340,13 @@
       nameSpacesObj = {
         "org.micov.vtr.1": fields,
         "org.micov.attestation.1": micovAttestationFields || {},
+      };
+    } else if (requestType.startsWith("photoid_")) {
+      // Build multi-namespace request for ISO 23220 Photo ID (three namespaces)
+      nameSpacesObj = {
+        "org.iso.23220.1": fields || {},
+        "org.iso.23220.photoID.1": photoIdFields || {},
+        "org.iso.23220.datagroups.1": photoIdDGFields || {},
       };
     } else {
       nameSpacesObj = { [namespace]: fields };
