@@ -719,6 +719,11 @@ const qrInput = document.getElementById('qrInput');
 const btnParseQr = document.getElementById('btnParseQr');
 const btnClearQr = document.getElementById('btnClearQr');
 
+// Focus the Manual QR payload textbox on page load
+window.addEventListener('load', () => {
+  try { if (qrInput) qrInput.focus(); } catch {}
+});
+
 const btnScan = document.getElementById('btnScan');
 const btnSend = document.getElementById('btnSend');
 const chunkInput = document.getElementById('chunk');

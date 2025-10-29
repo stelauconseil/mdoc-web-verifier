@@ -27,11 +27,27 @@
     for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
     return out;
   }
+  // Some keyboard-wedge laser scanners substitute base64url characters.
+  // Normalize common artifacts to valid base64url before decoding.
+  function normalizeScannerArtifacts(s) {
+    return (
+      s
+        // Known substitutions observed: '!' -> '_' and '§' -> '-'
+        .replace(/!/g, "_")
+        .replace(/§/g, "-")
+        // Normalize various dash characters to simple hyphen-minus
+        .replace(/[–—−\u2010\u2011\u2012\u2013\u2014\u2212\uFF0D]/g, "-")
+        // Normalize fullwidth underscore if ever present
+        .replace(/[\uFF3F]/g, "_")
+    );
+  }
   function b64urlToBytesSafe(maybeB64Url) {
     let s = maybeB64Url.trim();
     try {
       s = decodeURIComponent(s);
     } catch (_) {}
+    // Apply normalization for scanner substitutions BEFORE url-safe to base64
+    s = normalizeScannerArtifacts(s);
     s = s.replace(/-/g, "+").replace(/_/g, "/");
     return b64ToBytesBrowserSafe(s);
   }
