@@ -2982,12 +2982,12 @@ async function processSessionResponse(assembled) {
   let sharedSecretBuffer = null;
 
   // log('⚠️ Wallet response did not contain an ephemeral key. Falling back to static DeviceEngagement key.');
-  const mdocPub = await importMdocPubKeyXY(mdocPubKey.x, mdocPubKey.y);
-  sharedSecretBuffer = await deriveSharedSecretBits(readerKeyPair.privateKey, mdocPub);
+  const mdocPub = await window.SessionCrypto.importMdocPubKeyXY(mdocPubKey.x, mdocPubKey.y);
+  sharedSecretBuffer = await window.SessionCrypto.deriveSharedSecretBits(readerKeyPair.privateKey, mdocPub);
 
   const sharedSecretBytes = new Uint8Array(sharedSecretBuffer);
-  transcriptAAD = await buildTranscriptAAD();
-  const keys = await deriveSessionKey(sharedSecretBytes, transcriptAAD);
+  transcriptAAD = await window.SessionEstablishment.buildTranscriptAAD(deBytes);
+  const keys = await window.SessionCrypto.deriveSessionKey(sharedSecretBytes, transcriptAAD);
 
   skReader = keys.readerKey;
   skDevice = keys.deviceKey;
@@ -3043,22 +3043,7 @@ async function processSessionResponse(assembled) {
     log('⚠️ No document data found in wallet response');
   }
 }
-async function writeState(byte) {
-  // Delegate to BLE transport
-  if (!window.BLE || typeof window.BLE.writeState !== 'function') {
-    throw new Error('BLE module not initialized');
-  }
-  await window.BLE.writeState(byte);
-  log(`State set to 0x${byte.toString(16)}`);
-}
-async function sendFragmented(payload) {
-  // Delegate to BLE transport with current chunk size preference
-  if (!window.BLE || typeof window.BLE.sendFragmented !== 'function') {
-    throw new Error('BLE module not initialized');
-  }
-  const sz = parseInt(chunkInput.value, 10) || 185;
-  await window.BLE.sendFragmented(payload, sz);
-}
+// Removed writeState/sendFragmented wrappers in favor of direct BLE module calls
 
 // ==== QR scanning ====
 function stopCamera() {
@@ -3194,21 +3179,7 @@ async function handleQrPayload(raw, sourceLabel) {
   }
 }
 
-// BLE Connection function (extracted from button handler)
-async function bleConnect() {
-  if (!svcUUID) throw new Error('Service UUID missing (scan QR or use override)');
-  if (!window.BLE || typeof window.BLE.connect !== 'function' || typeof window.BLE.init !== 'function') {
-    throw new Error('BLE module not available');
-  }
-  // Initialize BLE module bindings on first use
-  window.BLE.init({
-    onAssembled: processS2CAssembled,
-    logger: log,
-    defaultChunk: parseInt(chunkInput.value, 10) || 185,
-  });
-  log(`Connecting to wallet (service ${svcUUID})…`);
-  await window.BLE.connect(svcUUID);
-}
+// Removed bleConnect wrapper; connect inline in autoConnectFlow
 
 // Automated connection and session establishment flow
 async function autoConnectFlow() {
@@ -3216,14 +3187,24 @@ async function autoConnectFlow() {
     // Step 1: Connect to wallet
     const connected = !!(window.BLE && typeof window.BLE.isConnected === 'function' && window.BLE.isConnected());
     if (!connected) {
-      log('📱 Connecting to wallet...');
-      await bleConnect();
+      if (!svcUUID) throw new Error('Service UUID missing (scan QR or use override)');
+      if (!window.BLE || typeof window.BLE.connect !== 'function' || typeof window.BLE.init !== 'function') {
+        throw new Error('BLE module not available');
+      }
+      // Initialize BLE module bindings on first use
+      window.BLE.init({
+        onAssembled: processS2CAssembled,
+        logger: log,
+        defaultChunk: parseInt(chunkInput.value, 10) || 185,
+      });
+      log(`Connecting to wallet (service ${svcUUID})…`);
+      await window.BLE.connect(svcUUID);
       await new Promise(resolve => setTimeout(resolve, 500)); // Wait for connection to stabilize
     }
     
     // Step 2: Start session (state 0x01)
     log('🎬 Starting session (state 0x01)...');
-    await writeState(0x01);
+    await window.BLE.writeState(0x01);
     await new Promise(resolve => setTimeout(resolve, 300));
     
     // Step 3: Send SessionEstablishment
@@ -3243,8 +3224,8 @@ async function autoConnectFlow() {
     window.sessionEstablished = false;
 
     // Generate ephemeral key pair
-    readerKeyPair = await makeReaderEphemeralKeyPair();
-    await exportReaderPublicToCoseKey();
+  readerKeyPair = await window.SessionEstablishment.makeReaderEphemeralKeyPair();
+  await window.SessionEstablishment.exportReaderPublicToCoseKey(readerKeyPair);
     log('✅ Generated ephemeral key pair');
     
     // Build SessionTranscript immediately (needed for reader authentication)
@@ -3254,13 +3235,31 @@ async function autoConnectFlow() {
     //  - EReaderKey (readerKeyPair) just generated
     //  - Handover (null for BLE)
     console.log('Building SessionTranscript for reader authentication...');
-    transcriptAAD = await buildTranscriptAAD();
+  transcriptAAD = await window.SessionEstablishment.buildTranscriptAAD(deBytes);
     console.log('✅ SessionTranscript built, length:', transcriptAAD.length, 'bytes');
     
     // Build and send SessionEstablishment message
-    const legacyMessage = await buildLegacySessionEstablishmentWithData();
+    const { message: legacyMessage, keys, transcriptAAD: aad } = await window.SessionEstablishment.buildLegacySessionEstablishmentWithData({
+      deBytes,
+      mdocPubKey,
+      readerKeyPair,
+      transcriptAAD,
+      skReader,
+      buildRequestByType,
+      log,
+      CBOR,
+    });
+    if (keys) {
+      skReader = keys.readerKey;
+      skDevice = keys.deviceKey;
+      window.skDevice = skDevice;
+      sessionKey = skReader;
+      sessionEstablished = true;
+      window.sessionEstablished = true;
+    }
+    if (aad) transcriptAAD = aad;
     console.log('SessionEstablishment message length:', legacyMessage.length);
-    await sendFragmented(legacyMessage);
+    await window.BLE.sendFragmented(legacyMessage, parseInt(chunkInput.value, 10) || 185);
     
     log('📤 SessionEstablishment sent (includes encrypted document request).');
     
@@ -3552,175 +3551,7 @@ function parseMdocUriAndDE(uri){
 }
 
 // ==== Session Establishment (ECDH + HKDF, Transcript AAD) ====
-async function importMdocPubKeyXY(x, y) {
-  if (window.SessionCrypto?.importMdocPubKeyXY) {
-    return window.SessionCrypto.importMdocPubKeyXY(x, y);
-  }
-  const u = new Uint8Array(1 + x.length + y.length);
-  u[0] = 0x04; u.set(x,1); u.set(y,1+x.length);
-  return crypto.subtle.importKey('raw', u, { name:'ECDH', namedCurve:'P-256' }, true, []);
-}
-async function makeReaderEphemeralKeyPair() {
-  if (window.SessionEstablishment?.makeReaderEphemeralKeyPair) {
-    return window.SessionEstablishment.makeReaderEphemeralKeyPair();
-  }
-  return crypto.subtle.generateKey({ name:'ECDH', namedCurve:'P-256' }, true, ['deriveBits']);
-}
-async function deriveSharedSecretBits(privKey, pubKey) {
-  if (window.SessionCrypto?.deriveSharedSecretBits) {
-    return window.SessionCrypto.deriveSharedSecretBits(privKey, pubKey);
-  }
-  const sharedSecret = await crypto.subtle.deriveBits({ name:'ECDH', public: pubKey }, privKey, 256);
-  return sharedSecret;
-}
-async function hkdfExtract(saltBytes, ikmBytes) {
-  if (window.SessionCrypto?.hkdfExtract) {
-    return window.SessionCrypto.hkdfExtract(saltBytes, ikmBytes);
-  }
-  const key = await crypto.subtle.importKey('raw', saltBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const prk = await crypto.subtle.sign('HMAC', key, ikmBytes);
-  return new Uint8Array(prk);
-}
-async function hkdfExpand(prkBytes, infoBytes, length) {
-  if (window.SessionCrypto?.hkdfExpand) {
-    return window.SessionCrypto.hkdfExpand(prkBytes, infoBytes, length);
-  }
-  const prk = await crypto.subtle.importKey('raw', prkBytes, { name:'HMAC', hash:'SHA-256' }, false, ['sign']);
-  let t = new Uint8Array(0), okm = new Uint8Array(0), counter = 1;
-  while (okm.length < length) {
-    const input = concatUint8(t, infoBytes, Uint8Array.of(counter));
-    const mac = new Uint8Array(await crypto.subtle.sign('HMAC', prk, input));
-    okm = concatUint8(okm, mac);
-    t = mac; counter++;
-  }
-  return okm.slice(0, length);
-}
-async function sha256(bytes) {
-  if (window.SessionCrypto?.sha256) {
-    return window.SessionCrypto.sha256(bytes);
-  }
-  return new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
-}
-
-async function exportReaderPublicToCoseKey() {
-  if (!window.SessionEstablishment?.exportReaderPublicToCoseKey) {
-    throw new Error('SessionEstablishment module not available');
-  }
-  const { fingerprint } = await window.SessionEstablishment.exportReaderPublicToCoseKey(readerKeyPair);
-  console.log('[CACHE] Successfully cached EReaderKey with fingerprint:', fingerprint);
-  return fingerprint;
-}
-
-
-// Build transcript AAD: hash( [ DeviceEngagementBytes, EReaderKeyBytes, Handover ] )
-async function buildTranscriptAAD() {
-  if (!window.SessionEstablishment?.buildTranscriptAAD) {
-    throw new Error('SessionEstablishment module not available');
-  }
-  return window.SessionEstablishment.buildTranscriptAAD(deBytes);
-}
-
-// Derive session keys per ISO 18013-5 standard
-// Per spec Section 9.1.5.2:
-// - Salt = SHA-256(SessionTranscriptBytes)
-// - IKM = ZAB (shared secret from ECDH)
-// - Info = "SKReader" or "SKDevice" (UTF-8 encoded)
-// - L = 32 octets (for AES-256)
-async function deriveSessionKey(sharedSecret, transcriptHash) {
-  if (window.SessionCrypto?.deriveSessionKey) {
-    return window.SessionCrypto.deriveSessionKey(sharedSecret, transcriptHash);
-  }
-  const prk = await hkdfExtract(transcriptHash, sharedSecret);
-  const readerInfo = enc.encode('SKReader');
-  const readerKey = await hkdfExpand(prk, readerInfo, 32);
-  const deviceInfo = enc.encode('SKDevice');
-  const deviceKey = await hkdfExpand(prk, deviceInfo, 32);
-  window.sessionDebug = window.sessionDebug || {};
-  window.sessionDebug.skReader = readerKey;
-  window.sessionDebug.skDevice = deviceKey;
-  window.sessionDebug.transcriptHash = transcriptHash;
-  return { readerKey, deviceKey };
-}
-
-// ==== Raw AES-256-GCM Encryption (for SessionEstablishment.data field) ====
-// Per ISO 18013-5 Section 9.1.1.4, SessionEstablishment.data field is:
-// "concatenation of the ciphertext and all 16 bytes of the authentication tag"
-// This is RAW output from AES-GCM, NOT wrapped in COSE_Encrypt0 structure
-//
-// CRITICAL: AAD must be EMPTY per ISO 18013-5 Section 9.1.5.2:
-// "The AAD used with the AES-GCM function shall be an empty string"
-async function aesGcmEncryptRaw(plaintext, keyBytes, identifier8, messageCounter = 1) {
-  if (window.SessionCrypto?.aesGcmEncryptRaw) {
-    return window.SessionCrypto.aesGcmEncryptRaw(plaintext, keyBytes, identifier8, messageCounter);
-  }
-  // Fallback (should rarely be used)
-  const iv = new Uint8Array(12);
-  iv.set(identifier8, 0);
-  iv[8] = (messageCounter >> 24) & 0xFF;
-  iv[9] = (messageCounter >> 16) & 0xFF;
-  iv[10] = (messageCounter >> 8) & 0xFF;
-  iv[11] = messageCounter & 0xFF;
-  const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
-  const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: new Uint8Array(0), tagLength: 128 }, key, plaintext);
-  return new Uint8Array(encrypted);
-}
-
-// ==== COSE_Encrypt0 (AES-256-GCM per ISO 18013-5) ====
-// CRITICAL: Per ISO 18013-5 Section 9.1.5.2:
-// - IV = identifier (8 bytes) || message counter (4 bytes big-endian)
-// - Reader identifier: 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00
-// - Counter starts at 1 for first message
-// - AAD for GCM function shall be EMPTY STRING
-async function coseEncrypt0_AESGCM_Enc0(plaintext, externalAAD, keyBytes, messageCounter = 1) {
-  if (window.SessionCrypto?.coseEncrypt0_AESGCM_Enc0) {
-    return window.SessionCrypto.coseEncrypt0_AESGCM_Enc0(plaintext, externalAAD, keyBytes, messageCounter);
-  }
-  throw new Error('COSE_Encrypt0 helper not available');
-}
-
-// ==== Messages ====
-
-// Custom CBOR encoder for COSE_Key to avoid tag 64 on byte strings
-function encodeCoseKeyManually(coseKey) {
-  if (window.SessionCrypto?.encodeCoseKeyManually) {
-    return window.SessionCrypto.encodeCoseKeyManually(coseKey);
-  }
-  throw new Error('COSE_Key encoder not available');
-}
-
-// Manually encode tag 24 wrapped byte string to avoid tag 64
-function encodeTag24ByteString(data) {
-  if (window.SessionCrypto?.encodeTag24ByteString) {
-    return window.SessionCrypto.encodeTag24ByteString(data);
-  }
-  throw new Error('Tag24 encoder not available');
-}
-// ISO 18013-5 compliant SessionEstablishment with manual CBOR encoding
-async function buildLegacySessionEstablishmentWithData() {
-  if (!window.SessionEstablishment?.buildLegacySessionEstablishmentWithData) {
-    throw new Error('SessionEstablishment module not available');
-  }
-  const { message, keys, transcriptAAD: aad } = await window.SessionEstablishment.buildLegacySessionEstablishmentWithData({
-    deBytes,
-    mdocPubKey,
-    readerKeyPair,
-    transcriptAAD,
-    skReader,
-    buildRequestByType,
-    log,
-    CBOR,
-  });
-  if (keys && (!skReader || !skDevice)) {
-    skReader = keys.readerKey;
-    skDevice = keys.deviceKey;
-    window.skDevice = skDevice;
-    sessionKey = skReader;
-    sessionEstablished = true;
-    window.sessionEstablished = true;
-  }
-  if (aad) transcriptAAD = aad;
-  return message;
-}
+// Removed crypto/session wrappers duplicated with SessionCrypto/SessionEstablishment modules
 
 // Build different request types for common use cases
 // Can now accept array of request types to create multiple docRequests
