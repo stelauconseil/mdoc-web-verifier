@@ -610,6 +610,8 @@ openssl req -new -x509 -key reader_key.pem -out reader_cert.pem -days 365 \
 <script src="/js/device-engagement.js"></script>
 <script src="/js/wallet-response.js"></script>
 <script src="/js/request-builder.js"></script>
+<script src="/js/ble-transport.js"></script>
+<script src="/js/session-crypto.js"></script>
 
 <script type="module">
 // ==== App Version (must match CACHE_VERSION in sw.js) ====
@@ -779,20 +781,11 @@ const readerAuthStatus = document.getElementById('readerAuthStatus');
 
 // ==== State ====
 let scanRunning = false;
-let device, server, service, chState, chC2S, chS2C;
-let rxBuffer = [];
-let rxTimer = null;                    // Flush timer for partial S→C messages
+ 
 const RX_FLUSH_TIMEOUT_MS = 1500;      // Timeout before attempting to process buffered data
-let rxLastLen = 0;                     // Track last buffered length across timeouts
-let rxStalledCount = 0;                // Count consecutive timeouts without growth
+ 
 
-// Adaptive timeout based on current buffered size (large payloads need more time)
-function calcRxTimeout(len) {
-  if (!len || len < 8192) return 1500;        // <8KB
-  if (len < 24576) return 2500;               // 8-24KB
-  if (len < 65536) return 4000;               // 24-64KB
-  return 6000;                                 // >=64KB
-}
+ 
 let svcUUID = null;
 let bleAddr = null;
 let currentBleRole = 'central'; // Always central mode now
@@ -834,7 +827,7 @@ function resetResponseAndLog() {
   try { if (logEl) logEl.innerHTML = ''; } catch {}
 }
 
-// ==== BLE transport (GATT) ====
+ 
 
 // Initialize debug toggle state
 try {
@@ -855,11 +848,7 @@ try {
     });
   }
 } catch {}
-const UUIDS = { // characteristic UUIDs used by common 18013-5 demos/drafts
-  state: '00000001-a123-48ce-896b-4c76973373e6',
-  c2s:   '00000002-a123-48ce-896b-4c76973373e6',
-  s2c:   '00000003-a123-48ce-896b-4c76973373e6'
-};
+ 
 
 // Assemble and process a complete S→C payload (called on final flag or timeout)
 async function processS2CAssembled(assembled, reason = 'final-flag') {
@@ -939,92 +928,7 @@ async function processS2CAssembled(assembled, reason = 'final-flag') {
   }
 }
 
-async function handleServer2Client(event) {
-  const data = new Uint8Array(event.target.value.buffer);
-  if (data.length === 0) return;
-  const flag = data[0];
-  const chunk = data.slice(1);
-  rxBuffer.push(chunk);
-  log(`S→C notify: flag=0x${flag.toString(16)} len=${chunk.length}`);
-  
-  // Restart inactivity timer to avoid premature timeout while data is flowing
-  try { if (rxTimer) clearTimeout(rxTimer); } catch {}
-  const timeoutMs = calcRxTimeout(rxBuffer.reduce((n,a)=>n+a.length,0))
-  rxTimer = setTimeout(async () => {
-    try {
-      const pendingLen = rxBuffer.reduce((n,a)=>n+a.length,0);
-      if (pendingLen > 0) {
-        const assembled = new Uint8Array(pendingLen);
-        let o=0; for (const seg of rxBuffer) { assembled.set(seg,o); o+=seg.length; }
-        // On timeout, only process if CBOR decode appears complete; otherwise wait for more data
-        let decodedOk = false;
-        try {
-          // Dry-run decode to determine completeness
-          const tmp = CBOR.decode(assembled);
-          decodedOk = !!tmp;
-        } catch (e) {
-          const msg = (e && e.message) ? e.message : String(e);
-          const looksIncomplete = /insufficient data|unexpected end|not enough/i.test(msg);
-          if (looksIncomplete) {
-            // Buffer seems incomplete; keep rxBuffer intact and re-arm timer
-            if (pendingLen === rxLastLen) {
-              rxStalledCount++;
-            } else {
-              rxStalledCount = 0;
-              rxLastLen = pendingLen;
-            }
-            log(`⏳ Timeout reached but CBOR incomplete; waiting for more fragments (len=${pendingLen}, stalled=${rxStalledCount})`);
-            // Re-arm a new timer with same interval
-            try { if (rxTimer) clearTimeout(rxTimer); } catch {}
-            rxTimer = setTimeout(async () => {
-              try {
-                const plen2 = rxBuffer.reduce((n,a)=>n+a.length,0);
-                if (plen2 > 0) {
-                  const a2 = new Uint8Array(plen2);
-                  let o2=0; for (const seg2 of rxBuffer) { a2.set(seg2,o2); o2+=seg2.length; }
-                  // Second attempt: if still incomplete and stalled for multiple cycles, proceed anyway
-                  try {
-                    const tmp2 = CBOR.decode(a2);
-                    rxBuffer = [];
-                    await processS2CAssembled(a2, 'timeout');
-                  } catch (e2) {
-                    const msg2 = (e2 && e2.message) ? e2.message : String(e2);
-                    const incomplete2 = /insufficient data|unexpected end|not enough/i.test(msg2);
-                    if (incomplete2 && rxStalledCount < 3) {
-                      // Keep waiting
-                      rxStalledCount++;
-                      log(`⏳ Still incomplete after timeout; continuing to wait (stalled=${rxStalledCount})`);
-                      return; // Don't clear buffer
-                    }
-                    // Either not incomplete or stalled repeatedly: process as-is to avoid deadlock
-                    rxBuffer = [];
-                    await processS2CAssembled(a2, 'timeout');
-                  }
-                }
-              } catch (innerErr) {
-                console.warn('Timeout (2nd stage) processing failed:', innerErr);
-              }
-            }, calcRxTimeout(pendingLen));
-            return; // Important: don't clear buffer now
-          }
-        }
-        // If decode succeeded (or error not indicating incompleteness), process now
-        rxBuffer = [];
-        await processS2CAssembled(assembled, 'timeout');
-      }
-    } catch (e) {
-      console.warn('Timeout flush failed:', e);
-    }
-  }, timeoutMs);
-  if (flag === 0x00) {
-    try { if (rxTimer) clearTimeout(rxTimer); } catch {}
-    const len = rxBuffer.reduce((n,a)=>n+a.length,0);
-    const assembled = new Uint8Array(len);
-    let o=0; for (const seg of rxBuffer) { assembled.set(seg,o); o+=seg.length; }
-    rxBuffer = [];
-    await processS2CAssembled(assembled, 'final-flag');
-  }
-}
+ 
 
 // Bridge: Decrypt and display mDL response
 const decryptAndDisplayResponse = (...args) => window.WalletResponse.decryptAndDisplayResponse(...args);
@@ -3139,39 +3043,20 @@ async function processSessionResponse(assembled) {
   }
 }
 async function writeState(byte) {
-  await chState.writeValueWithoutResponse(Uint8Array.of(byte));
+  // Delegate to BLE transport
+  if (!window.BLE || typeof window.BLE.writeState !== 'function') {
+    throw new Error('BLE module not initialized');
+  }
+  await window.BLE.writeState(byte);
   log(`State set to 0x${byte.toString(16)}`);
 }
 async function sendFragmented(payload) {
-  if (!chC2S) throw new Error('Client-to-Server characteristic not available');
-  if (!device?.gatt?.connected) throw new Error('Device not connected');
-  
-  // ISO 18013-5 recommends requesting high MTU, but Web Bluetooth API doesn't expose requestMTU()
-  // User can manually configure chunk size. Modern devices typically support 185-512 bytes.
-  const sz = parseInt(chunkInput.value,10) || 185;
-  let off = 0;
-  while (off < payload.length) {
-    const rem = payload.length - off;
-    const take = Math.min(rem, sz);
-    const last = rem <= sz;
-    const frag = new Uint8Array(1 + take);
-    frag[0] = last ? 0x00 : 0x01;
-    frag.set(payload.slice(off, off+take), 1);
-    
-    try {
-      await chC2S.writeValueWithoutResponse(frag);
-      log(`C→S write: flag=0x${frag[0].toString(16)} len=${take}`);
-    } catch (e) {
-      throw new Error(`Write failed: ${e.message}`);
-    }
-    
-    off += take;
-    
-    // Small delay between fragments to avoid overwhelming the connection
-    if (off < payload.length) {
-      await new Promise(resolve => setTimeout(resolve, 10));
-    }
+  // Delegate to BLE transport with current chunk size preference
+  if (!window.BLE || typeof window.BLE.sendFragmented !== 'function') {
+    throw new Error('BLE module not initialized');
   }
+  const sz = parseInt(chunkInput.value, 10) || 185;
+  await window.BLE.sendFragmented(payload, sz);
 }
 
 // ==== QR scanning ====
@@ -3194,33 +3079,15 @@ function stopCamera() {
 
 // Disconnect existing BLE connection if any
 function disconnectBLE() {
-  if (device && device.gatt && device.gatt.connected) {
-    try {
-      log('🔌 Disconnecting previous BLE connection...');
-      device.gatt.disconnect();
-      console.log('Previous BLE device disconnected');
-    } catch (e) {
-      console.warn('Error disconnecting BLE device:', e);
+  try {
+    if (window.BLE && typeof window.BLE.disconnect === 'function') {
+      window.BLE.disconnect();
     }
+  } catch (e) {
+    console.warn('Error disconnecting BLE device:', e);
   }
-  
-  // Clear any pending RX flush timer
-  try { if (rxTimer) clearTimeout(rxTimer); } catch {}
-  rxTimer = null;
-  rxLastLen = 0;
-  rxStalledCount = 0;
-
-  // Reset all connection state
-  device = null;
-  server = null;
-  service = null;
-  chState = null;
-  chC2S = null;
-  chS2C = null;
-  rxBuffer = [];
+  // Reset session-related state
   sessionEstablished = false;
-  
-  // Reset session keys
   readerKeyPair = null;
   skReader = null;
   skDevice = null;
@@ -3228,14 +3095,14 @@ function disconnectBLE() {
   sessionKey = null;
   transcriptAAD = null;
   walletEphemeralKey = null;
-  
+
   // Remove existing connect button if present
   const existingBtn = document.getElementById('btnAutoConnect');
   if (existingBtn) {
     existingBtn.remove();
     console.log('Removed existing connect button');
   }
-  
+
   console.log('BLE connection state reset');
 }
 
@@ -3329,82 +3196,34 @@ async function handleQrPayload(raw, sourceLabel) {
 // BLE Connection function (extracted from button handler)
 async function bleConnect() {
   if (!svcUUID) throw new Error('Service UUID missing (scan QR or use override)');
-  
-  console.log('Starting BLE connection with UUID:', svcUUID);
-  
-  // Check if Web Bluetooth is supported
-  if (!navigator.bluetooth) {
-    throw new Error('Web Bluetooth not supported in this browser');
+  if (!window.BLE || typeof window.BLE.connect !== 'function' || typeof window.BLE.init !== 'function') {
+    throw new Error('BLE module not available');
   }
-  
-  // Request device
-  device = await navigator.bluetooth.requestDevice({ 
-    filters: [{ services: [svcUUID] }], 
-    optionalServices: [svcUUID] 
+  // Initialize BLE module bindings on first use
+  window.BLE.init({
+    onAssembled: processS2CAssembled,
+    logger: log,
+    defaultChunk: parseInt(chunkInput.value, 10) || 185,
   });
-  console.log('Device selected:', device);
-  log(`Device selected: ${device.name || '(unnamed)'} (${device.id})`);
-  
-  // Setup disconnect handler
-  device.addEventListener('gattserverdisconnected', () => {
-    log('📱 Wallet disconnected from reader.');
-    console.log('GATT server disconnected');
-    
-    // Reset connection state
-    server = service = chState = chC2S = chS2C = null;
-    
-    log('💡 To continue, scan QR code again.');
-  });
-  
-  console.log('Attempting GATT connection...');
-  log(`Connecting to ${device.name || '(unnamed)'}…`);
-  
-  server = await device.gatt.connect();
-  console.log('GATT connected, server:', server);
-  log('GATT connected successfully');
-  
-  console.log('Getting primary service:', svcUUID);
-  service = await server.getPrimaryService(svcUUID);
-  console.log('Service found:', service);
-  log('Service found');
-  
-  console.log('Getting characteristics...');
-  chState = await service.getCharacteristic(UUIDS.state);
-  console.log('State characteristic found:', chState);
-  
-  chC2S = await service.getCharacteristic(UUIDS.c2s);
-  console.log('C2S characteristic found:', chC2S);
-  
-  chS2C = await service.getCharacteristic(UUIDS.s2c);
-  console.log('S2C characteristic found:', chS2C);
-  
-  log('All characteristics found');
-  
-  console.log('Starting notifications...');
-  await chS2C.startNotifications();
-  chS2C.addEventListener('characteristicvaluechanged', handleServer2Client);
-  console.log('Notifications started successfully');
-  log('GATT ready. Notifications enabled.');
-  
-  console.log('⏸️ Session key derivation postponed until after SessionEstablishment response');
+  log(`Connecting to wallet (service ${svcUUID})…`);
+  await window.BLE.connect(svcUUID);
 }
 
 // Automated connection and session establishment flow
 async function autoConnectFlow() {
   try {
     // Step 1: Connect to wallet
-    if (!device || !server || !service) {
+    const connected = !!(window.BLE && typeof window.BLE.isConnected === 'function' && window.BLE.isConnected());
+    if (!connected) {
       log('📱 Connecting to wallet...');
       await bleConnect();
       await new Promise(resolve => setTimeout(resolve, 500)); // Wait for connection to stabilize
     }
     
     // Step 2: Start session (state 0x01)
-    if (chState) {
-      log('🎬 Starting session (state 0x01)...');
-      await writeState(0x01);
-      await new Promise(resolve => setTimeout(resolve, 300));
-    }
+    log('🎬 Starting session (state 0x01)...');
+    await writeState(0x01);
+    await new Promise(resolve => setTimeout(resolve, 300));
     
     // Step 3: Send SessionEstablishment
     log('🔐 Sending SessionEstablishment...');
@@ -3731,6 +3550,9 @@ function parseMdocUriAndDE(uri){
 
 // ==== Session Establishment (ECDH + HKDF, Transcript AAD) ====
 async function importMdocPubKeyXY(x, y) {
+  if (window.SessionCrypto?.importMdocPubKeyXY) {
+    return window.SessionCrypto.importMdocPubKeyXY(x, y);
+  }
   const u = new Uint8Array(1 + x.length + y.length);
   u[0] = 0x04; u.set(x,1); u.set(y,1+x.length);
   return crypto.subtle.importKey('raw', u, { name:'ECDH', namedCurve:'P-256' }, true, []);
@@ -3739,34 +3561,24 @@ async function makeReaderEphemeralKeyPair() {
   return crypto.subtle.generateKey({ name:'ECDH', namedCurve:'P-256' }, true, ['deriveBits']);
 }
 async function deriveSharedSecretBits(privKey, pubKey) {
-  console.log('🔐 ECDH Key Agreement:');
-  console.log('  Private key type:', privKey.type);
-  console.log('  Public key type:', pubKey.type);
-  
-  // Export public key to verify it matches what we expect (only public keys can be exported as raw)
-  try {
-    const pubKeyRaw = new Uint8Array(await crypto.subtle.exportKey('raw', pubKey));
-    console.log('  Public key (raw, 65 bytes):', hex(pubKeyRaw));
-    console.log('  Public key X:', hex(pubKeyRaw.slice(1, 33)));
-    console.log('  Public key Y:', hex(pubKeyRaw.slice(33, 65)));
-  } catch (e) {
-    console.log('  Public key export not available (might be non-extractable)');
+  if (window.SessionCrypto?.deriveSharedSecretBits) {
+    return window.SessionCrypto.deriveSharedSecretBits(privKey, pubKey);
   }
-  
   const sharedSecret = await crypto.subtle.deriveBits({ name:'ECDH', public: pubKey }, privKey, 256);
-  console.log('  Shared secret (32 bytes):', hex(new Uint8Array(sharedSecret)));
-  console.log('  Shared secret (base64):', btoa(String.fromCharCode(...new Uint8Array(sharedSecret))));
-  
   return sharedSecret;
 }
 async function hkdfExtract(saltBytes, ikmBytes) {
-  // HKDF-Extract: PRK = HMAC-Hash(salt, IKM)
-  // Use HMAC directly, not WebCrypto's HKDF (which does extract+expand together)
+  if (window.SessionCrypto?.hkdfExtract) {
+    return window.SessionCrypto.hkdfExtract(saltBytes, ikmBytes);
+  }
   const key = await crypto.subtle.importKey('raw', saltBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const prk = await crypto.subtle.sign('HMAC', key, ikmBytes);
   return new Uint8Array(prk);
 }
 async function hkdfExpand(prkBytes, infoBytes, length) {
+  if (window.SessionCrypto?.hkdfExpand) {
+    return window.SessionCrypto.hkdfExpand(prkBytes, infoBytes, length);
+  }
   const prk = await crypto.subtle.importKey('raw', prkBytes, { name:'HMAC', hash:'SHA-256' }, false, ['sign']);
   let t = new Uint8Array(0), okm = new Uint8Array(0), counter = 1;
   while (okm.length < length) {
@@ -3778,6 +3590,9 @@ async function hkdfExpand(prkBytes, infoBytes, length) {
   return okm.slice(0, length);
 }
 async function sha256(bytes) {
+  if (window.SessionCrypto?.sha256) {
+    return window.SessionCrypto.sha256(bytes);
+  }
   return new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
 }
 
@@ -3930,42 +3745,18 @@ async function buildTranscriptAAD() {
 // - Info = "SKReader" or "SKDevice" (UTF-8 encoded)
 // - L = 32 octets (for AES-256)
 async function deriveSessionKey(sharedSecret, transcriptHash) {
-  console.log('🔐 Starting session key derivation (ISO 18013-5):');
-  console.log('- Shared secret (ZAB) length:', sharedSecret.length);
-  console.log('- Shared secret (hex):', hex(sharedSecret));
-  console.log('- Shared secret (base64):', btoa(String.fromCharCode(...sharedSecret)));
-  console.log('- Salt (SessionTranscript hash) length:', transcriptHash.length);
-  console.log('- Salt (hex):', hex(transcriptHash));
-  
-  // HKDF-Extract: PRK = HKDF-Extract(salt, IKM)
-  // salt = SHA-256(SessionTranscriptBytes)
-  // IKM = shared secret (ZAB)
+  if (window.SessionCrypto?.deriveSessionKey) {
+    return window.SessionCrypto.deriveSessionKey(sharedSecret, transcriptHash);
+  }
   const prk = await hkdfExtract(transcriptHash, sharedSecret);
-  
-  // HKDF-Expand for SKReader: info = "SKReader" (UTF-8)
   const readerInfo = enc.encode('SKReader');
-  const readerKey = await hkdfExpand(prk, readerInfo, 32);  // 32 bytes for A256GCM
-  
-  // HKDF-Expand for SKDevice: info = "SKDevice" (UTF-8)
-  const deviceInfo = enc.encode('SKDevice'); 
-  const deviceKey = await hkdfExpand(prk, deviceInfo, 32);  // 32 bytes for A256GCM
-  
-  console.log('🔐 ISO 18013-5 key derivation (AES-256-GCM):');
-  console.log('- SKReader (32 bytes):', hex(readerKey));
-  console.log('- SKReader (base64):', btoa(String.fromCharCode(...readerKey)));
-  console.log('- SKDevice (32 bytes):', hex(deviceKey));
-  console.log('- SKDevice (base64):', btoa(String.fromCharCode(...deviceKey)));
-  console.log();
-
-  // Expose for debugging/inspection in devtools (non-production)
+  const readerKey = await hkdfExpand(prk, readerInfo, 32);
+  const deviceInfo = enc.encode('SKDevice');
+  const deviceKey = await hkdfExpand(prk, deviceInfo, 32);
   window.sessionDebug = window.sessionDebug || {};
   window.sessionDebug.skReader = readerKey;
   window.sessionDebug.skDevice = deviceKey;
   window.sessionDebug.transcriptHash = transcriptHash;
-  
-  // CRITICAL: Return BOTH keys as object
-  // Reader encrypts requests with SKReader
-  // Reader decrypts responses with SKDevice
   return { readerKey, deviceKey };
 }
 
@@ -3977,43 +3768,19 @@ async function deriveSessionKey(sharedSecret, transcriptHash) {
 // CRITICAL: AAD must be EMPTY per ISO 18013-5 Section 9.1.5.2:
 // "The AAD used with the AES-GCM function shall be an empty string"
 async function aesGcmEncryptRaw(plaintext, keyBytes, identifier8, messageCounter = 1) {
-  console.log('=== RAW AES-256-GCM ENCRYPTION (for SessionEstablishment.data) ===');
-  console.log('Plaintext length:', plaintext.length);
-  console.log('Key length:', keyBytes.length, 'bytes (should be 32 for A256GCM)');
-  console.log('Message counter:', messageCounter);
-  
-  // Build IV per ISO 18013-5: identifier (8 bytes) || counter (4 bytes big-endian)
+  if (window.SessionCrypto?.aesGcmEncryptRaw) {
+    return window.SessionCrypto.aesGcmEncryptRaw(plaintext, keyBytes, identifier8, messageCounter);
+  }
+  // Fallback (should rarely be used)
   const iv = new Uint8Array(12);
-  iv.set(identifier8, 0);  // 8-byte identifier (0x00×8 for reader)
+  iv.set(identifier8, 0);
   iv[8] = (messageCounter >> 24) & 0xFF;
   iv[9] = (messageCounter >> 16) & 0xFF;
   iv[10] = (messageCounter >> 8) & 0xFF;
   iv[11] = messageCounter & 0xFF;
-  
-  console.log('IV (identifier || counter):', hex(iv));
-  console.log('  - Identifier (8 bytes):', hex(identifier8));
-  console.log('  - Counter (4 bytes BE):', hex(iv.slice(8, 12)), '=', messageCounter);
-  
-  // AAD for GCM shall be EMPTY per ISO 18013-5 Section 9.1.5.2
-  // "The AAD used with the AES-GCM function shall be an empty string"
-  const aad = new Uint8Array(0);
-  console.log('AAD for AES-GCM: <EMPTY> (per ISO 18013-5 Section 9.1.5.2)');
-  console.log('⚠️ Note: This is DIFFERENT from COSE_Encrypt0 which uses Enc_structure');
-  
-  const key = await crypto.subtle.importKey('raw', keyBytes, 
-    { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
-  
-  const encrypted = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv, additionalData: aad, tagLength: 128 },
-    key, plaintext
-  );
-  
-  const result = new Uint8Array(encrypted);
-  console.log('Raw encrypted length:', result.length, '(plaintext + 16-byte auth tag)');
-  console.log('Raw encrypted (first 32 bytes):', hex(result.slice(0, 32)));
-  console.log('✅ Returns: ciphertext || 16-byte authentication_tag (no COSE wrapper, no Enc_structure AAD)');
-  
-  return result;
+  const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+  const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: new Uint8Array(0), tagLength: 128 }, key, plaintext);
+  return new Uint8Array(encrypted);
 }
 
 // ==== COSE_Encrypt0 (AES-256-GCM per ISO 18013-5) ====
@@ -4023,176 +3790,28 @@ async function aesGcmEncryptRaw(plaintext, keyBytes, identifier8, messageCounter
 // - Counter starts at 1 for first message
 // - AAD for GCM function shall be EMPTY STRING
 async function coseEncrypt0_AESGCM_Enc0(plaintext, externalAAD, keyBytes, messageCounter = 1) {
-  console.log('=== COSE_Encrypt0 ENCRYPTION (ISO 18013-5) ===');
-  console.log('Plaintext length:', plaintext.length);
-  console.log('Key length:', keyBytes.length, 'bytes (should be 32 for A256GCM)');
-  console.log('Message counter:', messageCounter);
-  
-  if (keyBytes.length !== 32) {
-    console.warn('⚠️ WARNING: Key length is not 32 bytes - ISO 18013-5 requires AES-256-GCM');
+  if (window.SessionCrypto?.coseEncrypt0_AESGCM_Enc0) {
+    return window.SessionCrypto.coseEncrypt0_AESGCM_Enc0(plaintext, externalAAD, keyBytes, messageCounter);
   }
-  
-  // Build IV per ISO 18013-5: identifier (8 bytes) || counter (4 bytes big-endian)
-  // Reader identifier: 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00
-  const iv = new Uint8Array(12);
-  // First 8 bytes are 0x00 (reader identifier)
-  // Last 4 bytes are message counter in big-endian
-  iv[8] = (messageCounter >> 24) & 0xFF;
-  iv[9] = (messageCounter >> 16) & 0xFF;
-  iv[10] = (messageCounter >> 8) & 0xFF;
-  iv[11] = messageCounter & 0xFF;
-  
-  console.log('IV (identifier || counter):', hex(iv));
-  console.log('  - Identifier (8 bytes):', hex(iv.slice(0, 8)));
-  console.log('  - Counter (4 bytes BE):', hex(iv.slice(8, 12)), '=', messageCounter);
-  
-  // AAD for GCM shall be EMPTY per ISO 18013-5
-  const aad = new Uint8Array(0);
-  console.log('AAD for GCM: <empty> (per ISO 18013-5)');
-  
-  const key = await crypto.subtle.importKey('raw', keyBytes, { name:'AES-GCM' }, false, ['encrypt']);
-  const ciphertext = new Uint8Array(
-    await crypto.subtle.encrypt({ name:'AES-GCM', iv, additionalData: aad }, key, plaintext)
-  );
-  
-  console.log('Ciphertext length:', ciphertext.length);
-  console.log('Ciphertext (first 32 bytes):', hex(ciphertext.slice(0, 32)));
-
-  // Capture IV/key usage for debugging from DevTools
-  window.sessionDebug = window.sessionDebug || {};
-  window.sessionDebug.lastEncrypt = {
-    messageCounter,
-    iv: iv.slice(),
-    key: keyBytes.slice(),
-    aad: externalAAD ? externalAAD.slice?.() || externalAAD : null,
-    plaintextSample: plaintext.slice(0, 32)
-  };
-  
-  // Build COSE_Encrypt0 structure per RFC 8152 and ISO 18013-5
-  // MUST manually encode to avoid CBOR tag 64 being added to byte strings
-  // Structure: [protected, unprotected, ciphertext]
-  
-  // 1. Protected header: bstr containing {1: 3} for A256GCM
-  //    Manual encoding: 43 A1 01 03 = bstr(3) containing map {1: 3}
-  const protectedHdr = new Uint8Array([0x43, 0xA1, 0x01, 0x03]);  // alg = 3 (A256GCM)
-  console.log('Protected header (bstr with A256GCM):', hex(protectedHdr));
-  
-  // 2. Unprotected header: {5: iv} where iv is 12-byte bstr
-  //    Manual encoding: A1 05 4C <12 bytes>
-  const unprotectedHdr = new Uint8Array([
-    0xA1,  // map(1)
-    0x05,  // key = 5 (IV label)
-    0x4C,  // bstr(12)
-    ...iv
-  ]);
-  console.log('Unprotected header:', hex(unprotectedHdr));
-  
-  // 3. Ciphertext: bstr with length prefix
-  let ciphertextEncoded;
-  if (ciphertext.length < 24) {
-    ciphertextEncoded = new Uint8Array([0x40 + ciphertext.length, ...ciphertext]);
-  } else if (ciphertext.length < 256) {
-    ciphertextEncoded = new Uint8Array([0x58, ciphertext.length, ...ciphertext]);
-  } else {
-    ciphertextEncoded = new Uint8Array([
-      0x59,
-      (ciphertext.length >> 8) & 0xFF,
-      ciphertext.length & 0xFF,
-      ...ciphertext
-    ]);
-  }
-  console.log('Ciphertext encoded length:', ciphertextEncoded.length);
-  
-  // 4. Combine into COSE_Encrypt0 array: [protected, unprotected, ciphertext]
-  const enc0 = new Uint8Array([
-    0x83,  // array(3)
-    ...protectedHdr,
-    ...unprotectedHdr,
-    ...ciphertextEncoded
-  ]);
-  
-  console.log('Final COSE_Encrypt0 length:', enc0.length);
-  console.log('COSE_Encrypt0 hex (first 50 bytes):', hex(enc0.slice(0, 50)));
-  console.log('Expected format: 83 43 a1 01 03 a1 05 4c <12-byte IV> 59 ... <ciphertext>');
-  console.log('Algorithm: A256GCM (alg=3) - 32-byte key');
-  
-  // Verify structure can be decoded
-  try {
-    const verify = CBOR.decode(enc0);
-    if (!Array.isArray(verify) || verify.length !== 3) {
-      throw new Error('Invalid COSE_Encrypt0 structure');
-    }
-    console.log('✅ COSE_Encrypt0 structure validation passed (AES-256-GCM)');
-    console.log('✅ NO CBOR TAG 64 - manually encoded to ISO 18013-5 spec');
-  } catch (e) {
-    console.error('❌ COSE_Encrypt0 validation failed:', e.message);
-    throw e;
-  }
-  
-  return enc0;
+  throw new Error('COSE_Encrypt0 helper not available');
 }
 
 // ==== Messages ====
 
 // Custom CBOR encoder for COSE_Key to avoid tag 64 on byte strings
 function encodeCoseKeyManually(coseKey) {
-  // Manually build CBOR map: A4 (map with 4 items) + key-value pairs
-  const result = [];
-  
-  // Map header: 0xA4 = map with 4 items
-  result.push(0xA4);
-  
-  // Item 1: key=1 (kty), value=2 (EC2)
-  result.push(0x01);  // positive int 1
-  result.push(0x02);  // positive int 2
-  
-  // Item 2: key=-1 (crv), value=1 (P-256)
-  result.push(0x20);  // negative int -1 (encoded as 0x20)
-  result.push(0x01);  // positive int 1
-  
-  // Item 3: key=-2 (x), value=<32 bytes>
-  const x = coseKey.get(-2);
-  console.log('X coordinate type:', x.constructor.name, 'length:', x.length);
-  console.log('X coordinate (hex):', hex(x));
-  result.push(0x21);  // negative int -2 (encoded as 0x21)
-  result.push(0x58, 0x20);  // byte string, length 32
-  result.push(...x);
-  
-  // Item 4: key=-3 (y), value=<32 bytes>
-  const y = coseKey.get(-3);
-  console.log('Y coordinate type:', y.constructor.name, 'length:', y.length);
-  console.log('Y coordinate (hex):', hex(y));
-  result.push(0x22);  // negative int -3 (encoded as 0x22)
-  result.push(0x58, 0x20);  // byte string, length 32
-  result.push(...y);
-  
-  const encoded = new Uint8Array(result);
-  console.log('Manual COSE_Key encoding (hex):', hex(encoded));
-  console.log('Should be: A4 01 02 20 01 21 58 20 <x> 22 58 20 <y>');
-  
-  return encoded;
+  if (window.SessionCrypto?.encodeCoseKeyManually) {
+    return window.SessionCrypto.encodeCoseKeyManually(coseKey);
+  }
+  throw new Error('COSE_Key encoder not available');
 }
 
 // Manually encode tag 24 wrapped byte string to avoid tag 64
 function encodeTag24ByteString(data) {
-  // Tag 24 (0xD8 0x18) + byte string header + data
-  const result = [];
-  
-  // Tag 24: 0xD8 (tag follows) 0x18 (tag number 24)
-  result.push(0xD8, 0x18);
-  
-  // Byte string with length
-  if (data.length < 24) {
-    result.push(0x40 + data.length);  // short byte string
-  } else if (data.length < 256) {
-    result.push(0x58, data.length);   // byte string, 1-byte length
-  } else {
-    result.push(0x59, data.length >> 8, data.length & 0xFF);  // byte string, 2-byte length
+  if (window.SessionCrypto?.encodeTag24ByteString) {
+    return window.SessionCrypto.encodeTag24ByteString(data);
   }
-  
-  result.push(...data);
-  
-  return new Uint8Array(result);
+  throw new Error('Tag24 encoder not available');
 }
 // ISO 18013-5 compliant SessionEstablishment with manual CBOR encoding
 async function buildLegacySessionEstablishmentWithData() {
