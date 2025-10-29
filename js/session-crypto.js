@@ -195,6 +195,8 @@
   }
 
   window.SessionCrypto = {
+    hex,
+    concatUint8,
     importMdocPubKeyXY,
     deriveSharedSecretBits,
     hkdfExtract,

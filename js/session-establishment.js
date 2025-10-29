@@ -11,16 +11,6 @@
       .map((b) => b.toString(16).padStart(2, "0"))
       .join(" ");
   }
-  //   function concatUint8(...arrs) {
-  //     const n = arrs.reduce((s, a) => s + a.length, 0);
-  //     const out = new Uint8Array(n);
-  //     let o = 0;
-  //     for (const a of arrs) {
-  //       out.set(a, o);
-  //       o += a.length;
-  //     }
-  //     return out;
-  //   }
 
   let _readerCoseKeyCached = null; // Map with integer labels {-2:x,-3:y}
 

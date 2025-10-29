@@ -818,8 +818,9 @@ function log(msg) {
     console.log(`[log] ${msg}`);
   }
 }
-function hex(buf) { return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join(' '); }
-function concatUint8(...arrs){ const n=arrs.reduce((s,a)=>s+a.length,0); const out=new Uint8Array(n); let o=0; for(const a of arrs){out.set(a,o);o+=a.length;} return out; }
+// Use shared helpers from SessionCrypto
+const hex = (...args) => window.SessionCrypto.hex(...args);
+const concatUint8 = (...args) => window.SessionCrypto.concatUint8(...args);
 
 // Clear response panel and activity log for a new scan/manual run
 function resetResponseAndLog() {
@@ -3215,8 +3216,8 @@ async function autoConnectFlow() {
       window.SessionEstablishment.resetReaderCoseKeyCache();
     }
     skReader = null;
-  skDevice = null;
-  window.skDevice = skDevice;
+    skDevice = null;
+    window.skDevice = skDevice;
     sessionKey = null;
     transcriptAAD = null;
     walletEphemeralKey = null;
