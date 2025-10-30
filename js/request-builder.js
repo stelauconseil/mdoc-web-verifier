@@ -39,25 +39,23 @@
     // Optionally add Reader Authentication per spec (inside each DocRequest)
     try {
       console.log("Checking Reader Authentication status...");
-      console.log("ReaderAuth object:", window.ReaderAuth);
-      console.log("ReaderAuth.isEnabled():", window.ReaderAuth.isEnabled);
+      const ra = window.ReaderAuth;
+      console.log("ReaderAuth object:", ra);
+      console.log(
+        "ReaderAuth.isEnabled():",
+        ra?.isEnabled ? ra.isEnabled() : undefined
+      );
       console.log(
         "ReaderAuth.signReaderAuthentication:",
-        window.ReaderAuth.isEnabled()
+        !!(ra && typeof ra.signReaderAuthentication === "function")
       );
-      if (
-        window.ReaderAuth &&
-        window.ReaderAuth.isEnabled &&
-        window.ReaderAuth.isEnabled()
-      ) {
+      if (ra && ra.isEnabled && ra.isEnabled()) {
         let addedCount = 0;
         for (const dr of deviceRequest.docRequests) {
           if (dr && dr.itemsRequest && dr.itemsRequest.tag === 24) {
             const itemsCbor = dr.itemsRequest.value; // raw ItemsRequest CBOR
             try {
-              const cose = await window.ReaderAuth.signReaderAuthentication(
-                itemsCbor
-              );
+              const cose = await ra.signReaderAuthentication(itemsCbor);
               dr.readerAuth = cose; // Per ISO 18013-5: readerAuth is inside DocRequest
               addedCount++;
             } catch (signErr) {
@@ -131,6 +129,12 @@
     }
 
     switch (requestType) {
+      case "mdl_minimal":
+        fields = {
+          family_name: true,
+          given_name: true,
+        };
+        break;
       case "mdl_basic":
         fields = {
           family_name: true,
@@ -179,6 +183,12 @@
           resident_country: true,
           portrait: true,
           signature_usual_mark: true,
+        };
+        break;
+      case "pid_minimal":
+        fields = {
+          family_name: true,
+          given_name: true,
         };
         break;
       case "pid_basic":
