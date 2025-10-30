@@ -43,10 +43,11 @@
   }
 
   function calcRxTimeout(len) {
-    if (!len || len < 8192) return 1500; // <8KB
-    if (len < 24576) return 2500; // 8-24KB
-    if (len < 65536) return 4000; // 24-64KB
-    return 6000; // >=64KB
+    // Be more generous to avoid premature flush on slower links/devices
+    if (!len || len < 8192) return 2000; // <8KB
+    if (len < 24576) return 4000; // 8-24KB
+    if (len < 65536) return 7000; // 24-64KB
+    return 12000; // >=64KB
   }
 
   function resetRx() {
@@ -129,7 +130,7 @@
                     const msg2 = e2 && e2.message ? e2.message : String(e2);
                     const incomplete2 =
                       /insufficient data|unexpected end|not enough/i.test(msg2);
-                    if (incomplete2 && rxStalledCount < 3) {
+                    if (incomplete2 && rxStalledCount < 5) {
                       rxStalledCount++;
                       log(
                         `⏳ Still incomplete; continuing (stalled=${rxStalledCount})`
@@ -142,7 +143,7 @@
                 } catch (inner) {
                   console.warn("Timeout(2) failed", inner);
                 }
-              }, calcRxTimeout(pendingLen));
+              }, Math.round(calcRxTimeout(pendingLen) * 1.5));
               return;
             }
           }
