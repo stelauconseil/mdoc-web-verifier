@@ -929,14 +929,14 @@
                 ${
                   validity.notBefore
                     ? `<div style="margin-bottom: 0.5rem;">
-                  <strong>Valid From:</strong> <span style="color: #1e293b;">${validity.notBefore.toLocaleString()}</span>
+                  <strong>Valid From:</strong> <span style="color: #1e293b;">📅 ${validity.notBefore.toLocaleString()}</span>
                 </div>`
                     : ""
                 }
                 ${
                   validity.notAfter
                     ? `<div style="margin-bottom: 0.5rem;">
-                  <strong>Valid Until:</strong> <span style="color: #1e293b;">${validity.notAfter.toLocaleString()}</span>
+                  <strong>Valid Until:</strong> <span style="color: #1e293b;">📅 ${validity.notAfter.toLocaleString()}</span>
                 </div>`
                     : ""
                 }

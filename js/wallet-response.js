@@ -2,7 +2,7 @@
   Copyright (c) 2025 Stelau
   Author: Nicolas Chalanset
 
-  Wallet Response module: AES-GCM decrypt helpers and rendering
+  Wallet Response module: AES-GCM decrypt helpers and view-model builder (no DOM/HTML)
 */
 
 (function () {
@@ -17,6 +17,51 @@
   }
   const log = window.log || console.log;
 
+  // AES-GCM decrypt helper used by this module (pure, no DOM)
+  async function aesGcmDecrypt(ciphertext, keyBytes, iv, additionalData) {
+    if (
+      !keyBytes ||
+      !(keyBytes instanceof Uint8Array) ||
+      keyBytes.length === 0
+    ) {
+      throw new Error("Session key missing for AES-GCM decryption");
+    }
+    const key = await crypto.subtle.importKey(
+      "raw",
+      keyBytes,
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["decrypt"]
+    );
+    const ivU8 = iv instanceof Uint8Array ? iv : new Uint8Array(iv);
+    let aadU8 = null;
+    if (additionalData instanceof Uint8Array) {
+      aadU8 = additionalData;
+    } else if (additionalData && typeof additionalData === "string") {
+      // Per spec, AAD is empty; if a string is passed, coerce to empty
+      aadU8 = new Uint8Array(0);
+    } else if (
+      additionalData &&
+      (ArrayBuffer.isView(additionalData) ||
+        additionalData instanceof ArrayBuffer)
+    ) {
+      aadU8 =
+        additionalData instanceof Uint8Array
+          ? additionalData
+          : new Uint8Array(additionalData.buffer || additionalData);
+    } else {
+      aadU8 = new Uint8Array(0);
+    }
+    const params = { name: "AES-GCM", iv: ivU8, tagLength: 128 };
+    if (aadU8 && aadU8.length) params.additionalData = aadU8;
+    const pt = await crypto.subtle.decrypt(
+      params,
+      key,
+      ciphertext instanceof Uint8Array ? ciphertext : new Uint8Array(ciphertext)
+    );
+    return new Uint8Array(pt);
+  }
+
   // JSON conversion helper used by response rendering and debug views
   function convertToJSON(obj) {
     if (obj === null || obj === undefined) return obj;
@@ -27,7 +72,7 @@
       try {
         b64 = btoa(String.fromCharCode(...bin));
       } catch (_) {
-        // Fallback for very large arrays (unlikely here): chunked encoding
+        // Fallback for very large arrays
         let s = "";
         for (let i = 0; i < obj.length; i += 0x8000) {
           s += String.fromCharCode.apply(null, obj.subarray(i, i + 0x8000));
@@ -54,832 +99,689 @@
     return obj;
   }
 
-  // Helper: Format field names to be more readable
-  function formatFieldName(fieldName) {
-    return String(fieldName)
-      .replace(/_/g, " ")
-      .replace(/\b\w/g, (c) => c.toUpperCase());
-  }
-
-  // AES-GCM decryption
-  async function aesGcmDecrypt(ciphertextWithTag, keyBytes, iv, aad) {
-    // Normalize keyBytes into a BufferSource
-    let k = keyBytes;
-    if (k && !(k instanceof Uint8Array) && !(k instanceof ArrayBuffer)) {
-      if (Array.isArray(k)) k = new Uint8Array(k);
-      else if (k?.buffer && typeof k.length === "number") k = new Uint8Array(k);
-    }
-    if (!k) throw new Error("SKDevice key not set");
-    const key = await crypto.subtle.importKey(
-      "raw",
-      k,
-      { name: "AES-GCM", length: 256 },
-      false,
-      ["decrypt"]
-    );
-    const aadBytes =
-      typeof aad === "string" ? enc.encode(aad) : new Uint8Array(aad || 0);
-    const decrypted = await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv, additionalData: aadBytes, tagLength: 128 },
-      key,
-      ciphertextWithTag
-    );
-    return new Uint8Array(decrypted);
-  }
-
-  // Display DeviceResponse in a nice format
-  function displayDeviceResponse(deviceResponse) {
+  // Build a pure JSON view-model for rendering in index.html (no DOM/HTML here)
+  function buildResponseViewModel(deviceResponse) {
     const CBOR = getCBOR();
-    const responseSectionEl = document.getElementById("responseSection");
-    const responseDisplayEl = document.getElementById("responseDisplay");
-    const escapeHtml = window.escapeHtml || ((t) => t);
-    const createJp2DownloadLink =
-      window.createJp2DownloadLink ||
-      (() => "<em>JP2 download not available</em>");
-    const postTasks = [];
-
-    // Show the response section
-    responseSectionEl.style.display = "block";
-    setTimeout(() => {
-      responseSectionEl.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 100);
-
     const getField = (obj, key) =>
       obj instanceof Map ? obj.get(key) : obj?.[key];
-    const version = getField(deviceResponse, "version") || "1.0";
-    const documents = getField(deviceResponse, "documents");
+    const getFieldAny = (obj, keys) => {
+      if (!obj) return undefined;
+      for (const k of keys) {
+        const v = obj instanceof Map ? obj.get(k) : obj?.[k];
+        if (v !== undefined) return v;
+      }
+      return undefined;
+    };
 
-    if (!documents || !Array.isArray(documents) || documents.length === 0) {
-      responseDisplayEl.innerHTML = `
-        <div class="response-header">
-          <h3>🎉 Response Received</h3>
-          <div class="response-meta">Version: ${version}</div>
-        </div>
-        <div class="no-data">No documents found in response</div>
-      `;
-      return;
+    // Helper: unwrap CBOR.Tagged and decode bstr.cbor or raw Uint8Array into JS structures
+    const toUint8 = (v) => {
+      if (v instanceof Uint8Array) return v;
+      if (ArrayBuffer.isView(v))
+        return new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+      if (v instanceof ArrayBuffer) return new Uint8Array(v);
+      if (Array.isArray(v)) {
+        try {
+          return new Uint8Array(v);
+        } catch (_) {
+          return null;
+        }
+      }
+      return null;
+    };
+    const tryDecodeCBOR = (bytes) => {
+      try {
+        if (
+          !bytes ||
+          !(bytes instanceof Uint8Array) ||
+          !CBOR ||
+          typeof CBOR.decode !== "function"
+        )
+          return null;
+        const dec = CBOR.decode(bytes);
+        if (
+          dec &&
+          (Array.isArray(dec) || dec instanceof Map || typeof dec === "object")
+        )
+          return dec;
+        return null;
+      } catch (_) {
+        return null;
+      }
+    };
+    // Helper: decode a JSON-bytes object (from convertToJSON) back to Uint8Array
+    const fromJsonBytes = (obj) => {
+      if (!obj || typeof obj !== "object") return null;
+      if (obj._type === "bytes" && typeof obj._base64 === "string") {
+        try {
+          const bin = atob(obj._base64);
+          const out = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+          return out;
+        } catch (_) {
+          return null;
+        }
+      }
+      return null;
+    };
+    const unwrapTaggedOrCbor = (v) => {
+      let cur = v;
+      let changed = true;
+      let guard = 0;
+      while (changed && guard++ < 4) {
+        changed = false;
+        if (cur && cur.constructor && cur.constructor.name === "Tagged") {
+          cur = cur.value;
+          changed = true;
+          continue;
+        }
+        // Also handle plain-object Tag(24) shapes coming from JSON snapshots
+        if (
+          cur &&
+          typeof cur === "object" &&
+          cur.tag === 24 &&
+          cur.value !== undefined
+        ) {
+          let bytes = toUint8(cur.value);
+          if (!bytes) bytes = fromJsonBytes(cur.value);
+          if (bytes) {
+            const dec = tryDecodeCBOR(bytes);
+            if (dec != null) {
+              cur = dec;
+              changed = true;
+              continue;
+            }
+          }
+        }
+        const u8 = toUint8(cur);
+        if (u8) {
+          const dec = tryDecodeCBOR(u8);
+          if (dec != null) {
+            cur = dec;
+            changed = true;
+            continue;
+          }
+        }
+      }
+      return cur;
+    };
+
+    const model = {
+      version: getField(deviceResponse, "version") || "1.0",
+      documents: [],
+      rawJSON: null,
+    };
+
+    try {
+      model.rawJSON = convertToJSON(deviceResponse);
+    } catch (_) {
+      model.rawJSON = null;
     }
 
-    let html = `
-      <div class="response-header">
-        <h3>🎉 Response Received</h3>
-        <div class="response-meta">Version: ${version} • ${documents.length} document(s)</div>
-        <button id="btnCopyResponse" class="copy-btn" style="margin-top: 10px; padding: 8px 16px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
-          📋 Copy as JSON
-        </button>
-      </div>
-    `;
+    const documents = getField(deviceResponse, "documents");
+    if (!Array.isArray(documents)) return model;
 
-    documents.forEach((doc, docIndex) => {
-      const docType = getField(doc, "docType") || "Unknown";
-      html += `
-        <div class="document-card">
-          <div class="document-type">📄 ${escapeHtml(docType)}</div>
-      `;
+    // Helper to normalize a possibly CBOR.Tagged issuerSignedItem
+    const normalizeIssuerItem = (item) => {
+      let it = item;
+      try {
+        if (
+          it &&
+          it.constructor &&
+          it.constructor.name === "Tagged" &&
+          it.tag === 24
+        ) {
+          const bytes = new Uint8Array(it.value);
+          it = CBOR.decode(bytes);
+        }
+        // Handle JSON-shaped tag/value as well
+        else if (
+          it &&
+          typeof it === "object" &&
+          it.tag === 24 &&
+          it.value !== undefined
+        ) {
+          let bytes = toUint8(it.value);
+          if (!bytes) bytes = fromJsonBytes(it.value);
+          if (bytes) {
+            it = CBOR.decode(bytes);
+          }
+        }
+      } catch (_) {}
+      return it;
+    };
+
+    const isPortraitField = (id) => {
+      const s = String(id || "").toLowerCase();
+      return (
+        s.includes("portrait") ||
+        s.includes("image") ||
+        s.includes("photo") ||
+        s.includes("signature_usual_mark")
+      );
+    };
+
+    const detectBinary = (u8) => {
+      let mimeType = "application/octet-stream";
+      let formatLabel = "Unknown";
+      if (u8 && u8.length >= 2) {
+        if (u8[0] === 0xff && u8[1] === 0xd8 && u8[2] === 0xff) {
+          mimeType = "image/jpeg";
+          formatLabel = "JPEG";
+        } else if (
+          u8.length >= 12 &&
+          u8[0] === 0x00 &&
+          u8[1] === 0x00 &&
+          u8[2] === 0x00 &&
+          u8[3] === 0x0c &&
+          u8[4] === 0x6a &&
+          u8[5] === 0x50 &&
+          u8[6] === 0x20 &&
+          u8[7] === 0x20 &&
+          u8[8] === 0x0d &&
+          u8[9] === 0x0a &&
+          u8[10] === 0x87 &&
+          u8[11] === 0x0a
+        ) {
+          mimeType = "image/jp2";
+          formatLabel = "JPEG2000";
+        } else if (
+          u8[0] === 0xff &&
+          u8[1] === 0x4f &&
+          u8.length >= 4 &&
+          u8[2] === 0xff &&
+          u8[3] === 0x51
+        ) {
+          mimeType = "image/jp2";
+          formatLabel = "JPEG2000";
+        }
+      }
+      return { mimeType, formatLabel };
+    };
+
+    const valueToEntry = (elementIdentifier, elementValue) => {
+      // Default entry
+      const entry = {
+        elementIdentifier,
+        label:
+          typeof window !== "undefined" &&
+          typeof window.formatFieldName === "function"
+            ? window.formatFieldName(elementIdentifier)
+            : String(elementIdentifier),
+        valueKind: "text",
+        text: "",
+        raw: null,
+        binary: null,
+      };
+      try {
+        entry.raw = convertToJSON(elementValue);
+      } catch (_) {
+        entry.raw = null;
+      }
+
+      // Tagged values
+      if (
+        elementValue &&
+        elementValue.constructor &&
+        elementValue.constructor.name === "Tagged"
+      ) {
+        if (elementValue.tag === 1004) {
+          // RFC3339 full-date string (YYYY-MM-DD)
+          const dateStr = elementValue.value;
+          let txt = String(dateStr);
+          try {
+            // Use locale short date (e.g., 10/30/2025) without time
+            txt = new Date(dateStr).toLocaleDateString();
+          } catch (_) {}
+          entry.valueKind = "date";
+          entry.text = txt;
+          return entry;
+        } else if (elementValue.tag === 0) {
+          entry.valueKind = "time-rfc3339";
+          entry.text = String(elementValue.value);
+          return entry;
+        } else if (elementValue.tag === 1) {
+          entry.valueKind = "time-epoch";
+          try {
+            entry.text = new Date(elementValue.value * 1000).toLocaleString();
+          } catch {
+            entry.text = String(elementValue.value);
+          }
+          return entry;
+        }
+        // Fallback
+        entry.valueKind = "tagged";
+        entry.text = String(elementValue.value);
+        return entry;
+      }
+
+      // Plain-object tag values (e.g., { tag:1004, value: "YYYY-MM-DD" })
+      if (
+        elementValue &&
+        typeof elementValue === "object" &&
+        typeof elementValue.tag === "number" &&
+        elementValue.value !== undefined
+      ) {
+        if (elementValue.tag === 1004) {
+          let txt = String(elementValue.value);
+          try {
+            txt = new Date(elementValue.value).toLocaleDateString();
+          } catch {}
+          entry.valueKind = "date";
+          entry.text = txt;
+          return entry;
+        }
+        if (elementValue.tag === 0) {
+          entry.valueKind = "time-rfc3339";
+          entry.text = String(elementValue.value);
+          return entry;
+        }
+        if (elementValue.tag === 1) {
+          entry.valueKind = "time-epoch";
+          try {
+            entry.text = new Date(elementValue.value * 1000).toLocaleString();
+          } catch {
+            entry.text = String(elementValue.value);
+          }
+          return entry;
+        }
+        // Other tags fall through to object handling below
+      }
+
+      // Binary
+      if (
+        elementValue instanceof Uint8Array ||
+        ArrayBuffer.isView(elementValue)
+      ) {
+        const u8 =
+          elementValue instanceof Uint8Array
+            ? elementValue
+            : new Uint8Array(
+                elementValue.buffer,
+                elementValue.byteOffset,
+                elementValue.byteLength
+              );
+        const { mimeType, formatLabel } = detectBinary(u8);
+        entry.valueKind = isPortraitField(elementIdentifier)
+          ? "portrait"
+          : "bytes";
+        entry.text = `<binary ${u8.length} bytes>`;
+        entry.binary = { length: u8.length, mimeType, formatLabel };
+        try {
+          if (mimeType !== "image/jp2") {
+            const b64 = btoa(String.fromCharCode(...u8));
+            entry.binary.dataUri = `data:${mimeType};base64,${b64}`;
+          }
+        } catch (_) {}
+        return entry;
+      }
+
+      // JSON-shaped bytes object (from convertToJSON) -> treat as binary too
+      if (
+        elementValue &&
+        elementValue._type === "bytes" &&
+        elementValue._base64
+      ) {
+        try {
+          const bin = atob(elementValue._base64);
+          const u8 = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+          const { mimeType, formatLabel } = detectBinary(u8);
+          entry.valueKind = isPortraitField(elementIdentifier)
+            ? "portrait"
+            : "bytes";
+          entry.text = `<binary ${u8.length} bytes>`;
+          entry.binary = { length: u8.length, mimeType, formatLabel };
+          if (mimeType !== "image/jp2") {
+            entry.binary.dataUri = `data:${mimeType};base64,${elementValue._base64}`;
+          }
+          return entry;
+        } catch (_) {
+          // fall through to object handling
+        }
+      }
+
+      if (elementValue instanceof Date) {
+        entry.valueKind = "date";
+        try {
+          entry.text = elementValue.toISOString().split("T")[0];
+        } catch {
+          entry.text = String(elementValue);
+        }
+        return entry;
+      }
+      if (typeof elementValue === "boolean") {
+        entry.valueKind = "boolean";
+        entry.text = elementValue ? "Yes" : "No";
+        return entry;
+      }
+      if (typeof elementValue === "number") {
+        entry.valueKind = "number";
+        entry.text = String(elementValue);
+        return entry;
+      }
+      if (Array.isArray(elementValue)) {
+        entry.valueKind = "array";
+        try {
+          entry.text = JSON.stringify(elementValue);
+        } catch {
+          entry.text = String(elementValue);
+        }
+        return entry;
+      }
+      if (elementValue && typeof elementValue === "object") {
+        entry.valueKind = "object";
+        try {
+          entry.text = JSON.stringify(convertToJSON(elementValue));
+        } catch {
+          entry.text = String(elementValue);
+        }
+        return entry;
+      }
+
+      // Fallback text
+      entry.valueKind = "text";
+      entry.text = String(elementValue ?? "");
+      return entry;
+    };
+
+    for (const doc of documents) {
+      const docModel = {
+        docType: getField(doc, "docType") || "Unknown",
+        issuerSigned: {
+          nameSpaces: {},
+          _rawNameSpaces: {}, // for debugging/renderer fallback
+        },
+        deviceSigned: null, // not expanded for now
+        signature: null, // summary of issuerAuth
+      };
 
       const issuerSigned = getField(doc, "issuerSigned");
-      if (!issuerSigned) {
-        html += '<div class="no-data">No issuerSigned data</div></div>';
-        return;
-      }
-
-      const nameSpaces = getField(issuerSigned, "nameSpaces");
-      if (!nameSpaces) {
-        html += '<div class="no-data">No nameSpaces data</div></div>';
-        return;
-      }
-
-      const nsEntries =
-        nameSpaces instanceof Map
-          ? Array.from(nameSpaces.entries())
-          : Object.entries(nameSpaces);
-      nsEntries.forEach(([nsName, nsItems]) => {
-        html += `
-          <div class="namespace-section">
-            <div class="namespace-title">📦 ${escapeHtml(nsName)}</div>
-        `;
-        if (!Array.isArray(nsItems) || nsItems.length === 0) {
-          html += '<div class="no-data">No items in namespace</div></div>';
-          return;
-        }
-
-        nsItems.forEach((item, itemIndex) => {
+      let nameSpaces = issuerSigned
+        ? getFieldAny(issuerSigned, ["nameSpaces", 1])
+        : null;
+      // Unwrap CBOR-wrapped namespaces if needed
+      nameSpaces = unwrapTaggedOrCbor(nameSpaces);
+      if (nameSpaces) {
+        const nsEntries =
+          nameSpaces instanceof Map
+            ? Array.from(nameSpaces.entries())
+            : Object.entries(nameSpaces);
+        for (const [nsName, nsItemsRaw] of nsEntries) {
+          const items = [];
+          // Unwrap namespace contents (may be Tagged or bstr.cbor)
+          const nsItems = unwrapTaggedOrCbor(nsItemsRaw);
+          // keep raw for fallback/diagnostics
           try {
-            let issuerSignedItem = item;
-            if (item instanceof CBOR.Tagged && item.tag === 24) {
-              const itemBytes = new Uint8Array(item.value);
-              issuerSignedItem = CBOR.decode(itemBytes);
-            }
-            const elementIdentifier = getField(
-              issuerSignedItem,
-              "elementIdentifier"
-            );
-            const elementValue = getField(issuerSignedItem, "elementValue");
-            if (elementIdentifier && elementValue !== undefined) {
-              let valueHtml;
-              let rawValue = elementValue;
-              if (elementValue instanceof CBOR.Tagged) {
-                if (elementValue.tag === 1004) {
-                  const dateStr = elementValue.value;
-                  try {
-                    const date = new Date(dateStr);
-                    const formatted = date.toLocaleDateString("en-US", {
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    });
-                    valueHtml = `<div class="data-value">📅 ${formatted} <span class="binary" style="font-size:0.85em">(${dateStr})</span></div>`;
-                    rawValue = dateStr;
-                  } catch (_) {
-                    valueHtml = `<div class="data-value">${escapeHtml(
-                      String(elementValue.value)
-                    )}</div>`;
-                    rawValue = elementValue.value;
-                  }
-                } else if (elementValue.tag === 0) {
-                  valueHtml = `<div class="data-value">🕐 ${escapeHtml(
-                    elementValue.value
-                  )}</div>`;
-                  rawValue = elementValue.value;
-                } else if (elementValue.tag === 1) {
-                  const date = new Date(elementValue.value * 1000);
-                  valueHtml = `<div class="data-value">🕐 ${date.toLocaleString()}</div>`;
-                  rawValue = elementValue.value;
-                } else {
-                  valueHtml = `<div class="data-value">Tag(${
-                    elementValue.tag
-                  }): ${escapeHtml(String(elementValue.value))}</div>`;
-                  rawValue = elementValue.value;
-                }
-              } else if (
-                elementValue instanceof Uint8Array ||
-                ArrayBuffer.isView(elementValue)
-              ) {
-                const byteLength = elementValue.length;
-                if (
-                  byteLength === 0 &&
-                  (String(elementIdentifier)
-                    .toLowerCase()
-                    .includes("portrait") ||
-                    String(elementIdentifier).toLowerCase().includes("image") ||
-                    String(elementIdentifier).toLowerCase().includes("photo") ||
-                    String(elementIdentifier)
-                      .toLowerCase()
-                      .includes("signature_usual_mark"))
-                )
-                  return;
-                if (
-                  String(elementIdentifier)
-                    .toLowerCase()
-                    .includes("portrait") ||
-                  String(elementIdentifier).toLowerCase().includes("image") ||
-                  String(elementIdentifier).toLowerCase().includes("photo") ||
-                  String(elementIdentifier)
-                    .toLowerCase()
-                    .includes("signature_usual_mark")
-                ) {
-                  let mimeType = "application/octet-stream";
-                  let formatLabel = "Unknown";
-                  if (elementValue.length >= 2) {
-                    if (
-                      elementValue[0] === 0xff &&
-                      elementValue[1] === 0xd8 &&
-                      elementValue[2] === 0xff
-                    ) {
-                      mimeType = "image/jpeg";
-                      formatLabel = "JPEG";
-                    } else if (
-                      elementValue.length >= 12 &&
-                      elementValue[0] === 0x00 &&
-                      elementValue[1] === 0x00 &&
-                      elementValue[2] === 0x00 &&
-                      elementValue[3] === 0x0c &&
-                      elementValue[4] === 0x6a &&
-                      elementValue[5] === 0x50 &&
-                      elementValue[6] === 0x20 &&
-                      elementValue[7] === 0x20 &&
-                      elementValue[8] === 0x0d &&
-                      elementValue[9] === 0x0a &&
-                      elementValue[10] === 0x87 &&
-                      elementValue[11] === 0x0a
-                    ) {
-                      mimeType = "image/jp2";
-                      formatLabel = "JPEG2000";
-                    } else if (
-                      elementValue[0] === 0xff &&
-                      elementValue[1] === 0x4f &&
-                      elementValue.length >= 4 &&
-                      elementValue[2] === 0xff &&
-                      elementValue[3] === 0x51
-                    ) {
-                      mimeType = "image/jp2";
-                      formatLabel = "JPEG2000";
-                    }
-                  }
-                  try {
-                    if (mimeType === "image/jp2") {
-                      const portraitId = `portrait-${Date.now()}-${Math.random()
-                        .toString(36)
-                        .substr(2, 9)}`;
-                      valueHtml = `
-                        <div class="data-value portrait-preview">
-                          ${createJp2DownloadLink(elementValue, portraitId)}
-                          <span class="binary" style="margin-top: 0.5rem;">${byteLength.toLocaleString()} bytes (${formatLabel})</span>
-                        </div>
-                      `;
-                    } else {
-                      const base64 = btoa(String.fromCharCode(...elementValue));
-                      const dataUri = `data:${mimeType};base64,${base64}`;
-                      valueHtml = `
-                        <div class="data-value portrait-preview">
-                          <img src="${dataUri}" alt="Portrait" class="portrait-thumbnail" />
-                          <span class="binary">${byteLength.toLocaleString()} bytes (${formatLabel})</span>
-                        </div>
-                      `;
-                    }
-                  } catch (_) {
-                    valueHtml = `<div class="data-value binary">&lt;binary data, ${byteLength.toLocaleString()} bytes&gt;</div>`;
-                  }
-                } else {
-                  valueHtml = `<div class="data-value binary">&lt;binary data, ${byteLength.toLocaleString()} bytes&gt;</div>`;
-                }
-              } else if (elementValue instanceof Date) {
-                valueHtml = `<div class="data-value">${
-                  elementValue.toISOString().split("T")[0]
-                }</div>`;
-              } else if (Array.isArray(elementValue)) {
-                valueHtml = `<div class="data-value"><pre style="margin:0;font-size:0.85em">${escapeHtml(
-                  JSON.stringify(elementValue, null, 2)
-                )}</pre></div>`;
-              } else if (
-                typeof elementValue === "object" &&
-                elementValue !== null
-              ) {
-                valueHtml = `<div class="data-value"><pre style="margin:0;font-size:0.85em">${escapeHtml(
-                  JSON.stringify(elementValue, null, 2)
-                )}</pre></div>`;
-              } else if (typeof elementValue === "boolean") {
-                valueHtml = `<div class="data-value">${
-                  elementValue ? "✓ Yes" : "✗ No"
-                }</div>`;
-              } else {
-                valueHtml = `<div class="data-value">${escapeHtml(
-                  String(elementValue)
-                )}</div>`;
-              }
-              html += `
-                <div class="data-item">
-                  <div class="data-label">${escapeHtml(
-                    formatFieldName(elementIdentifier)
-                  )}</div>
-                  ${valueHtml}
-                </div>
-              `;
-            }
-          } catch (itemError) {
-            html += `
-              <div class="data-item">
-                <div class="data-label">Item ${itemIndex + 1}</div>
-                <div class="data-value binary">(parse error: ${escapeHtml(
-                  itemError.message
-                )})</div>
-              </div>
-            `;
-          }
-        });
-        html += "</div>";
-      });
+            docModel.issuerSigned._rawNameSpaces[nsName] =
+              convertToJSON(nsItems);
+          } catch (_) {}
 
-      const issuerAuth = getField(issuerSigned, "issuerAuth");
+          // Case 1: Standard array of IssuerSignedItem
+          if (Array.isArray(nsItems)) {
+            for (let item of nsItems) {
+              try {
+                const it = unwrapTaggedOrCbor(normalizeIssuerItem(item));
+                let elementIdentifier = getFieldAny(it, [
+                  "elementIdentifier",
+                  0,
+                ]);
+                let elementValue = getFieldAny(it, ["elementValue", 1]);
+                if (elementIdentifier !== undefined) {
+                  items.push(valueToEntry(elementIdentifier, elementValue));
+                }
+              } catch (_) {}
+            }
+          }
+
+          // Case 2: Map of elementIdentifier -> elementValue or -> IssuerSignedItem
+          else if (nsItems instanceof Map) {
+            for (const [k, v] of nsItems.entries()) {
+              try {
+                const it = unwrapTaggedOrCbor(normalizeIssuerItem(v));
+                let elementIdentifier = getFieldAny(it, [
+                  "elementIdentifier",
+                  0,
+                ]);
+                let elementValue = getFieldAny(it, ["elementValue", 1]);
+                if (elementIdentifier === undefined) {
+                  // Treat key as identifier and value as the element value
+                  elementIdentifier = k;
+                  elementValue = it;
+                }
+                items.push(valueToEntry(elementIdentifier, elementValue));
+              } catch (_) {}
+            }
+          }
+
+          // Case 3: Plain object of elementIdentifier -> value or -> IssuerSignedItem
+          else if (nsItems && typeof nsItems === "object") {
+            for (const [k, v] of Object.entries(nsItems)) {
+              try {
+                const it = unwrapTaggedOrCbor(normalizeIssuerItem(v));
+                let elementIdentifier = getFieldAny(it, [
+                  "elementIdentifier",
+                  0,
+                ]);
+                let elementValue = getFieldAny(it, ["elementValue", 1]);
+                if (elementIdentifier === undefined) {
+                  elementIdentifier = k;
+                  elementValue = it;
+                }
+                items.push(valueToEntry(elementIdentifier, elementValue));
+              } catch (_) {}
+            }
+          }
+
+          // Assign collected items (may be empty if truly empty)
+          docModel.issuerSigned.nameSpaces[nsName] = items;
+        }
+      }
+
+      // Signature summary (issuerAuth → COSE_Sign1)
+      const issuerAuth = issuerSigned
+        ? getField(issuerSigned, "issuerAuth")
+        : null;
       if (issuerAuth) {
-        html += `
-          <div class="signer-section" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff;">
-            <div style="display:flex; justify-content:space-between; align-items:center; gap: 8px;">
-              <div style="font-weight: bold; color: #007bff;">🔐 Issuer Signature Information</div>
-              <button 
-                onclick="toggleMSO('issuerDetails-${docIndex}')" 
-                style="
-                  background: #e2e8f0;
-                  color: #0f172a;
-                  border: 1px solid #cbd5e1;
-                  padding: 4px 10px;
-                  border-radius: 6px;
-                  cursor: pointer;
-                  font-size: 0.85rem;
-                  font-weight: 600;
-                  display: inline-flex;
-                  align-items: center;
-                  gap: 6px;
-                "
-                onmouseover="this.style.background='#cbd5e1'"
-                onmouseout="this.style.background='#e2e8f0'"
-              >
-                <span id="issuerDetails-${docIndex}-icon">▶</span>
-                <span>Details</span>
-              </button>
-            </div>
-
-            <div class="verification-section" style="margin-top: 12px; padding: 12px; background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0;">
-              <div style="font-weight: 600; margin-bottom: 8px; color: #0f172a;">✍️ Verification Status</div>
-              <div class="data-item">
-                <div class="data-label">Signature</div>
-                <div class="data-value" id="sigStatus-${docIndex}">… verifying</div>
-              </div>
-              <div class="data-item">
-                <div class="data-label">Chain</div>
-                <div class="data-value" id="chainStatus-${docIndex}">… validating</div>
-              </div>
-            </div>
-
-            <div id="issuerDetails-${docIndex}" style="display:none; margin-top: 10px;">
-        `;
         try {
-          let coseSign1 = issuerAuth;
-          if (issuerAuth instanceof CBOR.Tagged && issuerAuth.tag === 24) {
-            const coseBytes = new Uint8Array(issuerAuth.value);
-            coseSign1 = CBOR.decode(coseBytes);
+          let cose = issuerAuth;
+          if (
+            cose &&
+            cose.constructor &&
+            cose.constructor.name === "Tagged" &&
+            cose.tag === 24
+          ) {
+            cose = CBOR.decode(new Uint8Array(cose.value));
           }
-          if (Array.isArray(coseSign1) && coseSign1.length >= 4) {
-            const [protectedHeader, unprotectedHeader, payload, signature] =
-              coseSign1;
+          if (Array.isArray(cose) && cose.length >= 4) {
+            const [prot, unprot, payload /*, sig*/] = cose;
+            let protectedData = {};
+            if (prot && prot.length > 0) {
+              try {
+                const dec = CBOR.decode(new Uint8Array(prot));
+                protectedData =
+                  dec instanceof Map ? Object.fromEntries(dec) : dec;
+              } catch (_) {}
+            }
+            const alg =
+              protectedData[1] ||
+              (unprot instanceof Map ? unprot.get(1) : unprot?.[1]);
+            let algLabel = "Unknown";
+            if (alg === -7) algLabel = "ES256 (ECDSA with SHA-256)";
+            else if (alg === -35) algLabel = "ES384 (ECDSA with SHA-384)";
+            else if (alg === -36) algLabel = "ES512 (ECDSA with SHA-512)";
+            else if (alg === -8) algLabel = "EdDSA";
+            else if (alg != null) algLabel = `Algorithm ${alg}`;
 
-            // -- MSO FIRST --
-            html += `
-              <div style="font-weight: 600; margin: 10px 0 8px; color:#0f172a;">📦 MSO (Mobile Security Object)</div>
-            `;
-            let mso = null;
+            const issuerCertRaw =
+              unprot instanceof Map ? unprot.get(33) : unprot?.[33];
+            const firstCert = Array.isArray(issuerCertRaw)
+              ? issuerCertRaw[0]
+              : issuerCertRaw;
+            let certSummary = null;
             try {
-              if (payload) {
-                const payloadBytes =
-                  payload instanceof Uint8Array
-                    ? payload
-                    : new Uint8Array(payload);
-                mso = CBOR.decode(payloadBytes);
-                if (mso instanceof CBOR.Tagged && mso.tag === 24) {
-                  try {
-                    const inner = new Uint8Array(mso.value);
-                    mso = CBOR.decode(inner);
-                  } catch (_) {}
-                }
-                const getField = (obj, key) =>
-                  obj instanceof Map ? obj.get(key) : obj?.[key];
-                const msoDocType = getField(mso, "docType");
-                if (msoDocType) {
-                  html += `
-                    <div class="data-item">
-                      <div class="data-label">MSO DocType</div>
-                      <div class="data-value">${escapeHtml(
-                        String(msoDocType)
-                      )}</div>
-                    </div>
-                  `;
-                }
-                const validityInfo = getField(mso, "validityInfo");
-                if (validityInfo) {
-                  const vf = getField(validityInfo, "validFrom");
-                  const vu = getField(validityInfo, "validUntil");
-                  const signedAt = getField(validityInfo, "signed");
-                  const formatDate = (v, withTime = false) => {
-                    try {
-                      let val = v;
-                      if (v instanceof CBOR.Tagged) {
-                        if (v.tag === 0) val = v.value; // RFC 3339
-                        else if (v.tag === 1)
-                          val = new Date(v.value * 1000).toISOString();
-                      }
-                      const d = new Date(val);
-                      return withTime
-                        ? d.toLocaleString()
-                        : d.toLocaleDateString();
-                    } catch {
-                      return String(v);
-                    }
-                  };
-                  if (signedAt) {
-                    html += `
-                      <div class="data-item">
-                        <div class="data-label">📅 Signed</div>
-                        <div class="data-value">${escapeHtml(
-                          formatDate(signedAt, true)
-                        )}</div>
-                      </div>
-                    `;
-                  }
-                  if (vf) {
-                    html += `
-                      <div class="data-item">
-                        <div class="data-label">Valid From</div>
-                        <div class="data-value">${escapeHtml(
-                          formatDate(vf)
-                        )}</div>
-                      </div>
-                    `;
-                  }
-                  if (vu) {
-                    const vuStr = formatDate(vu);
-                    const isExpired = (() => {
-                      try {
-                        let val = vu;
-                        if (vu instanceof CBOR.Tagged) {
-                          if (vu.tag === 0) val = vu.value;
-                          else if (vu.tag === 1)
-                            val = new Date(vu.value * 1000).toISOString();
-                        }
-                        return new Date(val) < new Date();
-                      } catch {
-                        return false;
-                      }
-                    })();
-                    html += `
-                      <div class="data-item">
-                        <div class="data-label">Valid Until</div>
-                        <div class="data-value" style="${
-                          isExpired ? "color:#dc2626;font-weight:600;" : ""
-                        }">${isExpired ? "⚠️ " : ""}${escapeHtml(vuStr)}</div>
-                      </div>
-                    `;
-                  }
-                }
-                const digestAlgorithm = getField(mso, "digestAlgorithm");
-                if (digestAlgorithm) {
-                  html += `
-                    <div class="data-item">
-                      <div class="data-label">Digest Algorithm</div>
-                      <div class="data-value">${escapeHtml(
-                        String(digestAlgorithm)
-                      )}</div>
-                    </div>
-                  `;
-                }
+              if (
+                firstCert &&
+                (firstCert instanceof Uint8Array ||
+                  ArrayBuffer.isView(firstCert))
+              ) {
+                const der =
+                  firstCert instanceof Uint8Array
+                    ? firstCert
+                    : new Uint8Array(
+                        firstCert.buffer,
+                        firstCert.byteOffset,
+                        firstCert.byteLength
+                      );
+                const info = window.extractCertInfo
+                  ? window.extractCertInfo(der)
+                  : {};
+                const validity = window.extractCertValidity
+                  ? window.extractCertValidity(der)
+                  : null;
+                certSummary = {
+                  subject: info.subjectDN || info.subjectCN || null,
+                  issuer: info.issuerDN || info.issuerCN || null,
+                  notBefore: validity?.notBefore || null,
+                  notAfter: validity?.notAfter || null,
+                };
               }
             } catch (_) {}
 
-            // MSO structure viewer
-            {
-              const msoId = `mso-${docIndex}`;
-              let src = mso || issuerSigned;
-              let msoStr = "{}";
-              try {
-                msoStr = JSON.stringify(convertToJSON(src), null, 2);
-              } catch (_) {}
-              const msoStrEsc = escapeHtml(msoStr);
-              html += `
-                <div style="margin-top: 1rem; border-top: 1px solid #e2e8f0; padding-top: 1rem;">
-                  <button onclick="toggleMSO('${msoId}')" style="background: #f1f5f9; color: #0f172a; border: 1px solid #cbd5e1; padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; width: 100%; justify-content: center; transition: background 0.2s ease;" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'">
-                    <span id="${msoId}-icon">▶</span>
-                    <span>View Complete MSO Structure</span>
-                  </button>
-                  <div id="${msoId}" style="display: none; margin-top: 0.75rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; max-height: 400px; overflow-y: auto;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                      <span style="font-size: 0.85rem; color: #64748b; font-weight: 600;">Complete MSO (JSON)</span>
-                      <button onclick="copyMSO('${msoId}-content')" style="background: #059669; color: white; border: none; padding: 0.35rem 0.75rem; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: 600;">📋 Copy</button>
-                    </div>
-                    <pre id="${msoId}-content" style="margin: 0; font-family: 'SFMono-Regular', 'JetBrains Mono', ui-monospace, monospace; font-size: 0.85rem; line-height: 1.5; color: #0f172a; white-space: pre-wrap; word-break: break-word;">${msoStrEsc}</pre>
-                  </div>
-                </div>
-              `;
-            }
+            // MSO summary from payload (robust across tags and key shapes)
+            let mso = null;
+            let msoSummary = null;
+            try {
+              const pBytes =
+                payload instanceof Uint8Array
+                  ? payload
+                  : new Uint8Array(payload);
+              mso = CBOR.decode(pBytes);
+              // Unwrap Tag(24) bstr.cbor if present (instance or plain-object shape)
+              let guard = 0;
+              while (mso && guard++ < 3) {
+                if (
+                  mso &&
+                  mso.constructor &&
+                  mso.constructor.name === "Tagged" &&
+                  mso.tag === 24 &&
+                  mso.value
+                ) {
+                  const inner = toUint8(mso.value);
+                  if (inner) {
+                    mso = CBOR.decode(inner);
+                    continue;
+                  }
+                }
+                if (
+                  mso &&
+                  typeof mso === "object" &&
+                  mso.tag === 24 &&
+                  mso.value !== undefined
+                ) {
+                  const inner2 = toUint8(mso.value) || fromJsonBytes(mso.value);
+                  if (inner2) {
+                    mso = CBOR.decode(inner2);
+                    continue;
+                  }
+                }
+                break;
+              }
 
-            // -- DOCUMENT SIGNER AFTER MSO --
-            html += `<div style="font-weight: 600; margin: 14px 0 8px; color:#0f172a; border-top: 1px dashed #cbd5e1; padding-top: 10px;">🧾 Document signer</div>`;
+              // Helper: robust field getter for both tstr and small-int keys
+              const mget = (obj, keys) => {
+                if (!obj) return undefined;
+                for (const k of keys) {
+                  const v = obj instanceof Map ? obj.get(k) : obj?.[k];
+                  if (v !== undefined) return v;
+                }
+                return undefined;
+              };
 
-            let protectedData = {};
-            if (protectedHeader && protectedHeader.length > 0) {
-              try {
-                const protectedHeaderCopy = new Uint8Array(protectedHeader);
-                const decoded = CBOR.decode(protectedHeaderCopy);
-                protectedData =
-                  decoded instanceof Map
-                    ? Object.fromEntries(decoded)
-                    : decoded;
-              } catch (_) {}
-            }
-            let headerAlgLabel = "Unknown";
-            const alg =
-              protectedData[1] ||
-              (unprotectedHeader instanceof Map
-                ? unprotectedHeader.get(1)
-                : unprotectedHeader?.[1]);
-            if (alg === -7) headerAlgLabel = "ES256 (ECDSA with SHA-256)";
-            else if (alg === -35) headerAlgLabel = "ES384 (ECDSA with SHA-384)";
-            else if (alg === -36) headerAlgLabel = "ES512 (ECDSA with SHA-512)";
-            else if (alg === -8) headerAlgLabel = "EdDSA";
-            else if (alg != null) headerAlgLabel = `Algorithm ${alg}`;
-            const sigAlgId = `sig-alg-${docIndex}`;
-            html += `
-              <div class=\"data-item\">\n                <div class=\"data-label\">Signature Algorithm</div>\n                <div class=\"data-value\" id=\"${sigAlgId}\">${escapeHtml(
-              headerAlgLabel
-            )}</div>\n              </div>
-            `;
-            const _issuerCertRaw =
-              unprotectedHeader instanceof Map
-                ? unprotectedHeader.get(33)
-                : unprotectedHeader?.[33];
-            let issuerCertFirst = null;
-            if (_issuerCertRaw) {
-              issuerCertFirst = Array.isArray(_issuerCertRaw)
-                ? _issuerCertRaw[0]
-                : _issuerCertRaw;
-            }
-            if (issuerCertFirst) {
-              setTimeout(async () => {
+              // Normalize time values: supports Tag(0) RFC3339, Tag(1) epoch seconds, Tag(1004) full-date, Date or string
+              const toISO = (v) => {
+                if (v == null) return null;
                 try {
-                  const el = document.getElementById(sigAlgId);
-                  if (!el) return;
-                  const pub = await window.extractPublicKeyFromCert(
-                    issuerCertFirst,
-                    true
-                  );
-                  let curveName = (pub?.nobleCurveName || "").toLowerCase();
-                  let effectiveAlgLabel = headerAlgLabel;
-                  let curveLabel = "";
-                  if (!curveName) {
-                    const label =
-                      window.detectCurveFromCertOID(issuerCertFirst);
-                    curveLabel = label || "";
-                    curveName = (label || "").toLowerCase();
-                  }
-                  if (
-                    curveName.includes("p256") ||
-                    curveName.includes("brainpoolp256")
-                  ) {
-                    effectiveAlgLabel = "ES256 (ECDSA with SHA-256)";
-                    curveLabel = curveName.includes("brainpool")
-                      ? "brainpoolP256r1"
-                      : "P-256";
-                  } else if (
-                    curveName.includes("p384") ||
-                    curveName.includes("brainpoolp384") ||
-                    curveName.includes("brainpoolp320")
-                  ) {
-                    effectiveAlgLabel = "ES384 (ECDSA with SHA-384)";
-                    if (curveName.includes("brainpoolp320"))
-                      curveLabel = "brainpoolP320r1";
-                    else if (curveName.includes("brainpool"))
-                      curveLabel = "brainpoolP384r1";
-                    else curveLabel = "P-384";
-                  } else if (
-                    curveName.includes("p521") ||
-                    curveName.includes("brainpoolp512")
-                  ) {
-                    effectiveAlgLabel = "ES512 (ECDSA with SHA-512)";
-                    curveLabel = curveName.includes("brainpool")
-                      ? "brainpoolP512r1"
-                      : "P-521";
-                  } else if (
-                    curveName.includes("ed25519") ||
-                    curveName.includes("ed448")
-                  ) {
-                    effectiveAlgLabel = "EdDSA";
-                    curveLabel = curveName.includes("ed448")
-                      ? "Ed448"
-                      : "Ed25519";
-                  }
-                  const curveSuffix = curveLabel
-                    ? ` <span style=\"color:#475569;\">— Curve: ${curveLabel}</span>`
-                    : "";
-                  if (effectiveAlgLabel !== headerAlgLabel) {
-                    el.innerHTML = `${effectiveAlgLabel}${curveSuffix} <span style=\"color:#64748b;\">(header: ${escapeHtml(
-                      headerAlgLabel
-                    )})</span>`;
-                  } else {
-                    el.innerHTML = `${effectiveAlgLabel}${curveSuffix}`;
-                  }
-                } catch (_) {}
-              }, 0);
-            }
-            const issuerCert =
-              unprotectedHeader instanceof Map
-                ? unprotectedHeader.get(33)
-                : unprotectedHeader?.[33];
-            if (issuerCert) {
-              try {
-                const certDer =
-                  issuerCertFirst &&
-                  (issuerCertFirst instanceof Uint8Array ||
-                    ArrayBuffer.isView(issuerCertFirst))
-                    ? issuerCertFirst
-                    : issuerCert instanceof Uint8Array ||
-                      ArrayBuffer.isView(issuerCert)
-                    ? issuerCert
-                    : null;
-                if (certDer) {
-                  const certInfo = window.extractCertInfo
-                    ? window.extractCertInfo(certDer)
-                    : {};
-                  if (certInfo.subjectDN) {
-                    html += `
-                      <div class="data-item">
-                        <div class="data-label">Subject</div>
-                        <div class="data-value" style="font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.85rem;">${escapeHtml(
-                          certInfo.subjectDN
-                        )}</div>
-                      </div>
-                    `;
-                  } else if (certInfo.subjectCN) {
-                    html += `
-                      <div class="data-item">
-                        <div class="data-label">Subject CN</div>
-                        <div class="data-value">${escapeHtml(
-                          certInfo.subjectCN
-                        )}</div>
-                      </div>
-                    `;
-                  }
-                  if (certInfo.issuerDN) {
-                    html += `
-                      <div class="data-item">
-                        <div class="data-label">Issuer</div>
-                        <div class="data-value" style="font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.85rem;">${escapeHtml(
-                          certInfo.issuerDN
-                        )}</div>
-                      </div>
-                    `;
-                  } else if (certInfo.issuerCN) {
-                    html += `
-                      <div class="data-item">
-                        <div class="data-label">Issuer CN</div>
-                        <div class="data-value">${escapeHtml(
-                          certInfo.issuerCN
-                        )}</div>
-                      </div>
-                    `;
-                  }
-                  try {
-                    const validity = window.extractCertValidity
-                      ? window.extractCertValidity(certDer)
-                      : null;
-                    if (validity) {
-                      const nf = validity.notBefore
-                        ? new Date(validity.notBefore)
-                        : null;
-                      const na = validity.notAfter
-                        ? new Date(validity.notAfter)
-                        : null;
-                      if (nf) {
-                        html += `
-                          <div class="data-item">
-                            <div class="data-label">Valid From</div>
-                            <div class="data-value">${escapeHtml(
-                              nf.toLocaleString()
-                            )}</div>
-                          </div>
-                        `;
-                      }
-                      if (na) {
-                        const expired = na < new Date();
-                        html += `
-                          <div class="data-item">
-                            <div class="data-label">Valid Until</div>
-                            <div class="data-value" style="${
-                              expired ? "color:#dc2626;font-weight:600;" : ""
-                            }">${expired ? "⚠️ " : ""}${escapeHtml(
-                          na.toLocaleString()
-                        )}</div>
-                          </div>
-                        `;
-                      }
+                  // Handle CBOR.Tagged
+                  if (v && v.constructor && v.constructor.name === "Tagged") {
+                    if (v.tag === 0) {
+                      // RFC3339 text already
+                      return new Date(v.value).toISOString();
                     }
-                  } catch (_) {}
-                }
-              } catch (_) {}
-            }
-
-            // Close details container
-            html += `</div>`;
-
-            // Queue post-render tasks for this document (verification only)
-            postTasks.push({ docIndex, coseSign1 });
-          } else {
-            html += `<div class="data-value">⚠️ Unexpected COSE_Sign1 structure</div>`;
-          }
-        } catch (sigError) {
-          html += `
-            <div class="data-item">
-              <div class="data-value" style="color: #dc3545;">❌ Error parsing signature: ${escapeHtml(
-                sigError.message
-              )}</div>
-            </div>
-          `;
-        }
-        html += "</div>";
-      } else {
-        html += `
-          <div class="signer-section" style="margin-top: 20px; padding: 15px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
-            <div style="color: #856404;">⚠️ No issuer signature found (issuerAuth missing)</div>
-          </div>
-        `;
-      }
-      html += "</div>";
-    });
-
-    responseDisplayEl.innerHTML = html;
-
-    setTimeout(() => {
-      const btnCopy = document.getElementById("btnCopyResponse");
-      if (btnCopy) {
-        btnCopy.addEventListener("click", async () => {
-          try {
-            const jsonData = convertToJSON(deviceResponse);
-            const jsonString = JSON.stringify(jsonData, null, 2);
-            await navigator.clipboard.writeText(jsonString);
-            const originalText = btnCopy.textContent;
-            btnCopy.textContent = "✅ Copied!";
-            btnCopy.style.background = "#218838";
-            setTimeout(() => {
-              btnCopy.textContent = originalText;
-              btnCopy.style.background = "#28a745";
-            }, 2000);
-            log("📋 Response copied to clipboard as JSON");
-          } catch (err) {
-            log("❌ Failed to copy: " + err.message);
-          }
-        });
-      }
-      // Execute post-render tasks per document: run verification
-      (async () => {
-        for (const task of postTasks) {
-          try {
-            // Run signature + chain verification (using global helper)
-            if (
-              typeof window.verifyCOSESign1SignatureWithChain === "function"
-            ) {
-              try {
-                const res = await window.verifyCOSESign1SignatureWithChain(
-                  task.coseSign1
-                );
-                const sigEl = document.getElementById(
-                  `sigStatus-${task.docIndex}`
-                );
-                const chainEl = document.getElementById(
-                  `chainStatus-${task.docIndex}`
-                );
-                if (sigEl) {
-                  sigEl.textContent = res.signatureValid
-                    ? "✅ Valid"
-                    : "❌ Invalid";
-                  sigEl.style.color = res.signatureValid
-                    ? "#16a34a"
-                    : "#dc2626";
-                }
-                if (chainEl) {
-                  if (res.chainValid) {
-                    const iaca = res.chainInfo?.matchedIACA;
-                    const label = iaca
-                      ? `✅ Valid — IACA: ${iaca.name}${
-                          iaca.test ? " (TEST)" : ""
-                        }`
-                      : "✅ Valid";
-                    chainEl.textContent = label;
-                    chainEl.style.color = "#16a34a";
-                  } else {
-                    chainEl.textContent = "❌ Invalid";
-                    chainEl.style.color = "#dc2626";
+                    if (v.tag === 1) {
+                      // Epoch seconds
+                      return new Date(v.value * 1000).toISOString();
+                    }
+                    if (v.tag === 1004) {
+                      // full-date YYYY-MM-DD
+                      return new Date(v.value).toISOString();
+                    }
+                    // Other tags: try value recursively
+                    return toISO(v.value);
                   }
+                  // Handle plain-object tag shapes
+                  if (
+                    typeof v === "object" &&
+                    typeof v.tag === "number" &&
+                    v.value !== undefined
+                  ) {
+                    if (v.tag === 0) return new Date(v.value).toISOString();
+                    if (v.tag === 1)
+                      return new Date(v.value * 1000).toISOString();
+                    if (v.tag === 1004) return new Date(v.value).toISOString();
+                    return toISO(v.value);
+                  }
+                  if (v instanceof Date) return v.toISOString();
+                  if (typeof v === "number")
+                    return new Date(v * 1000).toISOString();
+                  if (typeof v === "string") return new Date(v).toISOString();
+                  return new Date(v).toISOString();
+                } catch {
+                  return null;
                 }
-              } catch (e) {
-                log("❌ Verification error: " + e.message);
-              }
-            }
-          } catch (_) {}
-        }
-      })();
-    }, 100);
+              };
 
-    log("✅ Response decrypted and displayed successfully!");
+              const docType = mget(mso, ["docType", 0]);
+              const validityInfo = mget(mso, ["validityInfo", 3]);
+              const vf = validityInfo
+                ? mget(validityInfo, ["validFrom", 1])
+                : null;
+              const vu = validityInfo
+                ? mget(validityInfo, ["validUntil", 2])
+                : null;
+              const signedAt = validityInfo
+                ? mget(validityInfo, ["signed", 0])
+                : null;
+              const digestAlgorithm = mget(mso, ["digestAlgorithm", 2]);
+              console.log("mso:", mso);
+              msoSummary = {
+                docType: docType || null,
+                signed: toISO(signedAt),
+                validFrom: toISO(vf),
+                validUntil: toISO(vu),
+                digestAlgorithm: digestAlgorithm || null,
+              };
+            } catch (_) {}
 
-    setTimeout(async () => {
-      try {
-        const device = window.device;
-        const chState = window.chState;
-        const writeState = window.writeState;
-        if (device?.gatt?.connected && chState) {
-          try {
-            log("🔚 Sending END state (0x02) to wallet...");
-            await writeState(0x02);
-            log("✅ END state sent");
-            setTimeout(() => {
-              if (device?.gatt?.connected) {
-                log("🔌 Closing BLE connection...");
-                device.gatt.disconnect();
-                log("✅ Connection closed - ready for next scan");
-              }
-            }, 500);
-          } catch (stateError) {
-            if (device?.gatt?.connected) device.gatt.disconnect();
-            log("✅ Connection closed - ready for next scan");
+            docModel.signature = {
+              algorithm: algLabel,
+              certificate: certSummary,
+              mso: msoSummary,
+              coseSign1: cose,
+            };
           }
-        } else {
-          log("✅ Wallet disconnected - ready for next scan");
+        } catch (_) {
+          docModel.signature = null;
         }
-      } catch (_) {
-        log("✅ Session ended - ready for next scan");
       }
-    }, 1000);
+
+      model.documents.push(docModel);
+    }
+
+    return model;
   }
 
-  // Decrypt and display mDL response (COSE_Encrypt0)
-  async function decryptAndDisplayResponse(encryptedData) {
+  // Decrypt COSE_Encrypt0 → DeviceResponse object (no rendering)
+  async function decryptCoseEncrypt0ToObject(encryptedData) {
     const CBOR = getCBOR();
     const coseEnc0 = CBOR.decode(encryptedData);
     if (!Array.isArray(coseEnc0) || coseEnc0.length !== 3)
@@ -887,13 +789,11 @@
         "Invalid COSE_Encrypt0 structure - expected 3-element array"
       );
     const [protectedHeaderBytes, unprotectedHeader, ciphertext] = coseEnc0;
-    let protectedHeader = {};
-    if (protectedHeaderBytes && protectedHeaderBytes.length > 0)
-      protectedHeader = CBOR.decode(protectedHeaderBytes);
+    // Read IV from unprotected header (header key 5)
     const iv =
       unprotectedHeader instanceof Map
         ? unprotectedHeader.get(5)
-        : unprotectedHeader[5];
+        : unprotectedHeader?.[5];
     if (!iv) throw new Error("No IV found in unprotected header");
     const plaintext = await aesGcmDecrypt(
       new Uint8Array(ciphertext),
@@ -901,87 +801,46 @@
       new Uint8Array(iv),
       ""
     );
-    const deviceResponse = CBOR.decode(plaintext);
-    displayDeviceResponse(deviceResponse);
+    return CBOR.decode(plaintext);
   }
 
-  // Decrypt SessionEstablishment response data field (raw AES-GCM)
-  async function decryptSessionEstablishmentData(encryptedData) {
+  // Decrypt SessionEstablishment.data (raw AES-GCM) → DeviceResponse object
+  async function decryptSessionEstablishmentDataToObject(encryptedData) {
     const mdocIdentifier = new Uint8Array([0, 0, 0, 0, 0, 0, 0, 1]);
     const counter = 1;
     const iv = new Uint8Array(12);
     iv.set(mdocIdentifier, 0);
     new DataView(iv.buffer, 8, 4).setUint32(0, counter, false);
-    const skd = window.skDevice ? new Uint8Array(window.skDevice) : null;
-    if (!skd) throw new Error("SKDevice key not set");
-    const key = await crypto.subtle.importKey(
-      "raw",
-      skd,
-      { name: "AES-GCM", length: 256 },
-      false,
-      ["decrypt"]
+    const plaintext = await aesGcmDecrypt(
+      encryptedData,
+      window.skDevice ? new Uint8Array(window.skDevice) : null,
+      iv,
+      new Uint8Array(0)
     );
-    const decrypted = await crypto.subtle.decrypt(
-      {
-        name: "AES-GCM",
-        iv,
-        additionalData: new Uint8Array(0),
-        tagLength: 128,
-      },
-      key,
-      encryptedData
-    );
-    const plaintext = new Uint8Array(decrypted);
-    const deviceResponse = getCBOR().decode(plaintext);
-    displayDeviceResponse(deviceResponse);
+    return getCBOR().decode(plaintext);
   }
 
+  // Public API (pure functions only)
   window.WalletResponse = {
     aesGcmDecrypt,
-    decryptSessionEstablishmentData,
-    decryptAndDisplayResponse,
-    displayDeviceResponse,
+    decryptCoseEncrypt0ToObject,
+    decryptSessionEstablishmentDataToObject,
+    buildResponseViewModel,
     convertToJSON,
+    // Legacy aliases for backward compatibility (return objects; no DOM side-effects)
+    decryptSessionEstablishmentData: decryptSessionEstablishmentDataToObject,
+    decryptAndDisplayResponse: async function (encryptedData) {
+      // Previously decrypted and displayed; now returns the decoded object
+      return await decryptCoseEncrypt0ToObject(encryptedData);
+    },
+    // Back-compat shim: deprecated name returns the view model
+    displayDeviceResponse: function (deviceResponse) {
+      console.warn(
+        "[WalletResponse] displayDeviceResponse is deprecated; use buildResponseViewModel instead."
+      );
+      return buildResponseViewModel(deviceResponse);
+    },
   };
 
-  // Global helpers for MSO classic UI
-  window.toggleMSO = function (id) {
-    try {
-      const section = document.getElementById(id);
-      const icon = document.getElementById(`${id}-icon`);
-      if (!section) return;
-      const isHidden =
-        section.style.display === "" || section.style.display === "none";
-      if (isHidden) {
-        section.style.display = "block";
-        if (icon) icon.textContent = "▼";
-      } else {
-        section.style.display = "none";
-        if (icon) icon.textContent = "▶";
-      }
-    } catch (_) {}
-  };
-
-  window.copyMSO = async function (contentId) {
-    try {
-      const pre = document.getElementById(contentId);
-      if (!pre) return;
-      const text = pre.textContent || pre.innerText || "";
-      await navigator.clipboard.writeText(text);
-      // Optional visual feedback on the button if available via event
-      const evt = window.event;
-      const btn = evt && evt.currentTarget ? evt.currentTarget : null;
-      if (btn) {
-        const original = btn.textContent;
-        btn.textContent = "✅ Copied";
-        btn.style.background = "#047857";
-        setTimeout(() => {
-          btn.textContent = original;
-          btn.style.background = "#059669";
-        }, 1200);
-      }
-    } catch (e) {
-      (window.log || console.log)("❌ Copy failed: " + e.message);
-    }
-  };
+  // All DOM/HTML helpers removed from this module
 })();

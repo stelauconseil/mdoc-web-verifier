@@ -28,6 +28,7 @@
 
   let onAssembled = null;
   let defaultChunk = 185;
+  let notificationsActive = false;
   let logger = (m) => {
     try {
       console.log(m);
@@ -270,14 +271,20 @@
     );
     log("✓ Characteristics ready");
 
-    log("🔔 Enabling notifications on s2c…");
-    await withTimeout(
-      chS2C.startNotifications(),
-      5000,
-      "starting notifications"
-    );
-    chS2C.addEventListener("characteristicvaluechanged", handleServer2Client);
-    log("GATT ready. Notifications enabled.");
+    if (!notificationsActive) {
+      log("🔔 Enabling notifications on s2c…");
+      await withTimeout(
+        chS2C.startNotifications(),
+        5000,
+        "starting notifications"
+      );
+      chS2C.addEventListener("characteristicvaluechanged", handleServer2Client);
+      notificationsActive = true;
+      log("GATT ready. Notifications enabled.");
+    } else {
+      // Avoid duplicate log spam if connect() was invoked twice rapidly
+      log("GATT ready. Notifications enabled.");
+    }
   }
 
   async function writeState(byte) {
@@ -306,10 +313,27 @@
     }
   }
 
+  function _removeNotificationsListener() {
+    try {
+      if (chS2C)
+        chS2C.removeEventListener(
+          "characteristicvaluechanged",
+          handleServer2Client
+        );
+    } catch {}
+    try {
+      if (chS2C && typeof chS2C.stopNotifications === "function") {
+        chS2C.stopNotifications().catch(() => {});
+      }
+    } catch {}
+    notificationsActive = false;
+  }
+
   function disconnect() {
     try {
+      _removeNotificationsListener();
       if (device?.gatt?.connected) {
-        log("🔌 Disconnecting BLE...");
+        log("🔌 Disconnecting BLE…");
         device.gatt.disconnect();
       }
     } catch {}
