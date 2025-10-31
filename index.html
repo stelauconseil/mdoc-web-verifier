@@ -1061,8 +1061,18 @@ function renderResponseViewModel(model) {
       } catch { return null; }
     };
 
+    // Helper: get requested order snapshot for a given docType
+    const getOrderForDocType = (dt) => {
+      try {
+        if (window.REQUEST_ORDERS_BY_DOCTYPE && window.REQUEST_ORDERS_BY_DOCTYPE[dt]) return window.REQUEST_ORDERS_BY_DOCTYPE[dt];
+        if (window.LAST_REQUEST_ORDER && window.LAST_REQUEST_ORDER.docType === dt) return window.LAST_REQUEST_ORDER;
+      } catch {}
+      return null;
+    };
+
     documents.forEach((doc) => {
       const docType = doc?.docType || 'Unknown';
+      const order = getOrderForDocType(docType);
       html += `
         <div class="document-card">
           <div class="document-type">📄 ${esc(docType)}</div>
@@ -1070,9 +1080,22 @@ function renderResponseViewModel(model) {
 
       const nsObjRaw = doc?.issuerSigned?.nameSpaces;
       const nsObj = unwrapTaggedOrCbor(nsObjRaw) || {};
-      const nsEntries = (nsObj instanceof Map)
+      let nsEntries = (nsObj instanceof Map)
         ? Array.from(nsObj.entries())
         : (Array.isArray(nsObj) ? [['Data', nsObj]] : Object.entries(nsObj));
+
+      // Reorder namespaces to mirror request order when available
+      if (order && Array.isArray(order.namespaceOrder) && order.namespaceOrder.length) {
+        const dict = new Map(nsEntries);
+        const used = new Set();
+        const ordered = [];
+        for (const nsName of order.namespaceOrder) {
+          if (dict.has(nsName)) { ordered.push([nsName, dict.get(nsName)]); used.add(nsName); }
+        }
+        // Append any extra namespaces not in the original request order
+        for (const [k, v] of nsEntries) { if (!used.has(k)) ordered.push([k, v]); }
+        nsEntries = ordered;
+      }
 
       nsEntries.forEach(([nsName, items]) => {
         html += `
@@ -1110,6 +1133,21 @@ function renderResponseViewModel(model) {
           }
           html += `</div>`;
           return;
+        }
+
+        // Sort items to mirror the field order from the request, when available
+        if (order && order.fieldsOrder && Array.isArray(order.fieldsOrder[nsName])) {
+          const seq = order.fieldsOrder[nsName];
+          const pos = new Map();
+          seq.forEach((k, i) => pos.set(String(k), i));
+          itemsArr = itemsArr.slice().sort((a, b) => {
+            const ida = (a && (a.elementIdentifier || a.label)) ? String(a.elementIdentifier || a.label) : '';
+            const idb = (b && (b.elementIdentifier || b.label)) ? String(b.elementIdentifier || b.label) : '';
+            const ia = pos.has(ida) ? pos.get(ida) : Number.MAX_SAFE_INTEGER;
+            const ib = pos.has(idb) ? pos.get(idb) : Number.MAX_SAFE_INTEGER;
+            if (ia !== ib) return ia - ib;
+            return 0;
+          });
         }
 
         itemsArr.forEach((entry0, idx) => {

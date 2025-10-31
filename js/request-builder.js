@@ -369,6 +369,31 @@
       nameSpaces: nameSpacesObj,
       requestInfo: {},
     };
+
+    // Capture the requested display order so the renderer can mirror it
+    try {
+      const namespaceOrder = Object.keys(nameSpacesObj);
+      const fieldsOrder = {};
+      for (const ns of namespaceOrder) {
+        const obj = nameSpacesObj[ns];
+        if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+          fieldsOrder[ns] = Object.keys(obj);
+        } else {
+          fieldsOrder[ns] = [];
+        }
+      }
+      const orderSnapshot = { docType, namespaceOrder, fieldsOrder };
+      // Expose for downstream renderers
+      if (!window.RequestBuilder) window.RequestBuilder = {};
+      window.RequestBuilder.lastOrder = orderSnapshot;
+      window.LAST_REQUEST_ORDER = orderSnapshot; // convenience alias
+      // Also keep a per-docType registry so multi-document requests are preserved
+      try {
+        if (!window.REQUEST_ORDERS_BY_DOCTYPE)
+          window.REQUEST_ORDERS_BY_DOCTYPE = {};
+        window.REQUEST_ORDERS_BY_DOCTYPE[docType] = orderSnapshot;
+      } catch {}
+    } catch (_) {}
     const itemsRequestCbor = CBOR.encode(itemsRequest);
     const taggedItemsRequest = new CBOR.Tagged(24, itemsRequestCbor);
     const docRequest = { itemsRequest: taggedItemsRequest };
