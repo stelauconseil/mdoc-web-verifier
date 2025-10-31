@@ -18,7 +18,7 @@
     button:disabled { opacity: .6; cursor: not-allowed; }
     label.inline { display: flex; align-items: center; gap: .5rem; }
     input, textarea { font: inherit; }
-    textarea { width: 100%; min-height: 60px; padding: .75rem .9rem; border-radius: 12px; border: 1px solid rgba(148,163,184,0.45); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9rem; background: #f8fafc; }
+    textarea { width: 97%; min-height: 60px; padding: .75rem .9rem; border-radius: 12px; border: 1px solid rgba(148,163,184,0.45); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9rem; background: #f8fafc; }
     .muted { color: #64748b; font-size: .9rem; }
     .status { background: #f1f5f9; border-radius: 12px; padding: .75rem 1rem; font-size: .9rem; }
     table { width: 100%; border-collapse: collapse; font-size: .95rem; }
@@ -40,6 +40,27 @@
     <p class="muted" style="margin:.5rem 0 0">Check-in and check-out via mDoc BLE (EUDI PID or mDL)</p>
   </header>
   <main>
+
+    <section class="card" id="logSection">
+      <h2 style="margin:0 0 .5rem 0; font-size:1.1rem;">Entries</h2>
+      <div class="muted" style="margin-bottom:.5rem">Today: <span id="todayLabel">—</span></div>
+      <div style="overflow:auto; max-height: 50vh;">
+        <table id="visitorTable">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Last name</th>
+              <th>First name</th>
+              <th>Document</th>
+              <th>Time in</th>
+              <th>Time out</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="card" id="controls">
       <!-- Auto mode: no manual check-in/out controls -->
       <div class="row" style="margin-top:.75rem;">
@@ -65,25 +86,6 @@
       </div>
     </section>
 
-    <section class="card" id="logSection">
-      <h2 style="margin:0 0 .5rem 0; font-size:1.1rem;">Entries</h2>
-      <div class="muted" style="margin-bottom:.5rem">Today: <span id="todayLabel">—</span></div>
-      <div style="overflow:auto; max-height: 50vh;">
-        <table id="visitorTable">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Last name</th>
-              <th>First name</th>
-              <th>Document</th>
-              <th>Time in</th>
-              <th>Time out</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
   </main>
 
   <!-- Libs -->
@@ -136,6 +138,13 @@
   let svcUUID = null, bleAddr = null;
   let deBytes = null; let mdocPubKey = null; let readerKeyPair = null; let skReader=null, skDevice=null; let transcriptAAD=null; let sessionEstablished=false;
   window.skDevice = skDevice;
+
+  function resetSessionState(){
+    try { sessionEstablished = false; } catch {}
+    try { readerKeyPair = null; } catch {}
+    try { skReader = null; skDevice = null; window.skDevice = null; } catch {}
+    try { transcriptAAD = null; } catch {}
+  }
 
   // ==== Utils (from SessionCrypto) ====
   const hex = (...args)=> window.SessionCrypto.hex(...args);
@@ -202,7 +211,15 @@
         defaultChunk: parseInt(chunkInput.value, 10) || 185,
       });
       statusEl.textContent = `Connecting…`;
-      await window.BLE.connect(svcUUID);
+      try {
+        await window.BLE.connect(svcUUID);
+      } catch (e) {
+        // If the underlying cached service/characteristics were invalidated, force a full reset and retry once
+        console.warn('First connect attempt failed, retrying after reset:', e);
+        try { window.BLE.disconnect(); } catch {}
+        await new Promise(r=>setTimeout(r,300));
+        await window.BLE.connect(svcUUID);
+      }
       await new Promise(r=>setTimeout(r,300));
     }
     // Start session
@@ -283,12 +300,12 @@
     const dataBytes = toBytes(responseData);
     if (dataBytes && dataBytes.length>0){
       const deviceResponse = await decryptSessionEstablishmentDataLocal(dataBytes);
-      window.WalletResponse.displayDeviceResponse(deviceResponse);
+      handleDeviceResponseForVisitor(deviceResponse);
     } else {
       // In alternate flow, wallet may send DeviceResponse directly as the first message
       try {
         const deviceResponse = await decryptCoseEncrypt0ToObjectLocal(assembled);
-        window.WalletResponse.displayDeviceResponse(deviceResponse);
+        handleDeviceResponseForVisitor(deviceResponse);
       } catch(e) {
         console.warn('Fallback decrypt failed:', e);
       }
@@ -346,19 +363,43 @@
     return best || { lastName:'', firstName:'', docType:'Unknown' };
   }
 
-  const originalDisplay = window.WalletResponse.displayDeviceResponse;
-  window.WalletResponse.displayDeviceResponse = function(deviceResponse){
-    try {
-        console.log('Device Response:', deviceResponse);
-      const person = extractVisitorInfo(deviceResponse);
-      console.log('Extracted person:', person);
-      if (person && (person.lastName || person.firstName)) {
-        addVisitorEntryAuto(person);
+  function extractVisitorFromModel(model){
+    if (!model || !Array.isArray(model.documents)) return null;
+    for (const doc of model.documents){
+      const docType = doc.docType || 'Unknown';
+      const nsObj = doc.issuerSigned && doc.issuerSigned.nameSpaces ? doc.issuerSigned.nameSpaces : {};
+      let ln = '', fn = '';
+      for (const nsName of Object.keys(nsObj)){
+        const items = Array.isArray(nsObj[nsName]) ? nsObj[nsName] : [];
+        for (const it of items){
+          const id = (it && it.elementIdentifier) ? String(it.elementIdentifier) : '';
+          if (id === 'family_name' || id === 'family_name_birth') ln = ln || (it.text || '');
+          if (id === 'given_name' || id === 'given_name_birth') fn = fn || (it.text || '');
+          if (ln && fn) break;
+        }
+        if (ln && fn) break;
       }
+      if (ln || fn){
+        const label = (docType==='eu.europa.ec.eudi.pid.1') ? 'EUDI PID' : (docType.startsWith('org.iso.18013.5.1') ? 'mDL' : docType);
+        return { lastName: ln||'', firstName: fn||'', docType: label };
+      }
+    }
+    return null;
+  }
+
+  function handleDeviceResponseForVisitor(deviceResponse){
+    try{
+      console.log('Device Response:', deviceResponse);
+      const model = window.WalletResponse.buildResponseViewModel(deviceResponse);
+      const person = extractVisitorFromModel(model) || extractVisitorInfo(deviceResponse);
+      console.log('Extracted person:', person);
+      if (person && (person.lastName || person.firstName)) addVisitorEntryAuto(person);
+      // Auto-disconnect once we have processed the response to avoid stale GATT objects on next scan
+      try { if (window.BLE && typeof window.BLE.disconnect==='function') { window.BLE.disconnect(); } } catch {}
+      resetSessionState();
+      statusEl.textContent = 'Done — disconnected';
     } catch(e){ console.warn('Visitor info parse failed:', e); }
-    // Do not render the full response UI on this page
-    // originalDisplay && originalDisplay(deviceResponse);
-  };
+  }
 
   function loadLog(){ try{ const s = localStorage.getItem('visitor_log'); return s ? JSON.parse(s) : []; }catch{return [];} }
   function saveLog(arr){ try{ localStorage.setItem('visitor_log', JSON.stringify(arr)); }catch{} }
@@ -397,7 +438,22 @@
   renderTable();
 
   // ==== QR payload handler → connection ====
-  async function handleQrPayload(raw, sourceLabel){ const payload=(raw||'').trim(); if (!payload){ statusEl.textContent='No payload'; return; } try { const { uuid, addr } = parseMdocUriAndDE(payload); svcUUID=uuid; bleAddr=addr; await autoConnectFlow(); } catch(e){ statusEl.textContent='Parse failed'; console.error(e); } }
+  async function handleQrPayload(raw, sourceLabel){
+    const payload=(raw||'').trim();
+    if (!payload){ statusEl.textContent='No payload'; return; }
+    try {
+      // Ensure any previous BLE session is torn down before starting a new one
+      try { if (window.BLE && typeof window.BLE.disconnect==='function') { window.BLE.disconnect(); } } catch {}
+      resetSessionState();
+      await new Promise(r=>setTimeout(r,200));
+      const { uuid, addr } = parseMdocUriAndDE(payload);
+      svcUUID=uuid; bleAddr=addr;
+      await autoConnectFlow();
+    } catch(e){
+      statusEl.textContent='Parse failed';
+      console.error(e);
+    }
+  }
 
   </script>
 </body>
