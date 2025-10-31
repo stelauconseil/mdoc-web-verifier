@@ -616,7 +616,7 @@ openssl req -new -x509 -key reader_key.pem -out reader_cert.pem -days 365 \
 
 <script type="module">
 // ==== App Version (must match CACHE_VERSION in sw.js) ====
-const APP_VERSION = 33; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
+const APP_VERSION = 34; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
 // Expose globally for auxiliary modules
 window.APP_VERSION = APP_VERSION;
 
@@ -1032,6 +1032,35 @@ function renderResponseViewModel(model) {
       return cur;
     };
 
+    // Pretty-print JSON content and normalize Tag(1004) full-date objects
+    const normalizeTagDates = (val) => {
+      const isPlainTag = (x) => x && typeof x === 'object' && typeof x.tag === 'number' && 'value' in x;
+      const norm = (x) => {
+        if (x == null) return x;
+        if (Array.isArray(x)) return x.map(norm);
+        if (isPlainTag(x)) {
+          if (x.tag === 1004 && typeof x.value === 'string') return x.value; // RFC3339 full-date
+          if ((x.tag === 0 || x.tag === 1) && (typeof x.value === 'string' || typeof x.value === 'number')) return x.value;
+          return norm(x.value);
+        }
+        if (x && typeof x === 'object') {
+          const out = Array.isArray(x) ? [] : {};
+          for (const [k, v] of Object.entries(x)) out[k] = norm(v);
+          return out;
+        }
+        return x;
+      };
+      return norm(val);
+    };
+    const prettyPrintMaybeJSON = (input) => {
+      try {
+        let obj = input;
+        if (typeof input === 'string') obj = JSON.parse(input);
+        obj = normalizeTagDates(obj);
+        return JSON.stringify(obj, null, 2);
+      } catch { return null; }
+    };
+
     documents.forEach((doc) => {
       const docType = doc?.docType || 'Unknown';
       html += `
@@ -1098,9 +1127,11 @@ function renderResponseViewModel(model) {
               const yes = (entry.text || '').toLowerCase().startsWith('y');
               valueHtml = `<div class="data-value">${yes ? '✓ Yes' : '✗ No'}</div>`;
             } else if (kind === 'array') {
-              valueHtml = `<div class="data-value"><pre style="margin:0;font-size:0.85em">${esc(entry.text ?? '')}</pre></div>`;
+              const pretty = typeof entry?.text === 'string' ? prettyPrintMaybeJSON(entry.text) : null;
+              valueHtml = `<div class="data-value"><pre style="margin:0;font-size:0.85em">${esc(pretty ?? (entry.text ?? ''))}</pre></div>`;
             } else if (kind === 'object') {
-              valueHtml = `<div class="data-value"><pre style="margin:0;font-size:0.85em">${esc(entry.text ?? '')}</pre></div>`;
+              const pretty = typeof entry?.text === 'string' ? prettyPrintMaybeJSON(entry.text) : null;
+              valueHtml = `<div class="data-value"><pre style="margin:0;font-size:0.85em">${esc(pretty ?? (entry.text ?? ''))}</pre></div>`;
             } else if (kind === 'portrait') {
               const meta = entry.binary || {};
               if (meta.dataUri) {
@@ -1117,7 +1148,21 @@ function renderResponseViewModel(model) {
               const meta = entry.binary || {};
               valueHtml = `<div class="data-value binary">&lt;binary data, ${(meta.length ?? '?').toString()} bytes (${esc(meta.formatLabel || meta.mimeType || 'binary')})&gt;</div>`;
             } else if (entry && typeof entry === 'object' && (entry.text != null)) {
-              valueHtml = `<div class="data-value">${esc(entry.text ?? '')}</div>`;
+              // If this is a long JSON-looking string, pretty-print it into a block
+              let rendered = String(entry.text ?? '');
+              let usedPre = false;
+              if (rendered.trim().startsWith('{') || rendered.trim().startsWith('[')) {
+                const pretty = prettyPrintMaybeJSON(rendered);
+                if (pretty) { rendered = pretty; usedPre = true; }
+              } else if (rendered.length > 160) {
+                // Long content: show in a pre block for readability
+                usedPre = true;
+              }
+              if (usedPre) {
+                valueHtml = `<div class="data-value"><pre style="margin:0;font-size:0.85em; white-space:pre-wrap; word-break:break-word;">${esc(rendered)}</pre></div>`;
+              } else {
+                valueHtml = `<div class="data-value">${esc(rendered)}</div>`;
+              }
             } else if (entry && typeof entry === 'object' && (entry.elementValue !== undefined)) {
               try {
                 const unwrappedVal = unwrapTaggedOrCbor(entry.elementValue);
