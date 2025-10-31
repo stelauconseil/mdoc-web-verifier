@@ -27,6 +27,7 @@
   .video-frame { position: relative; border-radius: 12px; overflow: hidden; background: #020617; height: 100px; min-height: 100px; width: 200px; max-width: 60vw; }
   video { width: 200px; max-width: 60vw; height: 100px; object-fit: cover; display: block; }
     canvas { display: none; }
+    footer { text-align: center; padding: 2rem 1rem 3rem; color: #64748b; font-size: 0.9rem; }
     @media (max-width: 640px){
       header h1 { font-size: clamp(1.2rem, 5.5vw, 1.5rem); }
       .card { padding: 1rem; border-radius: 14px; }
@@ -88,6 +89,13 @@
 
   </main>
 
+  <footer>
+    Built by <a href="https://stelau.com">Stelau</a> for ISO 18013-5 experimentation. Web Bluetooth requires HTTPS and a compatible browser.
+    <span id="appVersionFooter" style="display:block;margin-top:0.5rem;color:#64748b;font-size:0.7rem;"></span>
+    <br>
+    <span style="font-size:0.9em;color:#888;">&copy; 2025 Stelau. All rights reserved.</span>
+  </footer>
+
   <!-- Libs -->
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/cbor-web@9.0.2/dist/cbor.min.js"></script>
@@ -102,6 +110,15 @@
   <script src="/js/request-builder.js?v=20251030b"></script>
 
   <script type="module">
+  // Footer: show APP_VERSION if available
+  window.addEventListener('DOMContentLoaded', () => {
+    const footerVersion = document.getElementById('appVersionFooter');
+    const ver = (typeof window.APP_VERSION !== 'undefined') ? window.APP_VERSION : null;
+    if (footerVersion && ver != null) {
+      footerVersion.innerText = `v${ver}`;
+    }
+  });
+  
   // ==== CBOR bootstrap ====
   let CBORRef = self.CBOR || self.cbor;
   if (!CBORRef) {
