@@ -4,6 +4,19 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Visitor Log · mDoc BLE</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="robots" content="index, follow" />
+  <meta name="description" content="Visitor check-in and check-out using mobile ID (EUDI PID or mDL) over Web Bluetooth. Scan QR codes in the browser—no app install required." />
+  <link rel="canonical" href="visitor.html" />
+  
+  <!-- Open Graph / Twitter for rich previews -->
+  <meta property="og:title" content="Visitor Log · mDoc BLE" />
+  <meta property="og:description" content="Visitor check-in and check-out using mobile ID (EUDI PID or mDL) over Web Bluetooth. Scan QR codes in the browser—no app install required." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://mdoc-web-verifier.stelau.com/visitor.html" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Visitor Log · mDoc BLE" />
+  <meta name="twitter:description" content="Visitor check-in and check-out using mobile ID (EUDI PID or mDL) over Web Bluetooth. Scan QR codes in the browser—no app install required." />
   <meta name="theme-color" content="#0f172a" />
   <style>
     :root { color-scheme: light dark; font-family: "Inter", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
@@ -38,7 +51,12 @@
 <body>
   <header>
     <h1>Visitor Log</h1>
-    <p class="muted" style="margin:.5rem 0 0">Check-in and check-out via mDoc BLE (EUDI PID or mDL)</p>
+  <p class="muted" style="margin:.5rem 0 0">Offline-capable check-in and check-out via mDoc BLE (EUDI PID or mDL)</p>
+    <nav aria-label="Breadcrumb" style="margin-top:.5rem; font-size:.9rem;">
+      <a href="index.html" style="color:#cbd5e1; text-decoration: underline;">Home</a>
+      <span aria-hidden="true"> › </span>
+      <span>Visitor Log</span>
+    </nav>
   </header>
   <main>
 
@@ -109,7 +127,74 @@
   <script src="/js/wallet-response.js?v=20251030b"></script>
   <script src="/js/request-builder.js?v=20251030b"></script>
 
+  <!-- PWA Service Worker Registration (mirrors index.html) -->
+  <script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', async () => {
+      try {
+        let canRegister = true;
+        try {
+          const resp = await fetch('/sw.js', { cache: 'no-store' });
+          if (!resp.ok) {
+            canRegister = false;
+            console.warn('⚠️ Skipping Service Worker: /sw.js not reachable (status', resp.status, ')');
+          }
+        } catch (e) {
+          canRegister = false;
+          console.warn('⚠️ Skipping Service Worker: fetch(/sw.js) failed:', e?.message || e);
+        }
+        if (!canRegister) return;
+
+        const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+        console.log('✅ Service Worker registered (visitor):', registration.scope);
+
+        registration.addEventListener('updatefound', () => {
+          const newWorker = registration.installing;
+          console.log('🔄 Service Worker update found (visitor)');
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              console.log('✨ New content available (visitor)');
+            }
+          });
+        });
+
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          console.log('♻️ SW controller changed (visitor), reloading…');
+          window.location.reload();
+        });
+
+        setInterval(() => {
+          registration.update().catch(err => console.warn('SW update check failed (visitor):', err));
+        }, 60000);
+      } catch (error) {
+        console.error('❌ Service Worker registration failed (visitor):', error);
+      }
+    });
+  }
+  </script>
+
   <script type="module">
+  // Structured data (JSON-LD) for SEO
+  try {
+    const ld = document.createElement('script');
+    ld.type = 'application/ld+json';
+    ld.text = JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      "name": "Visitor Log · mDoc BLE",
+      "description": "Visitor check-in and check-out using mobile ID (EUDI PID or mDL) over Web Bluetooth. Scan QR codes in the browser—no app install required.",
+      "url": (location && location.href) ? location.href : undefined,
+      "breadcrumb": {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          { "@type": "ListItem", "position": 1, "name": "Home", "item": (location && location.origin) ? location.origin + "/index.html" : "index.html" },
+          { "@type": "ListItem", "position": 2, "name": "Visitor Log", "item": (location && location.href) ? location.href : "visitor.html" }
+        ]
+      }
+    });
+    document.head.appendChild(ld);
+  } catch {}
+
   // Footer: show APP_VERSION if available
   window.addEventListener('DOMContentLoaded', () => {
     const footerVersion = document.getElementById('appVersionFooter');
