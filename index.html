@@ -4065,7 +4065,7 @@ btnImportVicalUri?.addEventListener('click', async () => {
   btnImportVicalUri.disabled = true;
   setVicalStatus('Importing from URI…');
   try {
-    const res = await window.IacaManager.importVICALFromUri(uri, !!vicalMarkTest?.checked);
+    const res = await window.IacaManager.importVICALFromUri(uri, { markTest: !!vicalMarkTest?.checked });
     await handleVicalResult(res);
   } catch (e) {
     console.error('VICAL import (URI) failed:', e);
@@ -4091,7 +4091,7 @@ btnImportVicalFile?.addEventListener('click', async () => {
   try {
     const buf = await file.arrayBuffer();
     const bytes = new Uint8Array(buf);
-    const res = await window.IacaManager.importVICALFromBytes(bytes, !!vicalMarkTest?.checked);
+    const res = await window.IacaManager.importVICALFromBytes(bytes, { markTest: !!vicalMarkTest?.checked });
     await handleVicalResult(res);
   } catch (e) {
     console.error('VICAL import (file) failed:', e);

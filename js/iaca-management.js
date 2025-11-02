@@ -537,7 +537,8 @@
     return 1;
   }
 
-  async function importVICALFromBytes(bytes, { markTest = false } = {}) {
+  async function importVICALFromBytes(bytes, opts = {}) {
+    const { markTest = false } = opts || {};
     const CBOR = getCBOR();
     if (!CBOR) throw new Error("CBOR library not available");
     let root = CBOR.decode(bytes);
@@ -585,7 +586,8 @@
   }
 
   // Import from an already-parsed JS object (JSON shape). Mirrors importVICALFromBytes semantics.
-  async function importVICALFromObject(rootObject, { markTest = false } = {}) {
+  async function importVICALFromObject(rootObject, opts = {}) {
+    const { markTest = false } = opts || {};
     const entries = decodeVICALRoot(rootObject);
     const candidates = countVICALCandidates(rootObject);
     let imported = 0,
@@ -618,6 +620,7 @@
   }
 
   async function importVICALFromUri(uri, opts = {}) {
+    opts = opts || {};
     // Support data:application/cbor;base64,... or http(s) URIs
     try {
       if (/^data:application\/cbor;base64,/i.test(uri)) {
@@ -728,17 +731,8 @@
     try {
       fetched = await doFetch(uri);
     } catch (err) {
-      // Likely a CORS/network error. If a proxy base is provided, attempt a retry via proxy.
-      if (opts && opts.corsProxyBase) {
-        const proxyUrl = `${opts.corsProxyBase}${encodeURIComponent(uri)}`;
-        try {
-          fetched = await doFetch(proxyUrl);
-        } catch (err2) {
-          throw err; // surface the original error
-        }
-      } else {
-        throw err;
-      }
+      // Surface the original error; no proxy fallback
+      throw err;
     }
 
     // Decode based on fetched.kind
