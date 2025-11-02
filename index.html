@@ -431,7 +431,7 @@
             </span>
           </label>
           <button 
-            onclick="toggleMSO('readerAuthDetails')"
+            onclick="toggleDetails('readerAuthDetails')"
             class="secondary"
             style="display:inline-flex; align-items:center; gap:6px; padding: 6px 10px;"
           >
@@ -505,7 +505,7 @@ openssl req -new -x509 -key reader_key.pem -out reader_cert.pem -days 365 \
         <div style="display:flex; align-items:center; gap:10px;">
           <span id="iacaSummaryCounts" class="muted" style="font-size:0.9rem;">Installed: Live 0 • Test 0</span>
           <button 
-            onclick="toggleMSO('iacaDetails')"
+            onclick="toggleDetails('iacaDetails')"
             class="secondary"
             style="display:inline-flex; align-items:center; gap:6px; padding: 6px 10px;"
           >
@@ -630,6 +630,19 @@ if (!CBORRef) throw new Error('CBOR library unavailable. Check network/CSP.');
 const CBOR = CBORRef;
 // Expose CBOR globally for external modules
 window.CBOR = CBOR;
+
+// Simple global toggler for collapsible sections (used by inline onclick)
+function toggleDetails(id) {
+  try {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const visible = el.style.display !== 'none';
+    el.style.display = visible ? 'none' : 'block';
+    const icon = document.getElementById(`${id}-icon`);
+    if (icon) icon.textContent = visible ? '▶' : '▼';
+  } catch {}
+}
+window.toggleDetails = toggleDetails;
 
 // ==== Browser Compatibility Check ====
 function checkBrowserCompatibility() {
@@ -1390,7 +1403,7 @@ function renderResponseViewModel(model) {
             <div style="display:flex; justify-content:space-between; align-items:center; gap: 8px;">
               <div style="font-weight: bold; color: #007bff;">🔐 Issuer Signature Information</div>
               <button 
-                onclick="toggleMSO('${detailsId}')" 
+                onclick="toggleDetails('${detailsId}')" 
                 style="
                   background: #e2e8f0;
                   color: #0f172a;
@@ -3299,18 +3312,6 @@ async function verifyCOSESign1SignatureWithChain(coseSign1) {
   };
   
   try {
-  // Simple global toggler for sections using the legacy toggleMSO pattern
-  function toggleMSO(id) {
-    try {
-      const el = document.getElementById(id);
-      if (!el) return;
-      const visible = el.style.display !== 'none';
-      el.style.display = visible ? 'none' : 'block';
-      const icon = document.getElementById(`${id}-icon`);
-      if (icon) icon.textContent = visible ? '▶' : '▼';
-    } catch {}
-  }
-  window.toggleMSO = toggleMSO;
     // Step 1: Extract issuer certificate from unprotected header (COSE header parameter 33)
     console.log('Step 1: Extracting issuer certificate from x5chain...');
     
