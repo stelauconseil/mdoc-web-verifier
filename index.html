@@ -61,8 +61,8 @@
     .card h3 { margin-bottom: 0.5rem; margin-top: 1.5rem; font-size: 1.15rem; color: #0f172a; }
     .muted { color: #64748b; font-size: 0.95rem; }
     .row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-top: 1rem; }
-    .scanner { display: grid; gap: 1.5rem; margin-top: 1rem; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); align-items: start; }
-    .video-frame { position: relative; border-radius: 16px; overflow: hidden; background: #020617; min-height: 220px; }
+  .scanner { display: grid; gap: 1.5rem; margin-top: 1rem; grid-template-columns: 1fr 2fr; align-items: start; }
+  .video-frame { position: relative; border-radius: 16px; overflow: hidden; background: #020617; min-height: 150px; }
     video#video { width: 100%; height: 100%; object-fit: cover; display: block; }
     canvas#canvas { display: none; }
   .status-panel { background: #f1f5f9; border-radius: 14px; padding: 1rem 1.25rem; font-size: 0.8rem; line-height: 1.2; }
@@ -140,6 +140,8 @@
     
     footer { text-align: center; padding: 2rem 1rem 3rem; color: #64748b; font-size: 0.9rem; }
     @media (max-width: 640px) {
+  /* Stack scanner panels on small screens */
+  .scanner { grid-template-columns: 1fr; }
       .card { padding: 1.25rem; border-radius: 14px; }
       button { width: 100%; justify-content: center; }
       .button-grid { flex-direction: column; }
@@ -592,6 +594,8 @@ openssl req -new -x509 -key reader_key.pem -out reader_cert.pem -days 365 \
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/cbor-web@9.0.2/dist/cbor.min.js"></script>
 <script src="js/noble-curves.min.js"></script>
+<!-- JPEG 2000 decoder (JpxImage) for converting JP2/J2K portraits to JPEG -->
+<script src="https://cdn.jsdelivr.net/gh/kripken/j2k.js/j2k.js"></script>
 <script>
   // Setup noble-curves global access for all elliptic curves
   // The minified bundle should expose: p256, p384, p521, brainpoolP256r1, brainpoolP384r1, brainpoolP512r1
@@ -601,6 +605,10 @@ openssl req -new -x509 -key reader_key.pem -out reader_cert.pem -days 365 \
     console.log('Available curves:', Object.keys(nobleCurves));
   } else {
     console.warn('⚠️ noble-curves.min.js not loaded - curve cryptography will not work');
+  }
+  // Optional: verify JpxImage availability
+  if (typeof JpxImage === 'undefined') {
+    console.warn('⚠️ JPEG2000 decoder (JpxImage) not loaded - JP2 portraits will not be auto-converted');
   }
 </script>
 <!-- Feature modules (globals) -->

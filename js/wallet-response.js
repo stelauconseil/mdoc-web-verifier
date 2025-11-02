@@ -298,6 +298,46 @@
       return { mimeType, formatLabel };
     };
 
+    // Helper: decode JPEG2000 to JPEG data URL using JpxImage and canvas
+    function jp2ToJpegDataUrl(u8) {
+      try {
+        if (typeof JpxImage === "undefined") return null;
+        const jpx = new JpxImage();
+        jpx.parse(u8);
+        const width =
+          jpx.width || (jpx.components && jpx.components[0]?.length) || 0;
+        const height = jpx.height || 0;
+        if (!width || !height) return null;
+        // Use an off-DOM canvas (not appended)
+        const canvas =
+          typeof OffscreenCanvas !== "undefined"
+            ? null
+            : document.createElement("canvas");
+        let ctx, imageData;
+        if (canvas) {
+          canvas.width = width;
+          canvas.height = height;
+          ctx = canvas.getContext("2d");
+          imageData = ctx.createImageData(width, height);
+          jpx.copyToImageData(imageData);
+          ctx.putImageData(imageData, 0, 0);
+          return canvas.toDataURL("image/jpeg", 0.92);
+        } else if (typeof OffscreenCanvas !== "undefined") {
+          const off = new OffscreenCanvas(width, height);
+          ctx = off.getContext("2d");
+          imageData = ctx.createImageData(width, height);
+          jpx.copyToImageData(imageData);
+          ctx.putImageData(imageData, 0, 0);
+          // OffscreenCanvas can't synchronously toDataURL; skip for purity to keep sync API
+          // In browsers supporting convertToBlob sync would still be async; return null to skip.
+          return null;
+        }
+        return null;
+      } catch (_) {
+        return null;
+      }
+    }
+
     const valueToEntry = (elementIdentifier, elementValue) => {
       // Default entry
       const entry = {
@@ -400,16 +440,32 @@
                 elementValue.byteOffset,
                 elementValue.byteLength
               );
-        const { mimeType, formatLabel } = detectBinary(u8);
+        let { mimeType, formatLabel } = detectBinary(u8);
         entry.valueKind = isPortraitField(elementIdentifier)
           ? "portrait"
           : "bytes";
         entry.text = `<binary ${u8.length} bytes>`;
         entry.binary = { length: u8.length, mimeType, formatLabel };
         try {
-          if (mimeType !== "image/jp2") {
-            const b64 = btoa(String.fromCharCode(...u8));
-            entry.binary.dataUri = `data:${mimeType};base64,${b64}`;
+          // If portrait has 0 bytes, don't produce a data URI so UI won't render an <img>
+          if (isPortraitField(elementIdentifier) && u8.length === 0) {
+            entry.binary.empty = true;
+            return entry;
+          }
+          if (mimeType === "image/jp2" && isPortraitField(elementIdentifier)) {
+            const dataUrl = jp2ToJpegDataUrl(u8);
+            if (dataUrl) {
+              entry.binary.converted = true;
+              entry.binary.convertedFrom = mimeType;
+              entry.binary.mimeType = "image/jpeg";
+              entry.binary.formatLabel = "JPEG (converted)";
+              entry.binary.dataUri = dataUrl;
+            }
+          } else {
+            if (u8.length > 0) {
+              const b64 = btoa(String.fromCharCode(...u8));
+              entry.binary.dataUri = `data:${mimeType};base64,${b64}`;
+            }
           }
         } catch (_) {}
         return entry;
@@ -425,13 +481,29 @@
           const bin = atob(elementValue._base64);
           const u8 = new Uint8Array(bin.length);
           for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
-          const { mimeType, formatLabel } = detectBinary(u8);
+          let { mimeType, formatLabel } = detectBinary(u8);
           entry.valueKind = isPortraitField(elementIdentifier)
             ? "portrait"
             : "bytes";
           entry.text = `<binary ${u8.length} bytes>`;
           entry.binary = { length: u8.length, mimeType, formatLabel };
-          if (mimeType !== "image/jp2") {
+          // If portrait has 0 bytes, don't produce a data URI so UI won't render an <img>
+          if (isPortraitField(elementIdentifier) && u8.length === 0) {
+            entry.binary.empty = true;
+            return entry;
+          }
+          if (mimeType === "image/jp2" && isPortraitField(elementIdentifier)) {
+            const dataUrl = jp2ToJpegDataUrl(u8);
+            if (dataUrl) {
+              entry.binary.converted = true;
+              entry.binary.convertedFrom = mimeType;
+              entry.binary.mimeType = "image/jpeg";
+              entry.binary.formatLabel = "JPEG (converted)";
+              entry.binary.dataUri = dataUrl;
+              return entry;
+            }
+          }
+          if (u8.length > 0) {
             entry.binary.dataUri = `data:${mimeType};base64,${elementValue._base64}`;
           }
           return entry;
