@@ -764,9 +764,15 @@ const qrInput = document.getElementById('qrInput');
 const btnParseQr = document.getElementById('btnParseQr');
 const btnClearQr = document.getElementById('btnClearQr');
 
-// Focus the Manual QR payload textbox on page load
+// Optional: focus the Manual QR payload textbox without scrolling the page
 window.addEventListener('load', () => {
-  try { if (qrInput) qrInput.focus(); } catch {}
+  try {
+    if (qrInput && typeof qrInput.focus === 'function') {
+      // Use preventScroll to avoid jumping down the page on load
+      try { qrInput.focus({ preventScroll: true }); } catch { /* older browsers */ }
+      // Do not fall back to plain focus() to keep the viewport at the top
+    }
+  } catch {}
 });
 
 const btnScan = document.getElementById('btnScan');
