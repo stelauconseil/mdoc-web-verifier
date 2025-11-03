@@ -373,7 +373,7 @@
       </div>
       <div class="row">
         <label class="inline muted">BLE MTU (bytes)
-          <input id="chunk" type="number" min="20" max="512" value="185">
+          <input id="chunk" type="number" min="20" max="511" value="244">
         </label>
         <span class="muted" style="font-size: 0.9em; margin-left: 8px;">
           Packet size for BLE transmission. Default 185 bytes works with most modern devices. 
@@ -1199,7 +1199,8 @@ function renderResponseViewModel(model) {
               valueHtml = `<div class="data-value"><pre style="margin:0;font-size:0.85em">${esc(pretty ?? (entry.text ?? ''))}</pre></div>`;
             } else if (kind === 'portrait') {
               const meta = entry.binary || {};
-              if (meta.dataUri) {
+              // Only render an <img> when we truly have bytes to show
+              if (meta.dataUri && meta.empty !== true && (meta.length || 0) > 0) {
                 valueHtml = `
                   <div class="data-value portrait-preview">
                     <img src="${meta.dataUri}" alt="Portrait" class="portrait-thumbnail" />
@@ -1207,7 +1208,9 @@ function renderResponseViewModel(model) {
                   </div>
                 `;
               } else {
-                valueHtml = `<div class="data-value portrait-preview"><span class="binary">${(meta.length ?? '?').toString()} bytes (${esc(meta.formatLabel || 'image')})</span></div>`;
+                const bytesLabel = (meta.length ?? '?').toString();
+                const note = (meta.empty === true || (meta.length === 0)) ? ' — no portrait image provided' : '';
+                valueHtml = `<div class="data-value portrait-preview"><span class="binary">${bytesLabel} bytes (${esc(meta.formatLabel || 'image')})${esc(note)}</span></div>`;
               }
             } else if (kind === 'bytes') {
               const meta = entry.binary || {};
