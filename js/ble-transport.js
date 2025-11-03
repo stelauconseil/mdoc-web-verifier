@@ -27,7 +27,9 @@
   let rxStalledCount = 0;
 
   let onAssembled = null;
-  let defaultChunk = 185;
+  let defaultChunk = 244;
+  // Negotiated/effective chunk size discovered during the session
+  let negotiatedChunkSize = null;
   let notificationsActive = false;
   let logger = (m) => {
     try {
@@ -224,6 +226,8 @@
             "connecting to GATT"
           );
           log("✓ GATT connected");
+          // Reset negotiated chunk for a fresh session
+          negotiatedChunkSize = null;
           return;
         } catch (e) {
           log(`❌ ${e.message || e}${i < tries ? " — retrying…" : ""}`);
@@ -297,18 +301,59 @@
     if (!chC2S)
       throw new Error("Client-to-Server characteristic not available");
     if (!device?.gatt?.connected) throw new Error("Device not connected");
-    const sz = parseInt(chunkSize, 10) || defaultChunk;
+    const userSz = parseInt(chunkSize, 10);
+    // Start with caller-provided size, or previously negotiated size, or default
+    let currentChunk =
+      (Number.isFinite(userSz) && userSz > 0
+        ? userSz
+        : negotiatedChunkSize || defaultChunk) | 0;
+    if (currentChunk <= 0) currentChunk = 20;
+
+    const MIN_CHUNK = 20; // ATT default usable payload when MTU=23
+
     let off = 0;
     while (off < payload.length) {
       const rem = payload.length - off;
-      const take = Math.min(rem, sz);
-      const last = rem <= sz;
-      const frag = new Uint8Array(1 + take);
-      frag[0] = last ? 0x00 : 0x01;
-      frag.set(payload.slice(off, off + take), 1);
-      await chC2S.writeValueWithoutResponse(frag);
-      log(`C→S write: flag=0x${frag[0].toString(16)} len=${take}`);
-      off += take;
+      let take = Math.min(rem, currentChunk);
+
+      // Attempt write; on failure, back off chunk size and retry this slice
+      // until success or minimum size reached.
+      // We only adjust for this session to avoid probing writes.
+      while (true) {
+        const isLast = take === rem;
+        const frag = new Uint8Array(1 + take);
+        frag[0] = isLast ? 0x00 : 0x01;
+        frag.set(payload.slice(off, off + take), 1);
+        try {
+          await chC2S.writeValueWithoutResponse(frag);
+          // Success: advance and cache negotiated size if we discovered smaller-than-default
+          negotiatedChunkSize = Math.min(currentChunk, defaultChunk);
+          log(
+            `C→S write: flag=0x${frag[0].toString(
+              16
+            )} len=${take} (chunk=${currentChunk})`
+          );
+          off += take;
+          break; // proceed to next outer-loop chunk
+        } catch (e) {
+          // Back off aggressively (halve) but respect a minimum
+          const prev = currentChunk;
+          currentChunk = Math.max(MIN_CHUNK, Math.floor(currentChunk / 2));
+          if (currentChunk === prev) {
+            // We're already at minimum; rethrow
+            throw e;
+          }
+          take = Math.min(rem, currentChunk);
+          log(
+            `⚠️ write failed (${
+              e && e.message ? e.message : e
+            }); reducing chunk to ${currentChunk} and retrying`
+          );
+          // Tiny delay to avoid hammering the controller
+          await new Promise((r) => setTimeout(r, 10));
+          continue;
+        }
+      }
       if (off < payload.length) await new Promise((r) => setTimeout(r, 10));
     }
   }
@@ -338,6 +383,7 @@
       }
     } catch {}
     resetRx();
+    negotiatedChunkSize = null;
     device = server = service = chState = chC2S = chS2C = null;
   }
 
@@ -361,5 +407,6 @@
     disconnect,
     isConnected,
     _calcRxTimeout: calcRxTimeout,
+    getNegotiatedChunkSize: () => negotiatedChunkSize || null,
   };
 })();
