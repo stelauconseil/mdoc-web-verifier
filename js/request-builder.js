@@ -297,6 +297,9 @@
         photoIdDGFields = {
           dg1: false,
           dg2: false,
+          dg11: false,
+          dg12: false,
+          dg13: false,
           sod: false,
         };
         break;
