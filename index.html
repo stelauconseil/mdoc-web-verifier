@@ -626,7 +626,7 @@ openssl req -new -x509 -key reader_key.pem -out reader_cert.pem -days 365 \
 
 <script type="module">
 // ==== App Version (must match CACHE_VERSION in sw.js) ====
-const APP_VERSION = 34; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
+const APP_VERSION = 36; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
 // Expose globally for auxiliary modules
 window.APP_VERSION = APP_VERSION;
 
@@ -1193,6 +1193,49 @@ function renderResponseViewModel(model) {
             } else if (kind === 'boolean') {
               const yes = (entry.text || '').toLowerCase().startsWith('y');
               valueHtml = `<div class="data-value">${yes ? '✓ Yes' : '✗ No'}</div>`;
+            } else if (kind === 'mrz') {
+              // ICAO 9303 Machine Readable Zone
+              const icao = entry.icao || {};
+              const parsed = icao.parsed || {};
+              let mrzHtml = `<div class="data-value mrz-display">`;
+              mrzHtml += `<div style="margin-bottom: 0.75rem;">`;
+              mrzHtml += `<strong>📄 ICAO 9303 Machine Readable Zone (MRZ)</strong>`;
+              mrzHtml += `</div>`;
+              // MRZ meta: format (TD1/TD2/TD3) and number of lines
+              if (icao && (icao.format || (icao.lines && icao.lines.length))) {
+                const fmt = icao.format ? String(icao.format) : '';
+                const count = Array.isArray(icao.lines) ? icao.lines.length : 0;
+                mrzHtml += `<div class="chip-list">`;
+                if (fmt) mrzHtml += `<span class="chip">Format: ${esc(fmt)}</span>`;
+                if (count) mrzHtml += `<span class="chip">${count} line(s)</span>`;
+                mrzHtml += `</div>`;
+              }
+              
+              // Raw MRZ lines in monospace
+              if (icao.lines) {
+                mrzHtml += `<div style="font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.9rem; background: #f8fafc; padding: 0.5rem; border-radius: 4px; margin-bottom: 0.75rem; line-height: 1.2; border: 1px solid rgba(148,163,184,0.25);">`;
+                icao.lines.forEach(line => {
+                  mrzHtml += `${esc(line)}<br>`;
+                });
+                mrzHtml += `</div>`;
+              }
+              
+              // Parsed fields
+              if (Object.keys(parsed).length > 0) {
+                mrzHtml += `<div style="display: grid; gap: 0.5rem; font-size: 0.9rem;">`;
+                if (parsed.documentType) mrzHtml += `<div><strong>Document Type:</strong> ${esc(parsed.documentType)}</div>`;
+                if (parsed.issuingCountry) mrzHtml += `<div><strong>Issuing Country:</strong> ${esc(parsed.issuingCountry)}</div>`;
+                if (parsed.surname) mrzHtml += `<div><strong>Surname:</strong> ${esc(parsed.surname)}</div>`;
+                if (parsed.givenNames) mrzHtml += `<div><strong>Given Names:</strong> ${esc(parsed.givenNames)}</div>`;
+                if (parsed.passportNumber || parsed.documentNumber) mrzHtml += `<div><strong>Document Number:</strong> ${esc(parsed.passportNumber || parsed.documentNumber)}</div>`;
+                if (parsed.nationality) mrzHtml += `<div><strong>Nationality:</strong> ${esc(parsed.nationality)}</div>`;
+                if (parsed.dateOfBirth) mrzHtml += `<div><strong>Date of Birth:</strong> ${esc(parsed.dateOfBirth)}</div>`;
+                if (parsed.sex) mrzHtml += `<div><strong>Sex:</strong> ${esc(parsed.sex)}</div>`;
+                if (parsed.expirationDate) mrzHtml += `<div><strong>Expiration Date:</strong> ${esc(parsed.expirationDate)}</div>`;
+                mrzHtml += `</div>`;
+              }
+              mrzHtml += `</div>`;
+              valueHtml = mrzHtml;
             } else if (kind === 'array') {
               const pretty = typeof entry?.text === 'string' ? prettyPrintMaybeJSON(entry.text) : null;
               valueHtml = `<div class="data-value"><pre style="margin:0;font-size:0.85em">${esc(pretty ?? (entry.text ?? ''))}</pre></div>`;
@@ -1201,18 +1244,19 @@ function renderResponseViewModel(model) {
               valueHtml = `<div class="data-value"><pre style="margin:0;font-size:0.85em">${esc(pretty ?? (entry.text ?? ''))}</pre></div>`;
             } else if (kind === 'portrait') {
               const meta = entry.binary || {};
+              const icaoNote = entry.icao ? ' (ICAO DG2)' : '';
               // Only render an <img> when we truly have bytes to show
               if (meta.dataUri && meta.empty !== true && (meta.length || 0) > 0) {
                 valueHtml = `
                   <div class="data-value portrait-preview">
                     <img src="${meta.dataUri}" alt="Portrait" class="portrait-thumbnail" />
-                    <span class="binary">${(meta.length ?? '?').toString()} bytes (${esc(meta.formatLabel || 'image')})</span>
+                    <span class="binary">${(meta.length ?? '?').toString()} bytes (${esc(meta.formatLabel || 'image')})${esc(icaoNote)}</span>
                   </div>
                 `;
               } else {
                 const bytesLabel = (meta.length ?? '?').toString();
                 const note = (meta.empty === true || (meta.length === 0)) ? ' — no portrait image provided' : '';
-                valueHtml = `<div class="data-value portrait-preview"><span class="binary">${bytesLabel} bytes (${esc(meta.formatLabel || 'image')})${esc(note)}</span></div>`;
+                valueHtml = `<div class="data-value portrait-preview"><span class="binary">${bytesLabel} bytes (${esc(meta.formatLabel || 'image')})${esc(icaoNote)}${esc(note)}</span></div>`;
               }
             } else if (kind === 'bytes') {
               const meta = entry.binary || {};

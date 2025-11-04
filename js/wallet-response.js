@@ -17,6 +17,65 @@
   }
   const log = window.log || console.log;
 
+  // --- Minimal BER-TLV helpers for ICAO DG parsing ---
+  function readTag(bytes, offset = 0) {
+    let i = offset;
+    if (i >= bytes.length) throw new Error("readTag: out of range");
+    const first = bytes[i++];
+    let tagBytes = [first];
+    // Long-form tag if low 5 bits are all ones (0x1F)
+    if ((first & 0x1f) === 0x1f) {
+      // Subsequent bytes with MSB=1 indicate continuation
+      while (i < bytes.length) {
+        const b = bytes[i++];
+        tagBytes.push(b);
+        if ((b & 0x80) === 0) break;
+      }
+    }
+    const tagHex = tagBytes
+      .map((b) => b.toString(16).toUpperCase().padStart(2, "0"))
+      .join("");
+    return { tagHex, next: i, constructed: (tagBytes[0] & 0x20) === 0x20 };
+  }
+  function readLength(bytes, offset = 0) {
+    if (offset >= bytes.length) throw new Error("readLength: out of range");
+    let lenByte = bytes[offset++];
+    if ((lenByte & 0x80) === 0) {
+      // short form
+      return { length: lenByte, next: offset };
+    }
+    const numBytes = lenByte & 0x7f;
+    if (numBytes === 0) throw new Error("Indefinite length not supported");
+    let length = 0;
+    for (let i = 0; i < numBytes; i++) {
+      if (offset >= bytes.length)
+        throw new Error("readLength: truncated length");
+      length = (length << 8) | bytes[offset++];
+    }
+    return { length, next: offset };
+  }
+  function findTLV(bytes, start, end, targetTags) {
+    // Depth-first scan; enter constructed values to find nested TLVs
+    const limit = Math.min(end, bytes.length);
+    let i = Math.max(0, start | 0);
+    while (i < limit) {
+      const { tagHex, next: afterTag, constructed } = readTag(bytes, i);
+      if (afterTag >= limit) break;
+      const { length, next: afterLen } = readLength(bytes, afterTag);
+      const vStart = afterLen;
+      const vEnd = Math.min(afterLen + length, limit);
+      if (targetTags.has(tagHex)) {
+        return { tagHex, start: vStart, end: vEnd };
+      }
+      if (constructed && length > 0) {
+        const inner = findTLV(bytes, vStart, vEnd, targetTags);
+        if (inner) return inner;
+      }
+      i = vEnd;
+    }
+    return null;
+  }
+
   // AES-GCM decrypt helper used by this module (pure, no DOM)
   async function aesGcmDecrypt(ciphertext, keyBytes, iv, additionalData) {
     if (
@@ -256,8 +315,350 @@
         s.includes("portrait") ||
         s.includes("image") ||
         s.includes("photo") ||
-        s.includes("signature_usual_mark")
+        s.includes("signature_usual_mark") ||
+        s === "dg2" // ICAO 9303 DG2 is biometric template (portrait)
       );
+    };
+
+    // ICAO 9303 Data Group decoder
+    const decodeICAODataGroup = (elementIdentifier, u8) => {
+      const id = String(elementIdentifier).toLowerCase();
+
+      if (id === "dg1") {
+        // DG1 contains Machine Readable Zone (MRZ)
+        return decodeICAODG1(u8);
+      } else if (id === "dg2") {
+        // DG2 contains biometric template (portrait)
+        return decodeICAODG2(u8);
+      }
+      // Add more DGs as needed (DG3-DG16)
+      return null;
+    };
+
+    // Decode ICAO 9303 DG1 (Machine Readable Zone)
+    const decodeICAODG1 = (u8) => {
+      try {
+        // DG1 outer wrapper is typically 0x61 (constructed). We search its value for 5F1F (MRZ).
+        let start = 0,
+          end = u8.length;
+        if (u8[0] === 0x61) {
+          const lenInfo = readLength(u8, 1);
+          start = lenInfo.next;
+          end = Math.min(start + lenInfo.length, u8.length);
+        }
+
+        // Locate the MRZ value (5F1F) inside the DG1 content
+        const mrzTlv = findTLV(u8, start, end, new Set(["5F1F"]));
+        let mrzBytes;
+        if (mrzTlv) {
+          mrzBytes = u8.slice(mrzTlv.start, mrzTlv.end);
+          console.log("DG1: Found MRZ (5F1F), size:", mrzBytes.length);
+        } else {
+          // Fallback: some encodings may present 5F1F at start of the content; detect and strip
+          let off = start;
+          if (u8[off] === 0x5f && u8[off + 1] === 0x1f) {
+            const lenInfo2 = readLength(u8, off + 2);
+            mrzBytes = u8.slice(
+              lenInfo2.next,
+              Math.min(lenInfo2.next + lenInfo2.length, end)
+            );
+            console.warn(
+              "DG1: 5F1F detected at start; using its value slice. Size:",
+              mrzBytes.length
+            );
+          } else {
+            // Last resort: treat content as plain ASCII and attempt to clean a stray leading tag/len
+            mrzBytes = u8.slice(start, end);
+            console.warn(
+              "DG1: 5F1F not found; using raw DG1 content as MRZ candidate (size:",
+              mrzBytes.length,
+              ")"
+            );
+          }
+        }
+
+        // Sanitize ASCII: keep printable + '<'; drop control chars
+        let mrzText = new TextDecoder("ascii", { fatal: false }).decode(
+          mrzBytes
+        );
+        mrzText = mrzText.replace(/[\x00\r\n]+/g, "");
+        // If the content accidentally starts with 0x5F 0x1F and a single printable (length echo like 'Z'), strip them
+        if (
+          mrzText.length >= 3 &&
+          mrzText.charCodeAt(0) === 0x5f &&
+          mrzText.charCodeAt(1) === 0x1f
+        ) {
+          // Drop first 3 chars (tag + one length byte heuristic)
+          mrzText = mrzText.slice(3);
+        }
+
+        // Split into known MRZ line formats
+        const lines = splitMrzIntoLines(mrzText);
+        // Determine MRZ format (TD1 3x30, TD2 2x36, TD3 2x44)
+        let format = null;
+        if (lines && lines.length === 3 && lines.every((l) => l.length === 30))
+          format = "TD1";
+        else if (
+          lines &&
+          lines.length === 2 &&
+          lines.every((l) => l.length === 44)
+        )
+          format = "TD3";
+        else if (
+          lines &&
+          lines.length === 2 &&
+          lines.every((l) => l.length === 36)
+        )
+          format = "TD2";
+        console.log("📄 Decoded ICAO DG1 (MRZ) lines:", lines);
+
+        return {
+          type: "mrz",
+          lines,
+          text: lines.join("\n"),
+          parsed: parseMRZ(lines),
+          format,
+        };
+      } catch (e) {
+        console.error("❌ Failed to decode ICAO DG1:", e);
+        return null;
+      }
+    };
+
+    // Heuristic splitter for MRZ text into lines (TD1 3x30, TD2 2x36, TD3 2x44)
+    function splitMrzIntoLines(s) {
+      const t = (s || "").replace(/\s+/g, "");
+      const L = t.length;
+      if (L === 0) return [];
+
+      // Rule: If the MRZ document type (first two chars) starts with 'P', it's a two-line MRZ (TD3 or TD2). Otherwise, three-line (TD1).
+      // In practice the very first char is 'P' (e.g., 'P<'), so we check t[0].
+      const isTwoLine = t[0] === "P";
+
+      // Helper to split into fixed-width lines when near-expected sizes (allow +2 slack some encoders add)
+      const trySplit = (width, lines) => {
+        if (L >= width * lines && L <= width * lines + 2) {
+          const out = [];
+          for (let i = 0; i < lines; i++)
+            out.push(t.slice(i * width, (i + 1) * width));
+          if (out.every((line) => line.length === width)) return out;
+        }
+        return null;
+      };
+
+      if (isTwoLine) {
+        // Prefer TD3 (2x44) then TD2 (2x36)
+        let out = trySplit(44, 2);
+        if (out) return out;
+        out = trySplit(36, 2);
+        if (out) return out;
+        // Fallback: exact multiples
+        if (L % 44 === 0 && L / 44 <= 3) return t.match(/.{44}/g) || [t];
+        if (L % 36 === 0 && L / 36 <= 3) return t.match(/.{36}/g) || [t];
+        // Last resort: split into two halves
+        const mid = Math.floor(L / 2);
+        return [t.slice(0, mid), t.slice(mid)];
+      } else {
+        // Three-line MRZ (TD1 3x30)
+        const out = trySplit(30, 3);
+        if (out) return out;
+        // Fallbacks: exact multiples
+        if (L % 30 === 0 && L / 30 <= 3) return t.match(/.{30}/g) || [t];
+        // If not matching expectations, try two-line patterns as a safety net
+        let two = trySplit(44, 2) || trySplit(36, 2);
+        if (two) return two;
+        // Last resort: approximate 3 lines
+        const w = Math.floor(L / 3) || L;
+        return [t.slice(0, w), t.slice(w, 2 * w), t.slice(2 * w)];
+      }
+    }
+
+    // Decode ICAO 9303 DG2 (Biometric Template)
+    const decodeICAODG2 = (u8) => {
+      try {
+        // DG2 structure: tag 0x75, length, biometric info template
+        let offset = 0;
+
+        // Skip tag and length
+        if (u8[offset] === 0x75) {
+          offset++; // Skip tag
+          let length = u8[offset++];
+          if (length & 0x80) {
+            const lengthBytes = length & 0x7f;
+            length = 0;
+            for (let i = 0; i < lengthBytes; i++) {
+              length = (length << 8) | u8[offset++];
+            }
+          }
+        }
+
+        // Parse biometric info template (tag 0x7F61)
+        if (u8[offset] === 0x7f && u8[offset + 1] === 0x61) {
+          offset += 2; // Skip tag
+          let bioLength = u8[offset++];
+          if (bioLength & 0x80) {
+            const lengthBytes = bioLength & 0x7f;
+            bioLength = 0;
+            for (let i = 0; i < lengthBytes; i++) {
+              bioLength = (bioLength << 8) | u8[offset++];
+            }
+          }
+        }
+
+        // Look for biometric data block (tag 0x5F2E) and extract embedded image inside it
+        while (offset < u8.length - 2) {
+          if (u8[offset] === 0x5f && u8[offset + 1] === 0x2e) {
+            offset += 2; // Skip tag
+            let dataLength = u8[offset++];
+            if (dataLength & 0x80) {
+              const lengthBytes = dataLength & 0x7f;
+              dataLength = 0;
+              for (let i = 0; i < lengthBytes; i++) {
+                dataLength = (dataLength << 8) | u8[offset++];
+              }
+            }
+
+            // Extract the Biometric Data Block (may contain header + image)
+            const bdb = u8.slice(offset, offset + dataLength);
+
+            // Try to locate an actual image inside the BDB
+            const embedded = (function extractEmbeddedImageFromBDB(bytes) {
+              const findAt = (sig) => {
+                for (let i = 0; i <= bytes.length - sig.length; i++) {
+                  let ok = true;
+                  for (let j = 0; j < sig.length; j++) {
+                    if (bytes[i + j] !== sig[j]) {
+                      ok = false;
+                      break;
+                    }
+                  }
+                  if (ok) return i;
+                }
+                return -1;
+              };
+              const sigJPEG = [0xff, 0xd8, 0xff];
+              const sigJP2 = [
+                0x00, 0x00, 0x00, 0x0c, 0x6a, 0x50, 0x20, 0x20, 0x0d, 0x0a,
+                0x87, 0x0a,
+              ];
+              const sigJ2K = [0xff, 0x4f, 0xff, 0x51];
+              const idxJP2 = findAt(sigJP2);
+              const idxJ2K = findAt(sigJ2K);
+              const idxJPG = findAt(sigJPEG);
+              let kind = null;
+              let idx = -1;
+              // Prefer JP2/J2K if present, else JPEG
+              if (idxJP2 >= 0) {
+                kind = "jp2";
+                idx = idxJP2;
+              } else if (idxJ2K >= 0) {
+                kind = "j2k";
+                idx = idxJ2K;
+              } else if (idxJPG >= 0) {
+                kind = "jpeg";
+                idx = idxJPG;
+              }
+              if (idx >= 0) {
+                return { kind, bytes: bytes.slice(idx) };
+              }
+              return null;
+            })(bdb);
+
+            const imageData = embedded ? embedded.bytes : bdb;
+            console.log(
+              "🖼️ Decoded ICAO DG2 (Portrait), image bytes:",
+              imageData.length,
+              embedded ? `(embedded ${embedded.kind})` : "(raw BDB)"
+            );
+
+            return {
+              type: "portrait",
+              imageData: imageData,
+              length: imageData.length,
+            };
+          }
+          offset++;
+        }
+
+        console.warn("⚠️ No biometric data found in DG2");
+        return null;
+      } catch (e) {
+        console.error("❌ Failed to decode ICAO DG2:", e);
+        return null;
+      }
+    };
+
+    // Basic MRZ parser for TD1 (3x30), TD2 (2x36), TD3 (2x44)
+    const parseMRZ = (lines) => {
+      if (!lines || lines.length === 0) return null;
+      try {
+        const L = lines.map((l) => (l ? l.trim() : ""));
+        const parsed = {};
+
+        // TD1: 3x30
+        if (
+          L.length === 3 &&
+          L[0].length === 30 &&
+          L[1].length === 30 &&
+          L[2].length === 30
+        ) {
+          const [l1, l2, l3] = L;
+          parsed.documentType = l1.substring(0, 1);
+          parsed.issuingCountry = l1.substring(2, 5);
+          // Document number (l1 6–14) and nationality (l2 16–18) approximate extraction
+          parsed.documentNumber = l1.substring(5, 14).replace(/</g, "").trim();
+          parsed.nationality = l2.substring(15, 18);
+          parsed.dateOfBirth = l2.substring(0, 6);
+          parsed.sex = l2.substring(7, 8);
+          parsed.expirationDate = l2.substring(8, 14);
+          // Names (l3) "SURNAME<<GIVEN<NAMES" style
+          const names = l3.split("<<");
+          parsed.surname = (names[0] || "").replace(/</g, " ").trim();
+          parsed.givenNames = (names[1] || "").replace(/</g, " ").trim();
+          return parsed;
+        }
+
+        // TD2: 2x36
+        if (L.length === 2 && L[0].length === 36 && L[1].length === 36) {
+          const [l1, l2] = L;
+          parsed.documentType = l1.substring(0, 1);
+          parsed.issuingCountry = l1.substring(2, 5);
+          // Names from l1
+          const names = l1.substring(5).split("<<");
+          parsed.surname = (names[0] || "").replace(/</g, " ").trim();
+          parsed.givenNames = (names[1] || "").replace(/</g, " ").trim();
+          // Line 2 fields
+          parsed.documentNumber = l2.substring(0, 9).replace(/</g, "").trim();
+          parsed.nationality = l2.substring(10, 13);
+          parsed.dateOfBirth = l2.substring(13, 19);
+          parsed.sex = l2.substring(20, 21);
+          parsed.expirationDate = l2.substring(21, 27);
+          return parsed;
+        }
+
+        // TD3: 2x44 (passports)
+        if (L.length === 2 && L[0].length === 44 && L[1].length === 44) {
+          const [l1, l2] = L;
+          parsed.documentType = l1.substring(0, 2).trim();
+          parsed.issuingCountry = l1.substring(2, 5);
+          const names = l1.substring(5).split("<<");
+          parsed.surname = (names[0] || "").replace(/</g, " ").trim();
+          parsed.givenNames = (names[1] || "").replace(/</g, " ").trim();
+          parsed.passportNumber = l2.substring(0, 9).replace(/</g, "").trim();
+          parsed.nationality = l2.substring(10, 13);
+          parsed.dateOfBirth = l2.substring(13, 19);
+          parsed.sex = l2.substring(20, 21);
+          parsed.expirationDate = l2.substring(21, 27);
+          return parsed;
+        }
+
+        // Unknown format: return best-effort keys
+        parsed.raw = L;
+        return parsed;
+      } catch (e) {
+        console.error("❌ Failed to parse MRZ:", e);
+        return null;
+      }
     };
 
     const detectBinary = (u8) => {
@@ -468,6 +869,70 @@
                 elementValue.byteOffset,
                 elementValue.byteLength
               );
+
+        // Check if this is an ICAO 9303 data group
+        const icaoData = decodeICAODataGroup(elementIdentifier, u8);
+        if (icaoData) {
+          if (icaoData.type === "mrz") {
+            entry.valueKind = "mrz";
+            entry.text = icaoData.text;
+            entry.icao = icaoData;
+            console.log("✅ Decoded ICAO DG1 (MRZ) for", elementIdentifier);
+            return entry;
+          } else if (icaoData.type === "portrait" && icaoData.imageData) {
+            // Process the extracted image data instead of the full DG2
+            const imgU8 = icaoData.imageData;
+            let { mimeType, formatLabel } = detectBinary(imgU8);
+            entry.valueKind = "portrait";
+            entry.text = `<ICAO portrait ${imgU8.length} bytes>`;
+            entry.binary = { length: imgU8.length, mimeType, formatLabel };
+            entry.icao = icaoData;
+
+            // Handle portrait conversion/display
+            if (imgU8.length === 0) {
+              entry.binary.empty = true;
+              return entry;
+            }
+            if (
+              mimeType === "image/jp2" &&
+              isPortraitField(elementIdentifier)
+            ) {
+              console.log(
+                "🖼️ Processing JPEG2000 ICAO portrait field:",
+                elementIdentifier
+              );
+              const dataUrl = jp2ToJpegDataUrl(imgU8);
+              if (dataUrl) {
+                console.log(
+                  "✅ JP2 conversion successful for ICAO",
+                  elementIdentifier
+                );
+                entry.binary.converted = true;
+                entry.binary.convertedFrom = mimeType;
+                entry.binary.mimeType = "image/jpeg";
+                entry.binary.formatLabel = "JPEG (converted)";
+                entry.binary.dataUri = dataUrl;
+              } else {
+                console.warn(
+                  "❌ JP2 conversion failed for ICAO",
+                  elementIdentifier
+                );
+              }
+            } else {
+              if (imgU8.length > 0) {
+                const b64 = btoa(String.fromCharCode(...imgU8));
+                entry.binary.dataUri = `data:${mimeType};base64,${b64}`;
+              }
+            }
+            console.log(
+              "✅ Decoded ICAO DG2 (Portrait) for",
+              elementIdentifier
+            );
+            return entry;
+          }
+        }
+
+        // Standard binary handling for non-ICAO data
         let { mimeType, formatLabel } = detectBinary(u8);
         entry.valueKind = isPortraitField(elementIdentifier)
           ? "portrait"
