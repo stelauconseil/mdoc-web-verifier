@@ -122,6 +122,19 @@
     }
   }
 
+  // Normalize a PEM certificate for comparison (return base64 body only)
+  function pemToB64Body(pem) {
+    try {
+      return pem
+        .replace(/-----BEGIN CERTIFICATE-----/g, "")
+        .replace(/-----END CERTIFICATE-----/g, "")
+        .replace(/\s+/g, "")
+        .trim();
+    } catch {
+      return (pem || "").trim();
+    }
+  }
+
   async function pemToCryptoKey(pem) {
     try {
       const b64 = pem
@@ -155,11 +168,29 @@
     const certInfo = parsePEMCertificate(pem);
     if (!certInfo) throw new Error("Invalid PEM certificate format");
     const iacas = getIACAs();
-    if (iacas.some((i) => i.pem === pem))
+    // Compare using normalized base64 bodies to avoid whitespace/line-break dupes
+    const incomingB64 = pemToB64Body(pem);
+    if (
+      iacas.some((i) => {
+        try {
+          return pemToB64Body(i.pem) === incomingB64;
+        } catch {
+          return i.pem === pem; // fallback exact
+        }
+      })
+    )
       throw new Error("This certificate is already installed");
+    // Store a canonical PEM built from DER bytes to keep formatting consistent
+    const canonicalPem = (function () {
+      try {
+        return derToPem(certInfo.bytes);
+      } catch {
+        return pem.trim();
+      }
+    })();
     const newIACA = {
       name: name || certInfo.subject || "Unknown Certificate",
-      pem: pem.trim(),
+      pem: canonicalPem,
       issuer: certInfo.subject || "Unknown",
       addedAt: new Date().toISOString(),
       active: true,

@@ -548,7 +548,7 @@ openssl req -new -x509 -key reader_key.pem -out reader_cert.pem -days 365 \
             <button id="btnImportVicalUri">Import from URI</button>
           </div>
           <div class="row" style="gap: 0.5rem; align-items: center; margin-top: 0.5rem; flex-wrap: wrap;">
-            <input id="vicalFile" type="file" accept=".cbor,application/cbor,application/octet-stream" />
+            <input id="vicalFile" type="file" accept=".cbor,.vical,application/cbor,application/octet-stream" />
             <button id="btnImportVicalFile">Import from File</button>
             <label style="display:flex; align-items:center; cursor:pointer; user-select:none; gap:10px;">
               <span class="muted">Mark imported as test</span>
