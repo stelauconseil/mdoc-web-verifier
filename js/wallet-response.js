@@ -298,42 +298,70 @@
       return { mimeType, formatLabel };
     };
 
-    // Helper: decode JPEG2000 to JPEG data URL using JpxImage and canvas
+    // Helper: decode JPEG2000 to JPEG data URL using openjpeg and canvas
     function jp2ToJpegDataUrl(u8) {
       try {
-        if (typeof JpxImage === "undefined") return null;
-        const jpx = new JpxImage();
-        jpx.parse(u8);
-        const width =
-          jpx.width || (jpx.components && jpx.components[0]?.length) || 0;
-        const height = jpx.height || 0;
-        if (!width || !height) return null;
-        // Use an off-DOM canvas (not appended)
-        const canvas =
-          typeof OffscreenCanvas !== "undefined"
-            ? null
-            : document.createElement("canvas");
-        let ctx, imageData;
-        if (canvas) {
-          canvas.width = width;
-          canvas.height = height;
-          ctx = canvas.getContext("2d");
-          imageData = ctx.createImageData(width, height);
-          jpx.copyToImageData(imageData);
-          ctx.putImageData(imageData, 0, 0);
-          return canvas.toDataURL("image/jpeg", 0.92);
-        } else if (typeof OffscreenCanvas !== "undefined") {
-          const off = new OffscreenCanvas(width, height);
-          ctx = off.getContext("2d");
-          imageData = ctx.createImageData(width, height);
-          jpx.copyToImageData(imageData);
-          ctx.putImageData(imageData, 0, 0);
-          // OffscreenCanvas can't synchronously toDataURL; skip for purity to keep sync API
-          // In browsers supporting convertToBlob sync would still be async; return null to skip.
+        console.log("🖼️ Attempting JP2 to JPEG conversion, bytes:", u8.length);
+        if (typeof openjpeg === "undefined") {
+          console.warn(
+            "⚠️ openjpeg not available for JP2 conversion - check if openjpeg.js loaded properly"
+          );
           return null;
         }
-        return null;
-      } catch (_) {
+        console.log("✅ openjpeg available, parsing...");
+
+        // Convert Uint8Array to regular array for openjpeg
+        const dataArray = Array.from(u8);
+        const result = openjpeg(dataArray, "jp2");
+
+        if (!result || !result.data || !result.width || !result.height) {
+          console.warn("⚠️ openjpeg returned invalid result:", result);
+          return null;
+        }
+
+        console.log(
+          "📐 JP2 parsed, dimensions:",
+          result.width,
+          "x",
+          result.height
+        );
+
+        const { width, height, data } = result;
+
+        // Create canvas and convert planar RGB data to RGBA
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        const imageData = ctx.createImageData(width, height);
+
+        console.log("🎨 Converting planar RGB to RGBA ImageData...");
+
+        // Convert 24-bit planar RGB to 32-bit RGBA
+        // openjpeg returns data as [R0,R1,R2...Rn, G0,G1,G2...Gn, B0,B1,B2...Bn]
+        const pixelCount = width * height;
+        for (let i = 0; i < pixelCount; i++) {
+          const r = data[i]; // Red plane
+          const g = data[i + pixelCount]; // Green plane
+          const b = data[i + 2 * pixelCount]; // Blue plane
+
+          const rgba_idx = i * 4;
+          imageData.data[rgba_idx] = r; // R
+          imageData.data[rgba_idx + 1] = g; // G
+          imageData.data[rgba_idx + 2] = b; // B
+          imageData.data[rgba_idx + 3] = 255; // A (fully opaque)
+        }
+
+        ctx.putImageData(imageData, 0, 0);
+
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+        console.log(
+          "✅ JP2 to JPEG conversion successful, data URL length:",
+          dataUrl.length
+        );
+        return dataUrl;
+      } catch (e) {
+        console.error("❌ JP2 to JPEG conversion failed:", e);
         return null;
       }
     }
@@ -458,7 +486,7 @@
               entry.binary.converted = true;
               entry.binary.convertedFrom = mimeType;
               entry.binary.mimeType = "image/jpeg";
-              entry.binary.formatLabel = "JPEG (converted)";
+              entry.binary.formatLabel = "JPEG - converted from JPEG2000";
               entry.binary.dataUri = dataUrl;
             }
           } else {
@@ -498,7 +526,7 @@
               entry.binary.converted = true;
               entry.binary.convertedFrom = mimeType;
               entry.binary.mimeType = "image/jpeg";
-              entry.binary.formatLabel = "JPEG (converted)";
+              entry.binary.formatLabel = "JPEG - converted from JPEG2000";
               entry.binary.dataUri = dataUrl;
               return entry;
             }

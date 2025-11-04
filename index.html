@@ -594,8 +594,8 @@ openssl req -new -x509 -key reader_key.pem -out reader_cert.pem -days 365 \
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/cbor-web@9.0.2/dist/cbor.min.js"></script>
 <script src="js/noble-curves.min.js"></script>
-<!-- JPEG 2000 decoder (JpxImage) for converting JP2/J2K portraits to JPEG -->
-<script src="https://cdn.jsdelivr.net/gh/kripken/j2k.js/j2k.js"></script>
+<!-- JPEG 2000 decoder (OpenJPEG) for converting JP2/J2K portraits to JPEG -->
+<script src="js/openjpeg.js"></script>
 <script>
   // Setup noble-curves global access for all elliptic curves
   // The minified bundle should expose: p256, p384, p521, brainpoolP256r1, brainpoolP384r1, brainpoolP512r1
@@ -606,9 +606,11 @@ openssl req -new -x509 -key reader_key.pem -out reader_cert.pem -days 365 \
   } else {
     console.warn('⚠️ noble-curves.min.js not loaded - curve cryptography will not work');
   }
-  // Optional: verify JpxImage availability
-  if (typeof JpxImage === 'undefined') {
-    console.warn('⚠️ JPEG2000 decoder (JpxImage) not loaded - JP2 portraits will not be auto-converted');
+  // Optional: verify OpenJPEG availability
+  if (typeof openjpeg === 'undefined') {
+    console.warn('⚠️ JPEG2000 decoder (openjpeg) not loaded - JP2 portraits will not be auto-converted');
+  } else {
+    console.log('✅ JPEG2000 decoder (openjpeg) loaded successfully');
   }
 </script>
 <!-- Feature modules (globals) -->
