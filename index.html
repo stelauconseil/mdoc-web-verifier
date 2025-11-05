@@ -1205,8 +1205,12 @@ function renderResponseViewModel(model) {
               if (icao && (icao.format || (icao.lines && icao.lines.length))) {
                 const fmt = icao.format ? String(icao.format) : '';
                 const count = Array.isArray(icao.lines) ? icao.lines.length : 0;
+                const width = (Array.isArray(icao.lines) && icao.lines.length > 0) ? (icao.lines[0]?.length || 0) : 0;
                 mrzHtml += `<div class="chip-list">`;
-                if (fmt) mrzHtml += `<span class="chip">Format: ${esc(fmt)}</span>`;
+                if (fmt) {
+                  const dim = (count && width) ? ` (${count}×${width})` : '';
+                  mrzHtml += `<span class="chip">Format: ${esc(fmt)}${esc(dim)}</span>`;
+                }
                 if (count) mrzHtml += `<span class="chip">${count} line(s)</span>`;
                 mrzHtml += `</div>`;
               }

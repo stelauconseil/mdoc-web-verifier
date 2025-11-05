@@ -431,46 +431,43 @@
       const L = t.length;
       if (L === 0) return [];
 
-      // Rule: If the MRZ document type (first two chars) starts with 'P', it's a two-line MRZ (TD3 or TD2). Otherwise, three-line (TD1).
-      // In practice the very first char is 'P' (e.g., 'P<'), so we check t[0].
-      const isTwoLine = t[0] === "P";
+      // Prefer exact-length patterns; do not infer by leading 'P' or 'ID' since 2-line MRZ exist for both
+      const candidates = [
+        { w: 44, n: 2 }, // TD3
+        { w: 36, n: 2 }, // TD2
+        { w: 30, n: 3 }, // TD1
+      ];
 
-      // Helper to split into fixed-width lines when near-expected sizes (allow +2 slack some encoders add)
-      const trySplit = (width, lines) => {
-        if (L >= width * lines && L <= width * lines + 2) {
+      const exact = candidates.find(({ w, n }) => L === w * n);
+      if (exact) {
+        const out = [];
+        for (let i = 0; i < exact.n; i++)
+          out.push(t.slice(i * exact.w, (i + 1) * exact.w));
+        return out;
+      }
+
+      // Allow small slack (+2) seen in some encodings
+      for (const { w, n } of candidates) {
+        if (L >= w * n && L <= w * n + 2) {
           const out = [];
-          for (let i = 0; i < lines; i++)
-            out.push(t.slice(i * width, (i + 1) * width));
-          if (out.every((line) => line.length === width)) return out;
+          for (let i = 0; i < n; i++) out.push(t.slice(i * w, (i + 1) * w));
+          if (out.every((line) => line.length === w)) return out;
         }
-        return null;
-      };
+      }
 
-      if (isTwoLine) {
-        // Prefer TD3 (2x44) then TD2 (2x36)
-        let out = trySplit(44, 2);
-        if (out) return out;
-        out = trySplit(36, 2);
-        if (out) return out;
-        // Fallback: exact multiples
-        if (L % 44 === 0 && L / 44 <= 3) return t.match(/.{44}/g) || [t];
-        if (L % 36 === 0 && L / 36 <= 3) return t.match(/.{36}/g) || [t];
-        // Last resort: split into two halves
+      // Fallbacks: exact multiples
+      if (L % 44 === 0 && L / 44 <= 3) return t.match(/.{44}/g) || [t];
+      if (L % 36 === 0 && L / 36 <= 3) return t.match(/.{36}/g) || [t];
+      if (L % 30 === 0 && L / 30 <= 3) return t.match(/.{30}/g) || [t];
+
+      // Approximate by closest 2-line or 3-line split
+      if (L > 0) {
         const mid = Math.floor(L / 2);
-        return [t.slice(0, mid), t.slice(mid)];
-      } else {
-        // Three-line MRZ (TD1 3x30)
-        const out = trySplit(30, 3);
-        if (out) return out;
-        // Fallbacks: exact multiples
-        if (L % 30 === 0 && L / 30 <= 3) return t.match(/.{30}/g) || [t];
-        // If not matching expectations, try two-line patterns as a safety net
-        let two = trySplit(44, 2) || trySplit(36, 2);
-        if (two) return two;
-        // Last resort: approximate 3 lines
+        if (L >= 60 && L <= 92) return [t.slice(0, mid), t.slice(mid)];
         const w = Math.floor(L / 3) || L;
         return [t.slice(0, w), t.slice(w, 2 * w), t.slice(2 * w)];
       }
+      return [t];
     }
 
     // Decode ICAO 9303 DG2 (Biometric Template)
