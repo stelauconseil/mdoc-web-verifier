@@ -208,6 +208,7 @@
           given_name: false,
           birth_date: false,
           birth_place: false,
+          nationalities: false,
           nationality: false,
           resident_address: false,
           resident_country: false,
