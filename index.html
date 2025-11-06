@@ -94,7 +94,7 @@
     .response-header h3 { margin: 0; font-size: 1.25rem; font-weight: 600; color: white; }
     .response-meta { color: rgba(255,255,255,0.9); font-size: 0.9rem; margin-top: 0.35rem; }
     .document-card { background: white; border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; border: 1px solid rgba(148,163,184,0.25); box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
-    .document-type { font-size: 0.85rem; color: #0f766e; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.75rem; }
+    .document-type { font-size: 0.85rem; color: #0f766e; font-weight: 600; letter-spacing: 0.5px; margin-bottom: 0.75rem; }
     .namespace-section { margin-top: 1rem; }
     .namespace-title { background: #e0f2fe; color: #0c4a6e; padding: 0.5rem 0.75rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; margin-bottom: 0.75rem; display: inline-block; }
     .data-item { display: grid; grid-template-columns: 140px 1fr; gap: 0.75rem; padding: 0.65rem 0; border-bottom: 1px solid rgba(148,163,184,0.15); }
@@ -4357,7 +4357,7 @@ requestTypeCheckboxes.forEach(checkbox => {
           description = 'mVC: vehicle registration details, vehicle characteristics, owner';
           break;
       }
-      log(`Selected request type: ${type.toUpperCase()} - ${description}`);
+      log(`Selected request type: ${type} - ${description}`);
     } else {
       // Multiple documents selected
       const docTypes = selected.map(t => {
