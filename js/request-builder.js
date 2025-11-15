@@ -27,14 +27,50 @@
     log("Building request for types: " + JSON.stringify(requestTypes));
 
     const deviceRequest = { version: "1.0", docRequests: [] };
-    for (const requestType of requestTypes) {
-      const docRequest = buildSingleDocRequest(requestType);
-      if (docRequest) deviceRequest.docRequests.push(docRequest);
+    const sdjwtOnly = !!document.getElementById("sdjwtOnly")?.checked;
+    if (!sdjwtOnly) {
+      for (const requestType of requestTypes) {
+        const docRequest = buildSingleDocRequest(requestType);
+        if (docRequest) deviceRequest.docRequests.push(docRequest);
+      }
+    } else {
+      log("🧩 SD-JWT only mode: skipping mdoc docRequests");
     }
 
     log(
       `→ Device Request with ${deviceRequest.docRequests.length} document(s)`
     );
+
+    // Inject SD-JWT extended request (experimental) if enabled via UI
+    try {
+      const enable = document.getElementById("enableSdjwt");
+      if (
+        enable &&
+        enable.checked &&
+        window.SDJWT &&
+        typeof window.SDJWT.buildExtendedItemsRequest === "function"
+      ) {
+        const vctsRaw = (document.getElementById("sdjwtVcts")?.value || "")
+          .split(/\r?\n/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const claimsRaw = (document.getElementById("sdjwtClaims")?.value || "")
+          .split(/\r?\n/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const retain = !!document.getElementById("sdjwtRetain")?.checked;
+        const ext = window.SDJWT.buildExtendedItemsRequest({
+          vcts: vctsRaw,
+          claimSelections: claimsRaw,
+          intentToRetain: retain,
+        });
+        if (!deviceRequest.extensions) deviceRequest.extensions = {};
+        deviceRequest.extensions.sdjwt = ext.sdjwt || ext;
+        log("🧩 Added SD-JWT extension to DeviceRequest");
+      }
+    } catch (e) {
+      console.warn("SD-JWT extension not added:", e?.message || e);
+    }
 
     // Optionally add Reader Authentication per spec (inside each DocRequest)
     try {
