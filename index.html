@@ -351,33 +351,6 @@
           <input type="checkbox" name="requestType" value="mvc_full"> mVC Full
         </label>
       </div>
-
-      <hr style="border: none; border-top: 1px solid rgba(148,163,184,0.35); margin: 1rem 0;" />
-      <div style="margin: 15px 0 8px 0; display:flex; justify-content:space-between; align-items:center; gap:8px;">
-        <strong>SD-JWT (Experimental)</strong>
-        <button class="secondary" style="display:inline-flex; align-items:center; gap:6px; padding: 6px 10px;" onclick="toggleDetails('sdjwtDetails')"><span id="sdjwtDetails-icon">▶</span>Details</button>
-      </div>
-      <div class="row" style="align-items:center; gap:10px; margin: 6px 0;">
-        <label class="radio-chip small" style="cursor:pointer;">
-          <input type="checkbox" id="enableSdjwt"> Include SD-JWT extension in request
-        </label>
-      </div>
-      <div id="sdjwtDetails" style="display:none; margin-top: 0.5rem;">
-        <div class="row" style="align-items:center; gap:10px; margin-bottom: 0.5rem;">
-          <label class="radio-chip small" style="cursor:pointer;">
-            <input type="checkbox" id="sdjwtOnly"> Only SD-JWT (no mdoc docRequests)
-          </label>
-        </div>
-        <label class="muted" for="sdjwtVcts">VCTs (one per line)</label>
-        <textarea id="sdjwtVcts" placeholder="eu.europa.ec.eudiw.pid.1&#10;org.iso.18013.5.mDL" style="width: 97%; min-height: 70px; padding: 0.6rem 0.7rem; border-radius: 10px; border: 1px solid rgba(148,163,184,0.45); background:#f8fafc; font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.85rem; resize: vertical;"></textarea>
-        <label class="muted" for="sdjwtClaims" style="margin-top:0.5rem; display:block;">Claim selections (one per line; use dot-path)</label>
-        <textarea id="sdjwtClaims" placeholder="age_over_or_equals.18&#10;address.street_address" style="width: 97%; min-height: 70px; padding: 0.6rem 0.7rem; border-radius: 10px; border: 1px solid rgba(148,163,184,0.45); background:#f8fafc; font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.85rem; resize: vertical;"></textarea>
-        <div class="row" style="margin-top:0.5rem; align-items:center; gap:10px;">
-          <label class="radio-chip small" style="cursor:pointer;">
-            <input type="checkbox" id="sdjwtRetain"> intent_to_retain
-          </label>
-        </div>
-      </div>
     </section>
 
     <section class="card" id="qrSection">
@@ -647,9 +620,6 @@ openssl req -new -x509 -key reader_key.pem -out reader_cert.pem -days 365 \
 <script src="js/device-engagement.js"></script>
 <script src="js/wallet-response.js"></script>
 <script src="js/request-builder.js"></script>
-<!-- SD-JWT experiment helpers (wiring into main app) -->
-<script src="js/sdjwt-experiment.js"></script>
-<script src="js/sdjwt-response.js"></script>
 <script src="js/ble-transport.js"></script>
 <script src="js/session-crypto.js"></script>
 <script src="js/session-establishment.js"></script>
@@ -1576,41 +1546,6 @@ function renderResponseViewModel(model) {
 
       html += `</div>`;
     });
-
-    // SD-JWT documents (experimental): render compact tokens if present in model
-    try {
-      const sdjwtList = Array.isArray(model?.sdjwtDocuments) ? model.sdjwtDocuments : [];
-      if (sdjwtList.length > 0) {
-        html += `
-          <div class="document-card" style="margin-top: 1rem;">
-            <div class="document-type">🔐 SD-JWT Documents (experimental)</div>
-        `;
-        sdjwtList.forEach((tok, i) => {
-          let headerJson = null;
-          try {
-            if (window.SDJWTResponse && typeof window.SDJWTResponse.previewSdJwt === 'function') {
-              headerJson = window.SDJWTResponse.previewSdJwt(tok)?.header || null;
-            }
-          } catch {}
-          const safeTok = esc(String(tok));
-          const safeHeader = headerJson ? esc(JSON.stringify(headerJson, null, 2)) : '—';
-          html += `
-            <div class="data-item">
-              <div class="data-label">Token ${i+1}</div>
-              <div class="data-value">
-                <details>
-                  <summary style="cursor:pointer; user-select:none;">Compact (click to expand)</summary>
-                  <pre style="margin-top:0.5rem;">${safeTok}</pre>
-                </details>
-                <div style="margin-top:0.5rem;"><strong>Header:</strong></div>
-                <pre style="margin-top:0.25rem;">${safeHeader}</pre>
-              </div>
-            </div>
-          `;
-        });
-        html += `</div>`;
-      }
-    } catch {}
 
   // Inject the assembled HTML
   responseDisplayEl.innerHTML = html;

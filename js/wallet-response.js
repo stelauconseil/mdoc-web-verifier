@@ -287,7 +287,6 @@
     const model = {
       version: getField(deviceResponse, "version") || "1.0",
       documents: [],
-      sdjwtDocuments: [],
       rawJSON: null,
     };
 
@@ -296,20 +295,6 @@
     } catch (_) {
       model.rawJSON = null;
     }
-
-    // SD-JWT compact serialization strings (proposed field)
-    try {
-      const sdjwt = getField(deviceResponse, "sdjwtDocuments");
-      if (sdjwt) {
-        if (Array.isArray(sdjwt))
-          model.sdjwtDocuments = sdjwt.map((v) => String(v));
-        else if (sdjwt instanceof Map)
-          model.sdjwtDocuments = Array.from(sdjwt.values()).map(String);
-        else if (typeof sdjwt === "object")
-          model.sdjwtDocuments = Object.values(sdjwt).map(String);
-        else if (typeof sdjwt === "string") model.sdjwtDocuments = [sdjwt];
-      }
-    } catch (_) {}
 
     const documents = getField(deviceResponse, "documents");
     if (!Array.isArray(documents)) return model;
