@@ -17,6 +17,26 @@
   }
   const log = window.log || console.log;
 
+  // --- Safe Base64 for large Uint8Array (avoids spread argument limits) ---
+  function bytesToBase64(u8) {
+    if (!u8 || u8.length === 0) return "";
+    try {
+      // Fast path for small buffers
+      if (u8.length < 0x8000) {
+        return btoa(String.fromCharCode.apply(null, u8));
+      }
+    } catch (e) {
+      console.log("bytesToBase64: fallback for large array", e);
+      // fall through to chunked path
+    }
+    let s = "";
+    for (let i = 0; i < u8.length; i += 0x8000) {
+      const chunk = u8.subarray(i, Math.min(i + 0x8000, u8.length));
+      s += String.fromCharCode.apply(null, chunk);
+    }
+    return btoa(s);
+  }
+
   // --- Minimal BER-TLV helpers for ICAO DG parsing ---
   function readTag(bytes, offset = 0) {
     let i = offset;
@@ -330,6 +350,8 @@
         s.includes("portrait") ||
         s.includes("image") ||
         s.includes("photo") ||
+        s === "fac" || // mICOV attestation face image
+        s.includes("face") ||
         s.includes("signature_usual_mark") ||
         s === "dg2" // ICAO 9303 DG2 is biometric template (portrait)
       );
@@ -677,9 +699,22 @@
       let mimeType = "application/octet-stream";
       let formatLabel = "Unknown";
       if (u8 && u8.length >= 2) {
+        // JPEG/JFIF: starts with FF D8 FF
         if (u8[0] === 0xff && u8[1] === 0xd8 && u8[2] === 0xff) {
           mimeType = "image/jpeg";
-          formatLabel = "JPEG";
+          // Check if it's specifically JFIF (FF D8 FF E0 ... JFIF)
+          if (
+            u8.length >= 11 &&
+            u8[3] === 0xe0 &&
+            u8[6] === 0x4a &&
+            u8[7] === 0x46 &&
+            u8[8] === 0x49 &&
+            u8[9] === 0x46
+          ) {
+            formatLabel = "JFIF";
+          } else {
+            formatLabel = "JPEG";
+          }
         } else if (
           u8.length >= 12 &&
           u8[0] === 0x00 &&
@@ -932,7 +967,7 @@
               }
             } else {
               if (imgU8.length > 0) {
-                const b64 = btoa(String.fromCharCode(...imgU8));
+                const b64 = bytesToBase64(imgU8);
                 entry.binary.dataUri = `data:${mimeType};base64,${b64}`;
               }
             }
@@ -968,7 +1003,7 @@
             }
           } else {
             if (u8.length > 0) {
-              const b64 = btoa(String.fromCharCode(...u8));
+              const b64 = bytesToBase64(u8);
               entry.binary.dataUri = `data:${mimeType};base64,${b64}`;
             }
           }
