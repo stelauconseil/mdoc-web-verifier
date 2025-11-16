@@ -306,7 +306,7 @@
           <input type="checkbox" name="requestType" value="mdl_driving"> mDL Driving
         </label>
         <label class="radio-chip small">
-          <input type="checkbox" name="requestType" value="mdl_full"> mDL Full
+          <input type="checkbox" name="requestType" value="mdl_full" checked> mDL Full
         </label>
       </div>
       
@@ -656,7 +656,7 @@ openssl req -new -x509 -key reader_key.pem -out reader_cert.pem -days 365 \
 
 <script type="module">
 // ==== App Version (must match CACHE_VERSION in sw.js) ====
-const APP_VERSION = 38; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
+const APP_VERSION = 39; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
 // Expose globally for auxiliary modules
 window.APP_VERSION = APP_VERSION;
 
