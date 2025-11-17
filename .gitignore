@@ -1,3 +1,4 @@
 # Backup files
 backup/**
 .DS_Store
+.venv/
