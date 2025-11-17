@@ -480,24 +480,6 @@
           <!-- Status messages will appear here -->
         </div>
 
-        <div style="margin-top: 1.0rem; padding: 1rem; background: #e7f3ff; border-radius: 8px; border: 1px solid #2196f3;">
-          <strong>ℹ️ Testing Instructions:</strong>
-          <p class="muted" style="margin-top: 0.5rem; margin-bottom: 0.5rem;">
-            Generate a self-signed certificate for testing:
-          </p>
-          <pre style="background: #1e293b; color: #e2e8f0; padding: 0.75rem; border-radius: 6px; overflow-x: auto; font-size: 0.85rem; margin-top: 0.5rem;"><code># Generate P-256 private key
-openssl ecparam -name prime256v1 -genkey -noout -out reader_key.pem
-
-# Convert to PKCS#8 format (required)
-openssl pkcs8 -topk8 -nocrypt -in reader_key.pem -out reader_key_pkcs8.pem
-
-# Generate self-signed certificate
-openssl req -new -x509 -key reader_key.pem -out reader_cert.pem -days 365 \
-  -subj "/CN=Test Web Proximity Reader/O=ENCOM/C=US"</code></pre>
-          <p class="muted" style="margin-top: 0.5rem; margin-bottom: 0;">
-            Then paste the contents of <code>reader_cert.pem</code> and <code>reader_key_pkcs8.pem</code> into the fields above.
-          </p>
-        </div>
       </div>
     </section>
 
@@ -626,7 +608,7 @@ openssl req -new -x509 -key reader_key.pem -out reader_cert.pem -days 365 \
 
 <script type="module">
 // ==== App Version (must match CACHE_VERSION in sw.js) ====
-const APP_VERSION = 39; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
+const APP_VERSION = 40; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
 // Expose globally for auxiliary modules
 window.APP_VERSION = APP_VERSION;
 
@@ -876,7 +858,6 @@ function resetResponseAndLog() {
   try { if (logEl) logEl.innerHTML = ''; } catch {}
 }
 
- 
 
 // Initialize debug toggle state
 try {
@@ -1460,6 +1441,7 @@ function renderResponseViewModel(model) {
         const msoViewId = `msoView-${docIdxLocal}`;
         const sigStatusId = `sigStatus-${docIdxLocal}`;
         const chainStatusId = `chainStatus-${docIdxLocal}`;
+        const revocationStatusId = `revocationStatus-${docIdxLocal}`;
 
         // Format MSO dates
         const fmtDate = (s) => { try { return s ? new Date(s).toLocaleDateString() : '—'; } catch { return s || '—'; } };
@@ -1501,6 +1483,10 @@ function renderResponseViewModel(model) {
               <div class="data-item">
                 <div class="data-label">Chain</div>
                 <div class="data-value" id="${chainStatusId}">… validating</div>
+              </div>
+              <div class="data-item">
+                <div class="data-label">Status</div>
+                <div class="data-value" id="${revocationStatusId}">—</div>
               </div>
             </div>
 
@@ -1631,17 +1617,224 @@ function renderResponseViewModel(model) {
           const sig = doc?.signature; if (!sig || !sig.coseSign1) return;
           const sigEl = document.getElementById(`sigStatus-${idx}`);
           const chainEl = document.getElementById(`chainStatus-${idx}`);
+          const statusEl = document.getElementById(`revocationStatus-${idx}`);
           const res = await window.verifyCOSESign1SignatureWithChain(sig.coseSign1);
           if (sigEl) { sigEl.textContent = res.signatureValid ? '✅ Valid' : '❌ Invalid'; sigEl.style.color = res.signatureValid ? '#065f46' : '#991b1b'; }
           if (chainEl) { 
             if (res.chainValid == null) { chainEl.textContent = '—'; chainEl.style.color = '#0f172a'; }
             else { chainEl.textContent = res.chainValid ? '✅ Valid' : '❌ Invalid'; chainEl.style.color = res.chainValid ? '#065f46' : '#991b1b'; }
           }
+          // Trigger MSO status check (revocation) if status list is advertised
+          try {
+            console.log("statusEl", statusEl)
+            console.log("sig", sig, sig?.mso, sig?.mso?.status);
+            if (statusEl && sig) {
+              // Decode MSO payload (COSE_Sign1 content) and locate a status container
+              let statusContainer = null;
+              let msoDecoded = null;
+              const findStatusRecursive = (node, path = []) => {
+                if (!node || typeof node !== 'object') return null;
+                // Map handling
+                const entries = node instanceof Map ? Array.from(node.entries()).map(([k,v]) => [k,v]) : Object.entries(node);
+                for (const [k, v] of entries) {
+                  const curPath = path.concat([String(k)]);
+                  if (k === 'status' && v && typeof v === 'object') {
+                    // Direct status object
+                    return { container: v, path: curPath.join('.') };
+                  }
+                  if (v && typeof v === 'object') {
+                    // Check if this object itself looks like a status container
+                    const hasStatusList = (v instanceof Map) ? (v.has('status_list') || v.has('identifier_list')) : ('status_list' in v || 'identifier_list' in v);
+                    if (hasStatusList) return { container: v, path: curPath.join('.') };
+                    const deeper = findStatusRecursive(v, curPath);
+                    if (deeper) return deeper;
+                  }
+                }
+                return null;
+              };
+              try {
+                const payload = sig?.coseSign1?.[2];
+                if (payload && typeof CBOR?.decode === 'function') {
+                  const pBytes = payload instanceof Uint8Array ? payload : new Uint8Array(payload.buffer || payload, payload.byteOffset||0, payload.byteLength||payload.length||0);
+                  msoDecoded = CBOR.decode(pBytes);
+                  if (msoDecoded) {
+                    // Debug: enumerate top-level keys before any unwrapping
+                    try {
+                      if (msoDecoded instanceof Map) {
+                        const mapKeys = Array.from(msoDecoded.keys()).map(k=>String(k));
+                        console.log('[StatusCheck][Debug] Top-level Map keys:', mapKeys);
+                      } else if (typeof msoDecoded === 'object') {
+                        console.log('[StatusCheck][Debug] Top-level object keys:', Object.keys(msoDecoded));
+                      }
+                    } catch {}
+
+                    // Local helper: unwrap Tagged or embedded CBOR bytes (reuse earlier pattern)
+                    const localIsTagged = (v) => {
+                      try { return v && typeof v === 'object' && typeof v.tag === 'number' && 'value' in v; } catch { return false; }
+                    };
+                    const localToUint8 = (v) => {
+                      if (v instanceof Uint8Array) return v;
+                      if (ArrayBuffer.isView(v)) return new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+                      if (v instanceof ArrayBuffer) return new Uint8Array(v);
+                      if (Array.isArray(v)) { try { return new Uint8Array(v); } catch {} }
+                      return null;
+                    };
+                    const localTryCborDecode = (bytes) => {
+                      try {
+                        if (!bytes || !(bytes instanceof Uint8Array) || typeof CBOR?.decode !== 'function') return null;
+                        const dec = CBOR.decode(bytes);
+                        if (dec && (Array.isArray(dec) || dec instanceof Map || typeof dec === 'object')) return dec;
+                        return null;
+                      } catch { return null; }
+                    };
+                    const localUnwrap = (v) => {
+                      let cur = v; let changed = true; let guard = 0;
+                      while (changed && guard++ < 4) {
+                        changed = false;
+                        if (localIsTagged(cur)) { cur = cur.value; changed = true; continue; }
+                        const asBytes = localToUint8(cur);
+                        if (asBytes) {
+                          const dec = localTryCborDecode(asBytes);
+                          if (dec != null) { cur = dec; changed = true; continue; }
+                        }
+                      }
+                      return cur;
+                    };
+                    const searchRoot = localUnwrap(msoDecoded);
+                    if (searchRoot !== msoDecoded) {
+                      try {
+                        if (searchRoot instanceof Map) {
+                          console.log('[StatusCheck][Debug] Unwrapped Map keys:', Array.from(searchRoot.keys()).map(k=>String(k)));
+                        } else if (typeof searchRoot === 'object') {
+                          console.log('[StatusCheck][Debug] Unwrapped object keys:', Object.keys(searchRoot));
+                        }
+                      } catch {}
+                    }
+                    // Prefer unwrapped root for status detection
+                    const root = searchRoot;
+                    let topLevelStatus = null;
+                    if (root instanceof Map) {
+                      topLevelStatus = root.get('status') || root.get('status_list') || root.get('identifier_list');
+                    } else if (root && typeof root === 'object') {
+                      topLevelStatus = root.status || root.status_list || root.identifier_list;
+                    }
+                    // Legacy path removed; using unified 'topLevelStatus' computed above on unwrapped root
+                    if (topLevelStatus) {
+                      statusContainer = topLevelStatus;
+                      console.log('[StatusCheck] Found top-level status');
+                    } else {
+                      const found = findStatusRecursive(root);
+                      if (found) {
+                        statusContainer = found.container;
+                        console.log('[StatusCheck] Found status via recursive search at path', found.path);
+                      } else {
+                        console.log('[StatusCheck] No status container found in decoded MSO (root keys logged above).');
+                        try { log('Status: no status container'); } catch {}
+                      }
+                    }
+                  } else {
+                    console.warn('[StatusCheck] MSO payload decoded to null/undefined');
+                  }
+                } else {
+                  console.warn('[StatusCheck] Missing payload or CBOR.decode unavailable');
+                }
+              } catch (e) {
+                console.warn('[StatusCheck] Failed to decode COSE payload for status:', e);
+              }
+
+              if (statusContainer) {
+                statusEl.textContent = '… checking'; statusEl.style.color = '#0f172a';
+                try { log('Checking revocation status…'); } catch {}
+
+                // Extract a likely status info object (identifier_list/status_list or the container itself)
+                const getField = (obj, key) => (obj instanceof Map) ? obj.get(key) : (obj ? obj[key] : undefined);
+                let statusInfo = getField(statusContainer, 'identifier_list') || getField(statusContainer, 'status_list') || statusContainer;
+                if (statusInfo === statusContainer) {
+                  // If container itself isn't clearly a statusList/identifierList, attempt to pull nested one
+                  const alt = getField(statusContainer, 'status') || getField(statusContainer, 'status_list') || getField(statusContainer, 'identifier_list');
+                  if (alt) statusInfo = alt;
+                }
+
+                // Best-effort preview logging before calling the checker
+                try {
+                  const sUri = (statusInfo instanceof Map)
+                    ? (statusInfo.get('uri') || statusInfo.get('url') || statusInfo.get('u'))
+                    : (statusInfo?.uri || statusInfo?.url || statusInfo?.u);
+                  const sIdx = (statusInfo instanceof Map)
+                    ? (statusInfo.get('idx') ?? statusInfo.get('index') ?? statusInfo.get('i'))
+                    : (statusInfo?.idx ?? statusInfo?.index ?? statusInfo?.i);
+                  console.log('[StatusCheck] Initiating fetch', { uri: sUri, idx: sIdx });
+                  try { if (sUri) log(`Status: fetching ${sUri}`); } catch {}
+                } catch {}
+
+                // CORS helper: proxy cross-origin URLs to avoid browser CORS blocks (GET only)
+                const maybeProxy = (u) => {
+                  try {
+                    if (!u || typeof u !== 'string') return u;
+                    const parsed = new URL(u, location.href);
+                    // Same-origin: no proxy
+                    if (parsed.origin === location.origin) return u;
+                    // Already proxied via isomorphic-git proxy
+                    if (parsed.hostname === 'cors-anywhere.com') return u;
+                    // Use a simple, binary-safe CORS proxy for GETs
+                    const proxied = `https://cors-anywhere.com/${parsed.href}`;
+                    console.warn('[StatusCheck] Using CORS proxy for status fetch:', proxied);
+                    try { log('Status: using CORS proxy'); } catch {}
+                    return proxied;
+                  } catch { return u; }
+                };
+                const cloneStatusInfoWithProxy = (si) => {
+                  const get = (obj, key) => (obj instanceof Map) ? obj.get(key) : (obj ? obj[key] : undefined);
+                  const set = (obj, key, val) => { if (obj instanceof Map) obj.set(key, val); else obj[key] = val; };
+                  const mk = (obj) => obj instanceof Map ? new Map(obj) : { ...(obj || {}) };
+                  let out = mk(si);
+                  const sUri = get(si, 'uri') || get(si, 'url') || get(si, 'u');
+                  if (typeof sUri === 'string') {
+                    const p = maybeProxy(sUri);
+                    // Set on common keys to maximize compatibility downstream
+                    set(out, 'uri', p);
+                    set(out, 'url', p);
+                  }
+                  const pages = get(si, 'pages') || get(si, 'pageUris');
+                  if (Array.isArray(pages)) {
+                    const mapped = pages.map((x) => typeof x === 'string' ? maybeProxy(x) : x);
+                    set(out, 'pages', mapped);
+                    set(out, 'pageUris', mapped);
+                  }
+                  return out;
+                };
+
+                const st = await window.checkMsoRevocationStatus(cloneStatusInfoWithProxy(statusInfo), sig);
+                if (st && st.result === 'revoked') {
+                  statusEl.textContent = '⛔ Revoked' + (st.kind ? ` (${st.kind})` : ''); statusEl.style.color = '#991b1b';
+                  try { log(`Status result: Revoked${st.kind ? ' ('+st.kind+')' : ''}`); } catch {}
+                } else if (st && st.result === 'active') {
+                  statusEl.textContent = '✅ Active' + (st.kind ? ` (${st.kind})` : ''); statusEl.style.color = '#065f46';
+                  try { log(`Status result: Active${st.kind ? ' ('+st.kind+')' : ''}`); } catch {}
+                } else {
+                  statusEl.textContent = '— Unknown'; statusEl.style.color = '#0f172a';
+                  try { log('Status result: Unknown'); } catch {}
+                }
+                if (st && st.source) {
+                  statusEl.title = `source: ${st.source}`;
+                }
+              } else {
+                // No status container -> leave status as dash if untouched
+                if (statusEl.textContent === '—') {
+                  statusEl.title = 'No status container found in MSO payload';
+                }
+              }
+            }
+          } catch (revErr) {
+            if (statusEl) { statusEl.textContent = '❌ Error'; statusEl.style.color = '#991b1b'; statusEl.title = String(revErr?.message || revErr); }
+          }
         } catch (e) {
           const sigEl = document.getElementById(`sigStatus-${idx}`);
           const chainEl = document.getElementById(`chainStatus-${idx}`);
+          const statusEl = document.getElementById(`revocationStatus-${idx}`);
           if (sigEl) { sigEl.textContent = '❌ Error'; sigEl.style.color = '#991b1b'; }
           if (chainEl) { chainEl.textContent = '❌ Error'; chainEl.style.color = '#991b1b'; }
+          if (statusEl) { statusEl.textContent = '—'; statusEl.style.color = '#0f172a'; }
         }
       });
     }
@@ -1672,6 +1865,531 @@ async function decryptAndRenderResponse(encryptedBytes) {
 const aesGcmDecrypt = (...args) => window.WalletResponse.aesGcmDecrypt(...args);
 
 // ===== SIGNATURE VERIFICATION FUNCTIONS =====
+
+// ===== MSO Status (Revocation) Verification =====
+// Attempts to evaluate revocation status when MSO contains status.status_list { uri, idx }
+// Heuristic parsers for common status list formats (JSON/CBOR/JWT/bitset)
+(() => {
+  const textDecoder = new TextDecoder();
+
+  async function zlibDecompress(u8) {
+    try {
+      if (typeof DecompressionStream === 'function') {
+        const ds = new DecompressionStream('deflate');
+        const blob = new Blob([u8]);
+        const ab = await new Response(blob.stream().pipeThrough(ds)).arrayBuffer();
+        return new Uint8Array(ab);
+      }
+    } catch {}
+    try { console.warn('[StatusCheck] zlib decompress unavailable or failed'); } catch {}
+    return null;
+  }
+
+  const b64uToBytes = (s) => {
+    try {
+      const pad = s.length % 4 === 2 ? '==' : s.length % 4 === 3 ? '=' : s.length % 4 === 1 ? '===' : '';
+      const norm = s.replace(/-/g,'+').replace(/_/g,'/') + pad;
+      const str = atob(norm);
+      const out = new Uint8Array(str.length);
+      for (let i=0;i<str.length;i++) out[i] = str.charCodeAt(i);
+      return out;
+    } catch { return null; }
+  };
+
+  const bytesFromBase64 = (s) => {
+    try {
+      const str = atob(s);
+      const out = new Uint8Array(str.length);
+      for (let i=0;i<str.length;i++) out[i] = str.charCodeAt(i);
+      return out;
+    } catch { return null; }
+  };
+
+  const isJwt = (t) => typeof t === 'string' && t.split('.').length >= 3;
+  const parseJwtPayload = (t) => {
+    try {
+      const parts = t.split('.');
+      const payload = parts[1];
+      const bytes = b64uToBytes(payload);
+      if (!bytes) return null;
+      return JSON.parse(textDecoder.decode(bytes));
+    } catch { return null; }
+  };
+
+  const tryParseAny = (bytes, text, contentType) => {
+    // Try JWT first if text looks like it
+    if (text && isJwt(text.trim())) {
+      const p = parseJwtPayload(text.trim());
+      if (p) return p;
+    }
+    // Try JSON via text
+    if (text) {
+      try { return JSON.parse(text); } catch {}
+    }
+    // Try CBOR if available
+    try {
+      if (bytes && typeof CBOR?.decode === 'function') {
+        return CBOR.decode(bytes);
+      }
+    } catch {}
+    return null;
+  };
+
+  const toPlainObject = (v) => {
+    if (!v) return v;
+    if (v instanceof Map) {
+      const o = {}; for (const [k, vv] of v.entries()) o[String(k)] = toPlainObject(vv); return o;
+    }
+    if (Array.isArray(v)) return v.map(toPlainObject);
+    if (v && typeof v === 'object') { const o = {}; for (const [k, vv] of Object.entries(v)) o[k] = toPlainObject(vv); return o; }
+    return v;
+  };
+
+  const findFirstByKeys = (obj, keys) => {
+    if (!obj || typeof obj !== 'object') return undefined;
+    for (const k of Object.keys(obj)) {
+      const lk = k.toLowerCase();
+      if (keys.includes(lk)) return obj[k];
+    }
+    for (const v of Object.values(obj)) {
+      if (v && typeof v === 'object') {
+        const r = findFirstByKeys(v, keys);
+        if (r !== undefined) return r;
+      }
+    }
+    return undefined;
+  };
+
+  const bitsFromString01 = (s) => {
+    const len = s.length; const bytes = new Uint8Array(Math.ceil(len/8));
+    for (let i=0;i<len;i++) {
+      const bit = s.charCodeAt(i) === 0x31 ? 1 : 0; // '1'
+      if (bit) bytes[Math.floor(i/8)] |= (1 << (i % 8));
+    }
+    return bytes;
+  };
+
+  const bitsFromBoolArray = (arr) => {
+    const len = arr.length; const bytes = new Uint8Array(Math.ceil(len/8));
+    for (let i=0;i<len;i++) { if (arr[i]) bytes[Math.floor(i/8)] |= (1 << (i % 8)); }
+    return bytes;
+  };
+
+  const extractBitsetBytes = (obj) => {
+    try {
+      const plain = toPlainObject(obj);
+      // Common keys: encodedList (base64url), encoded (b64url), bits ("0101"), list (array), data/base64
+      let val = findFirstByKeys(plain, ['encodedlist','encoded','bitstring','bits','data','bytes']);
+      if (typeof val === 'string') {
+        // Try base64url then base64 then raw 01 string
+        let bytes = b64uToBytes(val) || bytesFromBase64(val);
+        if (bytes) return bytes;
+        // Maybe it's a long 0/1 string
+        if (/^[01]+$/.test(val)) return bitsFromString01(val);
+      }
+      if (Array.isArray(val)) {
+        // Could be array of numbers (0/1) or booleans
+        if (val.length && (typeof val[0] === 'number' || typeof val[0] === 'boolean')) {
+          return bitsFromBoolArray(val.map(x => !!x));
+        }
+      }
+      // Sometimes nested under status/status_list object
+      const sl = plain.status_list || plain.statusList || plain.statuslist || plain.status;
+      if (sl && typeof sl === 'object') return extractBitsetBytes(sl);
+    } catch {}
+    return null;
+  };
+
+  const isBitSetLSB = (bytes, idx) => {
+    const bi = idx >>> 3; const bit = idx & 7; if (!bytes || bi >= bytes.length) return false; return ((bytes[bi] >>> bit) & 1) === 1;
+  };
+
+  // Minimal DER reader helpers
+  function derReadLen(bytes, off) {
+    let len = bytes[off++];
+    if (len & 0x80) {
+      const n = len & 0x7f; len = 0;
+      for (let i=0;i<n;i++) { len = (len << 8) | bytes[off++]; }
+      return { len, off };
+    }
+    return { len, off };
+  }
+  function derReadTLV(bytes, off) {
+    const tag = bytes[off++];
+    const l = derReadLen(bytes, off); const len = l.len; off = l.off;
+    const start = off; const end = off + len;
+    return { tag, len, start, end, off: end };
+  }
+  function derIsConstructed(tag) { return (tag & 0x20) === 0x20; }
+  function derTagNum(tag) { return tag & 0x1f; }
+
+  function parseCertSerialFromDer(cert) {
+    try {
+      let off = 0;
+      const certSeq = derReadTLV(cert, off); if ((certSeq.tag & 0x1f) !== 0x10) return null; off = certSeq.start;
+      // tbsCertificate
+      const tbs = derReadTLV(cert, off); if ((tbs.tag & 0x1f) !== 0x10) return null; off = tbs.start;
+      // optional [0] EXPLICIT version
+      const first = cert[off];
+      if ((first & 0xe0) === 0xa0) { // [0] context-specific constructed
+        const v = derReadTLV(cert, off); off = v.off;
+      }
+      // serialNumber INTEGER
+      const sn = derReadTLV(cert, off); if ((sn.tag & 0x1f) !== 0x02) return null; off = sn.start;
+      const serial = cert.slice(sn.start, sn.end);
+      // Normalize hex (strip leading 0x00 padding)
+      let i=0; while (i < serial.length-1 && serial[i] === 0x00) i++;
+      const hex = Array.from(serial.slice(i)).map(b=>b.toString(16).padStart(2,'0')).join('').toUpperCase();
+      return hex;
+    } catch { return null; }
+  }
+
+  function parseCrlRevokedSerialsFromDer(crlBytes) {
+    const revoked = [];
+    try {
+      let off = 0;
+      const cl = derReadTLV(crlBytes, off); if ((cl.tag & 0x1f) !== 0x10) return revoked; off = cl.start;
+      // tbsCertList
+      const tbs = derReadTLV(crlBytes, off); if ((tbs.tag & 0x1f) !== 0x10) return revoked; off = tbs.start;
+      // Walk tbs children: version [0]?, signature SEQ, issuer SEQ, thisUpdate (0x17/0x18), nextUpdate optional (0x17/0x18)
+      // After that, expect revokedCertificates: SEQUENCE OF SEQUENCE
+      // Consume optional version
+      if ((crlBytes[off] & 0xe0) === 0xa0) { const v = derReadTLV(crlBytes, off); off = v.off; }
+      // signature
+      if ((crlBytes[off] & 0x1f) === 0x10) { const v = derReadTLV(crlBytes, off); off = v.off; }
+      // issuer
+      if ((crlBytes[off] & 0x1f) === 0x10) { const v = derReadTLV(crlBytes, off); off = v.off; }
+      // thisUpdate
+      if ((crlBytes[off] & 0x1f) === 0x17 || (crlBytes[off] & 0x1f) === 0x18) { const v = derReadTLV(crlBytes, off); off = v.off; }
+      // nextUpdate optional
+      if ((crlBytes[off] & 0x1f) === 0x17 || (crlBytes[off] & 0x1f) === 0x18) { const v = derReadTLV(crlBytes, off); off = v.off; }
+      // revokedCertificates (optional)
+      if ((crlBytes[off] & 0x1f) === 0x10) {
+        const rc = derReadTLV(crlBytes, off); off = rc.start;
+        // Iterate entries: SEQUENCEs inside rc
+        while (off < rc.end) {
+          const entry = derReadTLV(crlBytes, off); off = entry.off;
+          if ((entry.tag & 0x1f) !== 0x10) continue;
+          // userCertificate INTEGER is first child
+          let eoff = entry.start;
+          const userCert = derReadTLV(crlBytes, eoff); eoff = userCert.off;
+          if ((userCert.tag & 0x1f) === 0x02) {
+            const serial = crlBytes.slice(userCert.start, userCert.end);
+            let i=0; while (i < serial.length-1 && serial[i] === 0x00) i++;
+            const hex = Array.from(serial.slice(i)).map(b=>b.toString(16).padStart(2,'0')).join('').toUpperCase();
+            revoked.push(hex);
+          }
+        }
+      }
+    } catch {}
+    return revoked;
+  }
+
+  function tryExtractSignerCertDer(sig) {
+    try {
+      const cose = sig && sig.coseSign1;
+      if (!cose) return null;
+      const unprot = cose[1];
+      let x5 = null;
+      if (unprot instanceof Map) x5 = unprot.get(33);
+      else if (unprot && typeof unprot === 'object') x5 = unprot[33];
+      if (!x5) return null;
+      // x5chain can be bstr or array of bstr; choose first as signer
+      if (x5 instanceof Uint8Array) return x5;
+      if (Array.isArray(x5)) {
+        const first = x5[0];
+        if (first instanceof Uint8Array) return first;
+        if (first && first.type === 'Buffer' && Array.isArray(first.data)) return new Uint8Array(first.data);
+      }
+      // Try Buffer-like field
+      if (x5 && x5.type === 'Buffer' && Array.isArray(x5.data)) return new Uint8Array(x5.data);
+    } catch {}
+    return null;
+  }
+
+  async function checkMsoRevocationStatus(statusInfo, sig) {
+    try {
+      // Normalize input and detect mechanism
+      const asObj = (v) => (v instanceof Map) ? Object.fromEntries(v) : v;
+      const unwrapTag = (v) => (v && typeof v === 'object' && 'value' in v && typeof v.value !== 'undefined') ? v.value : v;
+      const rootInfo = asObj(statusInfo) || {};
+
+      // Unwrap common wrapper shapes e.g., { data: <ref>, status: ... }
+      // Some wallets wrap the reference under 'data' or nested under identifier_list/status_list
+      let info = rootInfo;
+      const tryUnwrapRef = (obj) => {
+        if (!obj || typeof obj !== 'object') return null;
+        // Prefer explicit data/ref/reference keys
+        const candidate = obj.data ?? obj.ref ?? obj.reference ?? obj.r ?? null;
+        const unwrapped = asObj(unwrapTag(candidate));
+        if (unwrapped && typeof unwrapped === 'object') return unwrapped;
+        return null;
+      };
+      // 1) Direct wrapper
+      let unwrapped = tryUnwrapRef(info);
+      // 2) Nested under identifier_list/status_list
+      if (!unwrapped && (info.identifier_list || info.status_list || info.identifierList || info.statusList)) {
+        const nested = asObj(unwrapTag(info.identifier_list || info.status_list || info.identifierList || info.statusList));
+        unwrapped = tryUnwrapRef(nested) || nested;
+      }
+      if (unwrapped && typeof unwrapped === 'object') info = unwrapped;
+
+      const hasIdentifier = (info && (info.id != null || info.identifier != null));
+      const hasIndex = (info && (info.idx != null || info.index != null));
+
+      let uri = unwrapTag(info.uri || info.url || info.u);
+      if (typeof uri !== 'string' || !uri) return { result: 'unknown', reason: 'missing_uri' };
+
+      let idx = undefined; let idValue = undefined;
+      if (hasIdentifier && !hasIndex) {
+        idValue = unwrapTag(info.id ?? info.identifier);
+      } else {
+        idx = unwrapTag(info.idx ?? info.index ?? info.i);
+        if (typeof idx !== 'number') { const n = Number(idx); if (!Number.isNaN(n)) idx = n; }
+      }
+
+      const ACCEPT_STATUS = 'application/statuslist+cwt, application/identifierlist+cwt, application/cose; cose-type="cose-sign1", application/cbor, application/json, application/pkix-crl, application/octet-stream, text/plain';
+      try { console.log('[StatusCheck] Start', { uri, idx, hasIdentifier, hasIndex }); } catch {}
+      try { log(`Status: checking ${uri}${typeof idx==='number' ? ' @ idx '+idx : ''}`); } catch {}
+      const res = await fetch(uri, { headers: { 'Accept': ACCEPT_STATUS } });
+      try { console.log('[StatusCheck] Fetched top-level resource', { uri, status: res.status, contentType: res.headers.get('content-type') }); } catch {}
+      const contentType = (res.headers.get('content-type') || '').toLowerCase();
+      const buf = new Uint8Array(await res.arrayBuffer());
+      let text = null;
+      try { text = await res.clone().text(); } catch {}
+
+      let parsed = tryParseAny(buf, text, contentType);
+      let bitset = null;
+
+      // CRL handling (legacy sources)
+      const isPemCrl = text && /-----BEGIN (X509 |)CRL-----/.test(text);
+      const isCrlType = /application\/pkix-crl/.test(contentType);
+      if (isPemCrl || isCrlType) {
+        let crlDer = buf;
+        if (isPemCrl) {
+          const m = text.match(/-----BEGIN [^-]*CRL-----([\s\S]*?)-----END [^-]*CRL-----/);
+          if (m) {
+            const base64 = m[1].replace(/[^A-Za-z0-9+/=]/g,'');
+            const b = bytesFromBase64(base64); if (b) crlDer = b;
+          }
+        }
+        const revokedSerials = parseCrlRevokedSerialsFromDer(crlDer);
+        let signerSerial = null;
+        const certDer = tryExtractSignerCertDer(sig);
+        if (certDer) signerSerial = parseCertSerialFromDer(certDer);
+        if (signerSerial) {
+          const isRev = revokedSerials.includes(signerSerial);
+          return { result: isRev ? 'revoked' : 'active', kind: 'CRL', source: uri, serial: signerSerial };
+        }
+        return { result: 'unknown', reason: 'missing_signer_serial', kind: 'CRL', source: uri };
+      }
+
+      // CWT (COSE_Sign1) Token Status List or IdentifierList
+      let cwt = null;
+      try {
+        const maybe = typeof CBOR?.decode === 'function' ? CBOR.decode(buf) : null;
+        if (Array.isArray(maybe) && maybe.length === 4) cwt = maybe;
+      } catch {}
+      if (cwt) {
+        try { console.log('[StatusCheck] Detected COSE_Sign1 (CWT)'); } catch {}
+        // Verify signature if possible
+        try {
+          if (typeof window.verifyCOSESign1SignatureWithChain === 'function') {
+            const ver = await window.verifyCOSESign1SignatureWithChain(cwt);
+            if (ver && ver.signatureValid === false) {
+              return { result: 'unknown', reason: 'invalid_cwt_signature', kind: (hasIdentifier? 'IdentifierList' : 'StatusList'), source: uri };
+            }
+          }
+        } catch {}
+
+        // Decode claims
+        const payload = cwt[2];
+        let claims = null;
+        try { claims = (payload instanceof Uint8Array) ? CBOR.decode(payload) : payload; } catch {}
+        const plain = toPlainObject(claims) || {};
+        try { console.log('[StatusCheck] Parsed CWT claims'); } catch {}
+
+        // exp claim is required and must be in the future
+        const expVal = plain.exp ?? plain[4];
+        if (expVal == null) return { result: 'unknown', reason: 'missing_exp', kind: (hasIdentifier? 'IdentifierList' : 'StatusList'), source: uri };
+        const nowSec = Math.floor(Date.now()/1000);
+        const expSec = typeof expVal === 'number' ? expVal : Number(expVal);
+        if (!Number.isFinite(expSec)) return { result: 'unknown', reason: 'invalid_exp', kind: (hasIdentifier? 'IdentifierList' : 'StatusList'), source: uri };
+        if (expSec < nowSec) return { result: 'unknown', reason: 'expired', kind: (hasIdentifier? 'IdentifierList' : 'StatusList'), source: uri };
+
+        // IdentifierList mechanism
+        if (hasIdentifier && idValue != null) {
+          const kind = 'IdentifierList';
+          try { console.log('[StatusCheck] Using IdentifierList mechanism'); } catch {}
+          // claim 65530 or object with 'identifiers'
+          const idListClaim = plain[65530] || plain.IdentifierList || plain.identifierlist || plain.identifiers || findFirstByKeys(plain, ['identifierlist','identifiers']);
+          let idMap = null;
+          if (idListClaim && typeof idListClaim === 'object') {
+            if ('identifiers' in idListClaim) idMap = idListClaim.identifiers;
+            else idMap = idListClaim;
+          }
+          idMap = toPlainObject(idMap) || {};
+          const toHex = (u8) => Array.from(u8).map(b=>b.toString(16).padStart(2,'0')).join('').toUpperCase();
+          let targetHex = null;
+          if (idValue instanceof Uint8Array) targetHex = toHex(idValue);
+          else if (idValue && idValue.type==='Buffer' && Array.isArray(idValue.data)) targetHex = toHex(new Uint8Array(idValue.data));
+          else if (typeof idValue === 'string') {
+            const b = b64uToBytes(idValue) || bytesFromBase64(idValue);
+            if (b) targetHex = toHex(b); else targetHex = idValue.replace(/^0x/i,'').toUpperCase();
+          }
+          if (!targetHex) return { result: 'unknown', reason: 'invalid_identifier', kind, source: uri };
+          let revoked = false;
+          for (const [k, v] of Object.entries(idMap)) {
+            let keyHex = null;
+            if (typeof k === 'string') {
+              const kb = b64uToBytes(k) || bytesFromBase64(k);
+              if (kb) keyHex = toHex(kb);
+              else if (/^[0-9A-Fa-f]+$/.test(k)) keyHex = k.toUpperCase();
+            } else if (k && k.type==='Buffer' && Array.isArray(k.data)) {
+              keyHex = toHex(new Uint8Array(k.data));
+            }
+            if (!keyHex && v && v._keyRaw instanceof Uint8Array) keyHex = toHex(v._keyRaw);
+            if (keyHex && keyHex === targetHex) { revoked = true; break; }
+          }
+          const out = { result: revoked ? 'revoked' : 'active', kind, source: uri };
+          try { console.log('[StatusCheck] Result', out); } catch {}
+          try { log(`Status result: ${out.result === 'revoked' ? 'Revoked' : 'Active'} (IdentifierList)`); } catch {}
+          return out;
+        }
+
+        // StatusList mechanism with bitset
+        const kind = 'StatusList';
+        const statusObj = plain.StatusList || plain.statusList || plain.status_list || findFirstByKeys(plain, ['statuslist','status_list','status']);
+        // The spec variant may include a compressed list as 'lst' (zlib) and a 'bits' flag set to 1.
+        const lstField = statusObj && (statusObj.lst || statusObj.list || findFirstByKeys(statusObj, ['lst','list']));
+        const bitsField = statusObj ? (statusObj.bits || statusObj.bitstring || findFirstByKeys(statusObj, ['bits','bitstring'])) : undefined;
+        let bitsBytes = null;
+        if (lstField instanceof Uint8Array) {
+          // Attempt zlib decompression
+          bitsBytes = await zlibDecompress(lstField);
+        }
+        if (!bitsBytes && bitsField instanceof Uint8Array) bitsBytes = bitsField;
+        else if (!bitsBytes && typeof bitsField === 'string') bitsBytes = b64uToBytes(bitsField) || bytesFromBase64(bitsField) || (/^[01]+$/.test(bitsField) ? bitsFromString01(bitsField) : null);
+        if (!bitsBytes) return { result: 'unknown', reason: 'missing_bits', kind, source: uri };
+        if (typeof idx !== 'number') return { result: 'unknown', reason: 'missing_idx', kind, source: uri };
+        const isRev = isBitSetLSB(bitsBytes, idx);
+        const out = { result: isRev ? 'revoked' : 'active', index: idx, source: uri, kind };
+        try { console.log('[StatusCheck] Result', out); } catch {}
+        try { log(`Status result: ${out.result === 'revoked' ? 'Revoked' : 'Active'} (StatusList)`); } catch {}
+        return out;
+      }
+
+      // Fallback: non-COSE raw bitset or JSON/CBOR object
+      if (parsed != null) {
+        if (typeof parsed === 'string' && isJwt(parsed)) parsed = parseJwtPayload(parsed) || parsed;
+        bitset = extractBitsetBytes(parsed);
+      }
+      if (!bitset) {
+        if (!contentType || /octet-stream|application\/vnd\.status-list|application\/x-binary/.test(contentType)) {
+          bitset = buf;
+        }
+      }
+
+      // Additional fallback: paged StatusPageList provider
+      // If the first fetch returned metadata (no bitset), try fetching the page containing idx
+      if ((!bitset || !(bitset instanceof Uint8Array)) && typeof idx === 'number') {
+        const looksPaged = /statuspagelist/i.test(uri) || (parsed && typeof parsed === 'object' && (('pageSize' in parsed) || ('page_size' in parsed) || ('pages' in parsed)));
+        if (looksPaged) {
+          let pageSize = 0;
+          try {
+            const n = Number(parsed?.pageSize ?? parsed?.page_size ?? parsed?.pageLength);
+            if (Number.isFinite(n) && n > 0) pageSize = n;
+          } catch {}
+          if (!pageSize) pageSize = 2048; // sensible default
+          const pageIndex = Math.floor(idx / pageSize);
+          try {
+            let pageUri = `${uri.replace(/\/$/, '')}/${pageIndex}`;
+            try {
+              const pages = Array.isArray(parsed?.pages) ? parsed.pages : (Array.isArray(parsed?.pageUris) ? parsed.pageUris : null);
+              if (pages && pages.length > pageIndex) {
+                const p = pages[pageIndex];
+                if (typeof p === 'string') pageUri = p;
+                else if (p && typeof p === 'object') pageUri = p.uri || p.url || pageUri;
+              }
+            } catch {}
+            try { console.log('[StatusCheck] Paged provider detected', { pageIndex, pageSize, pageUri }); } catch {}
+            try { log(`Status: fetching page ${pageIndex} (${pageSize})`); } catch {}
+            const res2 = await fetch(pageUri, { headers: { 'Accept': ACCEPT_STATUS } });
+            const contentType2 = (res2.headers.get('content-type') || '').toLowerCase();
+            const buf2 = new Uint8Array(await res2.arrayBuffer());
+            let text2 = null; try { text2 = await res2.clone().text(); } catch {}
+            let parsed2 = tryParseAny(buf2, text2, contentType2);
+
+            // Try CWT first (COSE_Sign1)
+            try {
+              const maybe2 = typeof CBOR?.decode === 'function' ? CBOR.decode(buf2) : null;
+              if (Array.isArray(maybe2) && maybe2.length === 4) {
+                const payload2 = maybe2[2];
+                let claims2 = null;
+                try { claims2 = (payload2 instanceof Uint8Array) ? CBOR.decode(payload2) : payload2; } catch {}
+                const plain2 = toPlainObject(claims2) || {};
+                const statusObj2 = plain2.StatusList || plain2.statusList || plain2.status_list || findFirstByKeys(plain2, ['statuslist','status_list','status']);
+                const lstField2 = statusObj2 && (statusObj2.lst || statusObj2.list || findFirstByKeys(statusObj2, ['lst','list']));
+                const bitsField2 = statusObj2 ? (statusObj2.bits || statusObj2.bitstring || findFirstByKeys(statusObj2, ['bits','bitstring'])) : undefined;
+                let bitsBytes2 = null;
+                if (lstField2 instanceof Uint8Array) bitsBytes2 = await zlibDecompress(lstField2);
+                if (!bitsBytes2 && bitsField2 instanceof Uint8Array) bitsBytes2 = bitsField2;
+                else if (!bitsBytes2 && typeof bitsField2 === 'string') bitsBytes2 = b64uToBytes(bitsField2) || bytesFromBase64(bitsField2) || (/^[01]+$/.test(bitsField2) ? bitsFromString01(bitsField2) : null);
+                if (bitsBytes2) {
+                  const localIdx = idx - pageIndex * pageSize;
+                  const isRev = isBitSetLSB(bitsBytes2, localIdx);
+                  const out = { result: isRev ? 'revoked' : 'active', index: idx, page: pageIndex, pageSize, source: pageUri, kind: 'StatusList' };
+                  try { console.log('[StatusCheck] Result (paged CWT)', out); } catch {}
+                  try { log(`Status result: ${out.result === 'revoked' ? 'Revoked' : 'Active'} (StatusList page ${pageIndex})`); } catch {}
+                  return out;
+                }
+              }
+            } catch {}
+
+            // Try generic JSON/CBOR extraction
+            let bitset2 = null;
+            if (parsed2 != null) {
+              if (typeof parsed2 === 'string' && isJwt(parsed2)) parsed2 = parseJwtPayload(parsed2) || parsed2;
+              bitset2 = extractBitsetBytes(parsed2);
+            }
+            if (!bitset2) {
+              if (!contentType2 || /octet-stream|application\/vnd\.status-list|application\/x-binary/.test(contentType2)) {
+                bitset2 = buf2;
+              }
+            }
+            if (bitset2 && bitset2 instanceof Uint8Array) {
+              const localIdx = idx - pageIndex * pageSize;
+              const isRevoked = isBitSetLSB(bitset2, localIdx);
+              const out = { result: isRevoked ? 'revoked' : 'active', index: idx, page: pageIndex, pageSize, source: pageUri, kind: 'StatusList' };
+              try { console.log('[StatusCheck] Result (paged raw)', out); } catch {}
+              try { log(`Status result: ${out.result === 'revoked' ? 'Revoked' : 'Active'} (StatusList page ${pageIndex})`); } catch {}
+              return out;
+            }
+          } catch {}
+        }
+      }
+
+      if (!bitset || !(bitset instanceof Uint8Array)) {
+        try { console.warn('[StatusCheck] Unrecognized status list format at top-level', { uri }); } catch {}
+        try { log('Status result: Unknown (format)'); } catch {}
+        return { result: 'unknown', reason: 'unrecognized_status_list_format', source: uri };
+      }
+      if (typeof idx !== 'number') return { result: 'unknown', reason: 'missing_idx', source: uri };
+      const isRevoked = isBitSetLSB(bitset, idx);
+      const out = { result: isRevoked ? 'revoked' : 'active', index: idx, source: uri, kind: 'StatusList' };
+      try { console.log('[StatusCheck] Result (top-level)', out); } catch {}
+      try { log(`Status result: ${out.result === 'revoked' ? 'Revoked' : 'Active'} (StatusList)`); } catch {}
+      return out;
+    } catch (e) {
+      try { console.error('[StatusCheck] Error', e); } catch {}
+      try { log('Status result: Error'); } catch {}
+      return { result: 'unknown', reason: 'error', error: String(e && e.message || e) };
+    }
+  }
+
+  // Expose globally
+  window.checkMsoRevocationStatus = checkMsoRevocationStatus;
+})();
 
 // Extract public key from X.509 certificate (DER format)
 // Supports NIST curves (P-256, P-384) via Web Crypto API
