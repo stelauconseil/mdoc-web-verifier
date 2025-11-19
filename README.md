@@ -39,7 +39,10 @@ You can bulk‑import issuer CAs:
 - Import from file: preferred and most reliable.
 - Import from URI: supported; the app handles CBOR/COSE/CWT, JSON, data URIs, and base64 blobs. It retries transient HTTP errors (503/5xx/429) and optionally supports a CORS proxy via `opts.corsProxyBase` if the server blocks cross‑origin requests. If fetch is blocked or unstable, download the file and use Import from file instead.
 
-Example URI: https://vical.dts.aamva.org/vical/vc/vc-2025-09-27-1758957681255
+Example URI:
+
+- https://nzta.mdoc.online/NZTATestVical.vical
+- https://vical.dts.aamva.org/vical/vc/vc-2025-09-27-1758957681255
 
 The import summary shows imported, skipped (duplicates), unknown (non‑cert entries), and errors.
 

@@ -2149,9 +2149,20 @@ const aesGcmDecrypt = (...args) => window.WalletResponse.aesGcmDecrypt(...args);
       }
 
       const ACCEPT_STATUS = 'application/statuslist+cwt, application/identifierlist+cwt, application/cose; cose-type="cose-sign1", application/cbor, application/json, application/pkix-crl, application/octet-stream, text/plain';
-      try { console.log('[StatusCheck] Start', { uri, idx, hasIdentifier, hasIndex }); } catch {}
+      // Apply CORS proxy for cross-origin requests
+      const proxyUri = (() => {
+        try {
+          const parsed = new URL(uri, location.href);
+          if (parsed.origin === location.origin) return uri;
+          if (parsed.hostname === 'cors-anywhere.com') return uri;
+          const proxied = `https://cors-anywhere.com/${parsed.href}`;
+          console.warn('[StatusCheck] Using CORS proxy:', proxied);
+          return proxied;
+        } catch { return uri; }
+      })();
+      try { console.log('[StatusCheck] Start', { uri: proxyUri, idx, hasIdentifier, hasIndex }); } catch {}
       try { log(`Status: checking ${uri}${typeof idx==='number' ? ' @ idx '+idx : ''}`); } catch {}
-      const res = await fetch(uri, { headers: { 'Accept': ACCEPT_STATUS } });
+      const res = await fetch(proxyUri, { headers: { 'Accept': ACCEPT_STATUS } });
       try { console.log('[StatusCheck] Fetched top-level resource', { uri, status: res.status, contentType: res.headers.get('content-type') }); } catch {}
       const contentType = (res.headers.get('content-type') || '').toLowerCase();
       const buf = new Uint8Array(await res.arrayBuffer());
@@ -2314,7 +2325,42 @@ const aesGcmDecrypt = (...args) => window.WalletResponse.aesGcmDecrypt(...args);
             } catch {}
             try { console.log('[StatusCheck] Paged provider detected', { pageIndex, pageSize, pageUri }); } catch {}
             try { log(`Status: fetching page ${pageIndex} (${pageSize})`); } catch {}
-            const res2 = await fetch(pageUri, { headers: { 'Accept': ACCEPT_STATUS } });
+            // Apply CORS proxy to paged fetch
+            const proxyPageUri = (() => {
+              try {
+                const parsed = new URL(pageUri, location.href);
+                if (parsed.origin === location.origin) return pageUri;
+                if (parsed.hostname === 'cors-anywhere.com') return pageUri;
+                const proxied = `https://cors-anywhere.com/${parsed.href}`;
+                console.warn('[StatusCheck] Using CORS proxy for paged fetch:', proxied);
+                return proxied;
+              } catch { return pageUri; }
+            })();
+            let pageIndexUsed = pageIndex;
+            let pageUriUsed = proxyPageUri;
+            let res2 = await fetch(pageUriUsed, { headers: { 'Accept': ACCEPT_STATUS } });
+            if (res2.status === 404 && /statuspagelist/i.test(pageUri)) {
+              // Fallback: provider may use 1-based page numbering
+              const altIndex = pageIndex + 1;
+              const altUri = `${uri.replace(/\/$/, '')}/${altIndex}`;
+              const proxyAltUri = (() => {
+                try {
+                  const parsed = new URL(altUri, location.href);
+                  if (parsed.origin === location.origin) return altUri;
+                  if (parsed.hostname === 'cors-anywhere.com') return altUri;
+                  return `https://cors-anywhere.com/${parsed.href}`;
+                } catch { return altUri; }
+              })();
+              try {
+                const resAlt = await fetch(proxyAltUri, { headers: { 'Accept': ACCEPT_STATUS } });
+                if (resAlt.ok) {
+                  console.warn('[StatusCheck] 404 on 0-based page; using 1-based page index fallback', { altIndex, altUri: proxyAltUri });
+                  pageIndexUsed = altIndex;
+                  pageUriUsed = proxyAltUri;
+                  res2 = resAlt;
+                }
+              } catch {}
+            }
             const contentType2 = (res2.headers.get('content-type') || '').toLowerCase();
             const buf2 = new Uint8Array(await res2.arrayBuffer());
             let text2 = null; try { text2 = await res2.clone().text(); } catch {}
@@ -4826,7 +4872,16 @@ btnImportVicalUri?.addEventListener('click', async () => {
   btnImportVicalUri.disabled = true;
   setVicalStatus('Importing from URI…');
   try {
-    const res = await window.IacaManager.importVICALFromUri(uri, { markTest: !!vicalMarkTest?.checked });
+    // Apply CORS proxy for cross-origin VICAL downloads
+    let proxied = uri;
+    try {
+      const parsed = new URL(uri, location.href);
+      if (parsed.origin !== location.origin && parsed.hostname !== 'cors-anywhere.com') {
+        proxied = `https://cors-anywhere.com/${parsed.href}`;
+        console.warn('[VICAL] Using CORS proxy for VICAL fetch:', proxied);
+      }
+    } catch {}
+    const res = await window.IacaManager.importVICALFromUri(proxied, { markTest: !!vicalMarkTest?.checked, originalUri: uri });
     await handleVicalResult(res);
   } catch (e) {
     console.error('VICAL import (URI) failed:', e);
