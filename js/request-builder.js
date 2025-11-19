@@ -208,7 +208,7 @@
           given_name: false,
           birth_date: false,
           birth_place: false,
-          nationalities: false,
+          nationalities: false, // To be removed later when EU issues compliant PID
           nationality: false,
           resident_address: false,
           resident_country: false,
