@@ -573,8 +573,8 @@
   </footer>
 
 <!-- Load libs BEFORE the module -->
-<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/cbor-web@9.0.2/dist/cbor.min.js"></script>
+<script src="js/jsQR.js"></script>
+<script src="js/cbor.min.js"></script>
 <script src="js/noble-curves.min.js"></script>
 <!-- JPEG 2000 decoder (OpenJPEG) for converting JP2/J2K portraits to JPEG -->
 <script src="js/openjpeg.js"></script>
@@ -608,7 +608,7 @@
 
 <script type="module">
 // ==== App Version (must match CACHE_VERSION in sw.js) ====
-const APP_VERSION = 40; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
+const APP_VERSION = 41; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
 // Expose globally for auxiliary modules
 window.APP_VERSION = APP_VERSION;
 
