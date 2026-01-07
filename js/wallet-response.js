@@ -1040,7 +1040,7 @@
       if (elementValue instanceof Date) {
         entry.valueKind = "date";
         try {
-          entry.text = elementValue.toISOString().split("T")[0];
+          entry.text = elementValue.toLocaleDateString();
         } catch {
           entry.text = String(elementValue);
         }
