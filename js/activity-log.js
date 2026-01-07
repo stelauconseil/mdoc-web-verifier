@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2025 Stelau
+  Copyright (c) 2026 Stelau
   Author: Nicolas Chalanset
 
   Activity Log module

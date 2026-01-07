@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  Copyright (c) 2025 Stelau
+  Copyright (c) 2026 Stelau
   Author: Nicolas Chalanset
 -->
 <html lang="en">
@@ -52,7 +52,7 @@
   <style>
     :root { color-scheme: light dark; font-family: "Inter", "Segoe UI", sans-serif; line-height: 1.5; }
     body { margin: 0; background: #F2F4F8; color: #111827; }
-    .page-header { background: linear-gradient(135deg,#0f172a,#1e293b); color: #f8fafc; margin-bottom: 3.5rem; padding: 1rem 1rem 1rem; text-align: center; }
+    .page-header { background: linear-gradient(135deg,#0f172a,#1e293b); color: #f8fafc; margin-bottom: 3.5rem; padding: 1rem 1rem 1rem; text-align: center; position: relative; }
     .page-header h1 { margin: 0; font-size: clamp(1.8rem,3vw,2.4rem); font-weight: 600; }
     .page-header p { margin: 0.75rem auto 0; max-width: 720px; color: rgba(248,250,252,0.8); }
     main { max-width: 1100px; margin: -2rem auto 3rem; padding: 0 1.5rem 3rem; }
@@ -215,7 +215,7 @@
     "screenshot": "/assets/icon-512.png",
     "softwareVersion": "2.0",
     "datePublished": "2025-01-01",
-    "dateModified": "2025-10-18",
+    "dateModified": "2026-01-07",
     "creator": {
       "@type": "Organization",
       "name": "ISO 18013-5 Web Reader"
@@ -236,6 +236,16 @@
 </head>
 <body>
   <header class="page-header" role="banner">
+    <div style="position:absolute; left:1rem; top:1rem;">
+      <label class="muted" style="font-size:0.8rem; display:flex; align-items:center; gap:0.35rem;">
+        Go to
+        <select id="pageNavSelect" style="padding:0.25rem 0.5rem; border-radius:8px; border:1px solid rgba(148,163,184,0.6); font-size:0.8rem;">
+          <option value="">Select…</option>
+          <option value="visitor.html">Visitor log</option>
+          <option value="unlikability_test.html">Unlinkability test</option>
+        </select>
+      </label>
+    </div>
     <h1>ISO 18013-5 Web Proximity Reader</h1>
     <p>Scan an <strong>mDL/mDoc device engagement QR code</strong>, connect over <strong>Web Bluetooth</strong>, and request <strong>digital credentials</strong>. Verify mobile Driver's Licenses compliant with <strong>ISO 18013-5 standard</strong>. Data is processed locally in the browser. No data is sent to external servers.</p>
   </header>
@@ -569,7 +579,7 @@
     Built by <a href="https://stelau.com">Stelau</a> for ISO 18013-5 experimentation. Web Bluetooth requires HTTPS and a compatible browser.
     <span id="appVersionFooter" style="display:block;margin-top:0.5rem;color:#64748b;font-size:0.7rem;"></span>
     <br>
-    <span style="font-size:0.9em;color:#888;">&copy; 2025 Stelau. All rights reserved.</span>
+    <span style="font-size:0.9em;color:#888;">&copy; 2026 Stelau. All rights reserved.</span>
   </footer>
 
 <!-- Load libs BEFORE the module -->
@@ -608,7 +618,7 @@
 
 <script type="module">
 // ==== App Version (must match CACHE_VERSION in sw.js) ====
-const APP_VERSION = 42; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
+const APP_VERSION = 43; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
 // Expose globally for auxiliary modules
 window.APP_VERSION = APP_VERSION;
 
@@ -5231,6 +5241,17 @@ window.addEventListener('DOMContentLoaded', () => {
   const footerVersion = document.getElementById('appVersionFooter');
   if (footerVersion) {
     footerVersion.innerText = `v${APP_VERSION}`;
+  }
+
+  // Simple page navigation dropdown in header
+  const navSelect = document.getElementById('pageNavSelect');
+  if (navSelect) {
+    navSelect.addEventListener('change', () => {
+      const target = navSelect.value;
+      if (target) {
+        window.location.href = target;
+      }
+    });
   }
 });
 

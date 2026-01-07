@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2025 Stelau
+  Copyright (c) 2026 Stelau
   Author: Nicolas Chalanset
 
   Service Worker for ISO 18013-5 Web Proximity Reader PWA
@@ -7,7 +7,7 @@
   ALSO UPDATE: APP_VERSION in index.html (line ~395) must match this value
 */
 
-const CACHE_VERSION = 42; // <-- INCREMENT THIS NUMBER WHEN UPDATING
+const CACHE_VERSION = 43; // <-- INCREMENT THIS NUMBER WHEN UPDATING
 const CACHE_NAME = `mdocreader-v${CACHE_VERSION}`;
 const RUNTIME_CACHE = `mdoc-runtime-v${CACHE_VERSION}`;
 
