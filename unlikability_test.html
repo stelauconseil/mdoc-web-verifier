@@ -75,7 +75,17 @@
         <div style="margin-top:.25rem;"><strong>Last document type:</strong> <span id="lastDocType">—</span></div>
       </div>
       <div style="margin-top:.75rem;">
-        <div class="muted" style="margin-bottom:.25rem;">History (this browser only)</div>
+        <div class="muted" style="margin-bottom:.25rem; display:flex; justify-content:space-between; align-items:center; gap:.5rem;">
+          <span>History (this browser only)</span>
+          <button
+            id="btnResetUnlinkability"
+            class="secondary"
+            title="Clear all unlinkability history stored in this browser"
+            style="display:inline-flex; align-items:center; gap:6px; padding:6px 10px; font-size:0.8rem;"
+          >
+            ♻️ Reset History
+          </button>
+        </div>
         <div style="overflow:auto; max-height: 40vh;">
           <table id="historyTable">
             <thead>
@@ -202,6 +212,7 @@
   const lastDeviceKeyEl = document.getElementById('lastDeviceKey');
   const lastDocTypeEl = document.getElementById('lastDocType');
   const historyBodyEl = document.getElementById('historyBody');
+  const btnResetUnlinkability = document.getElementById('btnResetUnlinkability');
 
   // Auto mode: each scan establishes a fresh session and evaluates linkability
 
@@ -706,6 +717,17 @@
 
   // Initial history render on load
   renderDeviceKeyHistory();
+
+  // Reset unlinkability history (local storage + UI)
+  if (btnResetUnlinkability) {
+    btnResetUnlinkability.addEventListener('click', () => {
+      try { localStorage.removeItem(DEVICE_KEY_STORE_KEY); } catch {}
+      if (holderStatusEl) holderStatusEl.textContent = 'No attestation read yet.';
+      if (lastDeviceKeyEl) lastDeviceKeyEl.textContent = '—';
+      if (lastDocTypeEl) lastDocTypeEl.textContent = '—';
+      renderDeviceKeyHistory();
+    });
+  }
 
   // ==== QR payload handler → connection ====
   async function handleQrPayload(raw, sourceLabel){

@@ -65,7 +65,17 @@
 
     <section class="card" id="logSection">
       <h2 style="margin:0 0 .5rem 0; font-size:1.1rem;">Entries</h2>
-      <div class="muted" style="margin-bottom:.5rem">Today: <span id="todayLabel">—</span></div>
+      <div class="muted" style="margin-bottom:.5rem; display:flex; justify-content:space-between; align-items:center; gap:.5rem;">
+        <span>Today: <span id="todayLabel">—</span></span>
+        <button
+          id="btnResetVisitor"
+          class="secondary"
+          title="Clear all visitor entries stored in this browser"
+          style="display:inline-flex; align-items:center; gap:6px; padding:6px 10px; font-size:0.8rem;"
+        >
+          ♻️ Reset Entries
+        </button>
+      </div>
       <div style="overflow:auto; max-height: 50vh;">
         <table id="visitorTable">
           <thead>
@@ -182,6 +192,7 @@
   const btnScan = document.getElementById('btnScan');
   const chunkInput = document.getElementById('chunk');
   const todayLabel = document.getElementById('todayLabel');
+  const btnResetVisitor = document.getElementById('btnResetVisitor');
 
   function todayISO(){ const d = new Date(); return d.toISOString().slice(0,10); }
   function timeStr(){ const d = new Date(); return d.toLocaleTimeString(); }
@@ -495,6 +506,14 @@
     renderTable();
   }
   renderTable();
+
+  // Reset visitor log (local storage + table)
+  if (btnResetVisitor) {
+    btnResetVisitor.addEventListener('click', () => {
+      try { localStorage.removeItem('visitor_log'); } catch {}
+      renderTable();
+    });
+  }
 
   // ==== QR payload handler → connection ====
   async function handleQrPayload(raw, sourceLabel){
