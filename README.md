@@ -1,69 +1,142 @@
-# ISO 18013-5 Web Verifier (mDL Reader)
+# ISO 18013-5 Web Verifier
 
-A single-page web app that reads ISO 18013-5 mobile Driver’s License (mDL) mDoc over Web Bluetooth. It scans the wallet’s Device Engagement QR, connects via BLE, establishes a secure session, and verifies COSE_Sign1 with X.509 trust anchors.
+This site lets you try ISO 18013-5 mobile IDs (mDL / mDoc) directly in your browser:
 
-- No build step. Runs directly in the browser.
-- Optional install as a PWA for offline use.
+- Scan a wallet’s Device Engagement QR code
+- Connect over Web Bluetooth
+- See the verified data returned by your wallet
+
+No account, server, or local install is required. Everything runs in your browser.
+
+---
+
+## Who this is for
+
+- People testing mobile ID wallets (mDL, EUDI PID, etc.)
+- Integrators who want to see what their wallet sends on real ISO 18013-5 sessions
+- Researchers exploring privacy, unlinkability, and age-based attestations
+
+You do **not** need to be a developer or to understand CBOR/COSE to use the basic flows.
+
+---
+
+## What you can do
+
+### 1. Main mDL / mDoc reader (home page)
+
+The home page (index.html) is a general-purpose ISO 18013-5 reader.
+
+High‑level flow:
+
+1. Open the site over HTTPS in a Chromium-based browser (Chrome / Edge).
+2. Select the Digital Credentials you want to request
+3. Click **Scan QR** and point the camera at the wallet’s Device Engagement QR, or paste an `mdoc://` URI.
+4. When the browser asks, allow **camera** and **Bluetooth** access.
+5. Select which data to request using the on‑screen options.
+6. Approve the request in your wallet; the page shows the result with a clear, human‑readable layout.
+
+Notes:
+
+- Works with wallets that support **Server Peripheral over BLE** as defined in ISO 18013‑5.
+- You can see per‑document verification status and the raw values if you want to inspect them.
+
+### 2. Visitor Log (visitor.html)
+
+The **Visitor Log** page is an example of how to use mobile IDs for simple check‑in / check‑out without a backend.
+
+What it does:
+
+- Lets visitors scan their mobile ID (EUDI PID or mDL) to create a local entry
+- Stores entries **only in your browser** (no server, no upload)
+- Shows a table with date, name, document type, and in/out times
+
+How to use it:
+
+1. Open `visitor.html` (or use the **Go to → Visitor log** menu on the home page).
+2. Click **Scan QR Code** and scan the wallet’s Device Engagement QR.
+3. Approve the request in the wallet.
+4. The visitor is added to the log; scanning again can update their time‑out.
+
+This page is meant to demonstrate a privacy‑respecting check‑in flow using mobile IDs without needing a server.
+
+### 3. Attestation Unlinkability Test (unlikability_test.html)
+
+The **Unlinkability Test** page explores how linkable different attestations from the same device are.
+
+What it tests:
+
+- Requests **minimal data** (for example, only `age_over_18` or `nationality`)
+- Extracts the **MSO deviceKey** from each response
+- Tells you whether a new scan likely came from the **same device** or a **different one**
+
+How to use it:
+
+1. Open `unlikability_test.html` (or use the **Go to → Unlinkability test** menu on the home page).
+2. Choose what to request:
+   - **EU PID : nationality**
+   - **AV : age_over_18**
+   - **mDL : age_over_18**
+3. Click **Scan QR Code** and scan your wallet’s Device Engagement QR.
+4. Approve the request in the wallet.
+5. The page shows:
+   - A **Holder status** message (new holder vs same holder)
+   - The **Last device key** fingerprint
+   - A local history of all device keys seen in this browser
+
+No personal data or keys are sent anywhere; everything is kept in local storage and can be cleared by your browser.
+
+---
+
+## Supported document types
+
+Depending on your wallet, the main reader and example pages can work with:
+
+- **mDL** – `org.iso.18013.5.1.mDL` (Mobile Driving Licence)
+- **EU PID** – `eu.europa.ec.eudi.pid.1` (Person Identification Data)
+- **EU Age Verification** – `eu.europa.ec.av.1` (age‑only attestations such as `age_over_18`)
+- **Photo ID** – `org.iso.23220.photoID.1` (+ related ISO 23220 namespaces)
+- **mICOV** – `org.micov.1` (vaccination / test attestations)
+- **mVC** – `org.iso.7367.1.mVC` (vehicle card)
+
+Your wallet may not support all of these doctypes; the app will only show data for documents actually returned by the wallet.
+
+---
 
 ## Requirements
 
-- Chromium browser (Chrome/Edge) over HTTPS
-- Camera access (QR scan) and Bluetooth access (BLE)
-- The wallet must implement “Server Peripheral” over BLE as defined by ISO 18013-5
+- Chromium browser (Chrome / Edge) over **HTTPS**
+- Camera permission (for QR scanning)
+- Bluetooth permission (for BLE)
+- A wallet that supports ISO 18013‑5 **Server Peripheral over BLE**
 
-## Quick start
+If your browser does not support Web Bluetooth or you are not on HTTPS, connection will not work.
 
-1. Open the app over HTTPS.
-2. Click Scan QR and show the wallet’s Device Engagement QR (or paste an mdoc:// URI).
-3. Connect over BLE when prompted; approve on the wallet.
-4. View the response and verification status in the UI.
+---
 
-Tips
+## Security & privacy
 
-- Use Diagnostics for logs and session details.
-- Wallets may disconnect between steps; reconnect as needed.
+- Sessions are established using the algorithms defined in ISO 18013‑5.
+- Session keys live only in browser memory and are cleared when you reload or close the page.
+- The **Visitor Log** and **Unlinkability Test** pages store data only in your browser (local storage) for your own experiments.
+- No data is sent to any backend by this app.
 
-## Features (short)
+---
 
-- QR scan → BLE connect → secure session (AES‑GCM with spec IV)
-- COSE_Sign1 verification via @noble/curves (ES256/ES384/ES512), DER→raw, low‑S
-- Reader authentication
-- IACA trust store with AKI/SKI matching and OID-driven curve/hash detection
-- Classic MSO viewer and per-document Verification Status
-- Request presets incl. mDL, EU PID, age/photo ID, mICOV, mVC
+## Advanced features
 
-## VICAL (Verified Issuer CA List)
+If you are familiar with mDL / mDoc internals, the main page also includes:
 
-You can bulk‑import issuer CAs:
+- VICAL (Verified Issuer CA List) import for issuer CA certificates
+- COSE_Sign1 verification with X.509 trust anchors
+- Classic MSO viewer and detailed verification status per document
 
-- Import from file: preferred and most reliable.
-- Import from URI: supported; the app handles CBOR/COSE/CWT, JSON, data URIs, and base64 blobs. It retries transient HTTP errors (503/5xx/429) and optionally supports a CORS proxy via `opts.corsProxyBase` if the server blocks cross‑origin requests. If fetch is blocked or unstable, download the file and use Import from file instead.
+You can import issuer CA lists either from a file or from a URI. When importing from a URI, the app understands CBOR/COSE/CWT or JSON payloads and shows which issuers were imported or skipped.
 
-Example URI:
-
-- https://nzta.mdoc.online/NZTATestVical.vical
-- https://vical.dts.aamva.org/vical/vc/vc-2025-09-27-1758957681255
-
-The import summary shows imported, skipped (duplicates), unknown (non‑cert entries), and errors.
-
-## Security notes
-
-- Session keys kept in memory only; cleared on reload
-- SessionEstablishment.data uses raw AES‑GCM ciphertext||tag per ISO 18013‑5
+---
 
 ## Troubleshooting
 
-- CORS/503 when importing by URI → try again (automatic retries), or import by file; optionally pass a CORS proxy.
-- No prompt on the wallet → ensure requested fields are set to true.
-- Wrong docType → match the wallet’s exact supported type.
-- BLE disconnects → normal behavior for some wallets; reconnect.
-
-## Files
-
-- index.html — UI and wiring
-- js/ — feature modules (device engagement, requests, responses, IACA, logs)
-- sw.js / manifest.json — optional PWA
-
-## Recent changes
-
-- VICAL import by URI is more robust: content‑type aware (CBOR/COSE/JSON), retry/backoff for 503/5xx/429, optional CORS proxy fallback; import by file unchanged.
+- **Browser says Web Bluetooth not available**: make sure you use Chrome or Edge over HTTPS.
+- **No prompt on the wallet**: ensure the requested document type and fields are supported by your wallet.
+- **BLE disconnects often**: some wallets intentionally disconnect between operations; simply scan and reconnect.
+- **Import of issuer lists fails**: download the file and use import‑from‑file on the main page instead of URI import.
