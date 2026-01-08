@@ -232,6 +232,17 @@
     try { transcriptAAD = null; } catch {}
   }
 
+  function disconnectBLE(){
+    try {
+      if (window.BLE && typeof window.BLE.disconnect === 'function') {
+        window.BLE.disconnect();
+      }
+    } catch (e) {
+      console.warn('Error disconnecting BLE device:', e);
+    }
+    resetSessionState();
+  }
+
   // BLE UUIDs are managed by the BLE transport module
 
   // ==== QR Camera ====
@@ -243,7 +254,10 @@
   }
   function stopCamera(){ scanRunning=false; try{ video.pause(); }catch{} if (video.srcObject){ for(const t of video.srcObject.getTracks()){ t.stop(); } video.srcObject=null; }}
   function tick(){ if (!scanRunning) return; const ctx2d = canvas.getContext('2d',{ willReadFrequently:true }); ctx2d.drawImage(video,0,0,canvas.width,canvas.height); const img=ctx2d.getImageData(0,0,canvas.width,canvas.height); const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' }); if (code?.data){ stopCamera(); statusEl.textContent='QR detected'; handleQrPayload(code.data, 'camera'); return;} requestAnimationFrame(tick); }
-  btnScan.addEventListener('click', ()=>{ startCamera().catch(e=>log('Camera error: '+e.message)); });  
+  btnScan.addEventListener('click', ()=>{
+    disconnectBLE();
+    startCamera().catch(e=>log('Camera error: '+e.message));
+  });  
   btnParseQr.addEventListener('click', ()=>{ handleQrPayload(qrInput.value, 'manual'); });
   btnClearQr.addEventListener('click', ()=>{ qrInput.value=''; statusEl.textContent='Idle'; });
 
@@ -706,8 +720,7 @@
       }
 
       // Auto-disconnect once we have processed the response to avoid stale GATT objects on next scan
-      try { if (window.BLE && typeof window.BLE.disconnect==='function') { window.BLE.disconnect(); } } catch {}
-      resetSessionState();
+      disconnectBLE();
       statusEl.textContent = 'Done — disconnected';
     } catch (e) {
       console.warn('Unlinkability processing failed:', e);
@@ -733,17 +746,28 @@
   async function handleQrPayload(raw, sourceLabel){
     const payload=(raw||'').trim();
     if (!payload){ statusEl.textContent='No payload'; return; }
+    disconnectBLE();
+    await new Promise(r=>setTimeout(r,150));
+
+    let parsed;
     try {
-      // Ensure any previous BLE session is torn down before starting a new one
-      try { if (window.BLE && typeof window.BLE.disconnect==='function') { window.BLE.disconnect(); } } catch {}
-      resetSessionState();
-      await new Promise(r=>setTimeout(r,200));
-      const { uuid, addr } = parseMdocUriAndDE(payload);
-      svcUUID=uuid; bleAddr=addr;
+      parsed = parseMdocUriAndDE(payload);
+    } catch (e) {
+      statusEl.textContent = 'Parse failed';
+      console.error('QR parse error:', e);
+      return;
+    }
+
+    svcUUID = parsed.uuid;
+    bleAddr = parsed.addr;
+    if (qrInput) qrInput.value = payload;
+    statusEl.textContent = `Parsed from ${sourceLabel || 'QR'}`;
+
+    try {
       await autoConnectFlow();
-    } catch(e){
-      statusEl.textContent='Parse failed';
-      console.error(e);
+    } catch (e) {
+      statusEl.textContent = `BLE error: ${e.message || e}`;
+      console.error('Auto-connect failed:', e);
     }
   }
 
