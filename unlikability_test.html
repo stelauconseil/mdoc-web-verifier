@@ -753,8 +753,9 @@
     try {
       parsed = parseMdocUriAndDE(payload);
     } catch (e) {
-      statusEl.textContent = 'Parse failed';
-      console.error('QR parse error:', e);
+      const reason = e?.message || e;
+      statusEl.textContent = `Parse failed${reason ? `: ${reason}` : ''}`;
+      console.error('QR parse error:', e, payload);
       return;
     }
 
