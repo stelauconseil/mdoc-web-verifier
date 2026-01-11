@@ -1,0 +1,4 @@
+User-agent: \*
+Allow: /
+
+Sitemap: https://mdoc-web-verifier.stelau.com/sitemap.xml
