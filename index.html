@@ -693,7 +693,6 @@ function checkBrowserCompatibility() {
       message += `<li>${issue}</li>`;
     });
     message += '</ul>';
-    message += '<p style="margin-top: 0.75rem; font-size: 0.9rem;">For best results, use <strong>Chrome or Edge</strong> on desktop with HTTPS enabled.</p>';
     
     compatMessage.innerHTML = message;
     compatWarning.classList.add('show');
