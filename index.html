@@ -393,7 +393,7 @@
 
       <div class="manual-entry">
         <label class="muted" for="qrInput">Manual QR payload (paste from clipboard or laser scanner)</label>
-        <textarea id="qrInput" placeholder="Paste the full mdoc: URI or CBOR payload here"></textarea>
+        <textarea id="qrInput" placeholder="Paste the full mdoc: URI here"></textarea>
         <div class="row" style="margin-top:0">
           <button id="btnParseQr" class="secondary">Use manual QR payload</button>
           <button id="btnClearQr">Clear</button>
@@ -1745,7 +1745,7 @@ function renderResponseViewModel(model) {
                     console.warn('[StatusCheck] MSO payload decoded to null/undefined');
                   }
                 } else {
-                  console.warn('[StatusCheck] Missing payload or CBOR.decode unavailable');
+                  console.warn('[StatusCheck] Missing payload. Decode unavailable');
                 }
               } catch (e) {
                 console.warn('[StatusCheck] Failed to decode COSE payload for status:', e);
