@@ -7,7 +7,7 @@
   ALSO UPDATE: APP_VERSION in index.html (line ~395) must match this value
 */
 
-const CACHE_VERSION = 44; // <-- INCREMENT THIS NUMBER WHEN UPDATING
+const CACHE_VERSION = 45; // <-- INCREMENT THIS NUMBER WHEN UPDATING
 const CACHE_NAME = `mdocreader-v${CACHE_VERSION}`;
 const RUNTIME_CACHE = `mdoc-runtime-v${CACHE_VERSION}`;
 
@@ -51,12 +51,12 @@ self.addEventListener("install", (event) => {
         return cache.addAll(
           PRECACHE_URLS.filter(
             (url) =>
-              url !== "/assets/icon-192.png" && url !== "/assets/icon-512.png"
-          )
+              url !== "/assets/icon-192.png" && url !== "/assets/icon-512.png",
+          ),
         );
       })
       .then(() => self.skipWaiting())
-      .catch((err) => console.error("[Service Worker] Precache failed:", err))
+      .catch((err) => console.error("[Service Worker] Precache failed:", err)),
   );
 });
 
@@ -71,15 +71,15 @@ self.addEventListener("activate", (event) => {
           cacheNames
             .filter(
               (cacheName) =>
-                cacheName !== CACHE_NAME && cacheName !== RUNTIME_CACHE
+                cacheName !== CACHE_NAME && cacheName !== RUNTIME_CACHE,
             )
             .map((cacheName) => {
               console.log("[Service Worker] Deleting old cache:", cacheName);
               return caches.delete(cacheName);
-            })
+            }),
         );
       })
-      .then(() => self.clients.claim())
+      .then(() => self.clients.claim()),
   );
 });
 
@@ -120,7 +120,7 @@ self.addEventListener("fetch", (event) => {
         .catch(() => {
           // Fall back to cache if network fails
           return caches.match(request);
-        })
+        }),
     );
     return;
   }
@@ -165,7 +165,7 @@ self.addEventListener("fetch", (event) => {
             "Content-Type": "text/plain",
           }),
         });
-      })
+      }),
   );
 });
 
@@ -179,7 +179,7 @@ self.addEventListener("message", (event) => {
     event.waitUntil(
       caches.open(RUNTIME_CACHE).then((cache) => {
         return cache.addAll(event.data.urls);
-      })
+      }),
     );
   }
 });
@@ -195,7 +195,7 @@ async function clearOldCache() {
   const cacheNames = await caches.keys();
   const oldCaches = cacheNames.filter(
     (name) =>
-      name.startsWith("mdoc-") && name !== CACHE_NAME && name !== RUNTIME_CACHE
+      name.startsWith("mdoc-") && name !== CACHE_NAME && name !== RUNTIME_CACHE,
   );
 
   await Promise.all(oldCaches.map((name) => caches.delete(name)));
