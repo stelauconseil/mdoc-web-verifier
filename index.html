@@ -361,6 +361,15 @@
           <input type="checkbox" name="requestType" value="mvc_full"> mVC Full
         </label>
       </div>
+
+      <div style="margin: 15px 0 15px 0;">
+        <strong>FR Student Card</strong>
+      </div>
+      <div class="radio-group request-type">
+        <label class="radio-chip small">
+          <input type="checkbox" name="requestType" value="fr_hsc_student"> Student Card Full
+        </label>
+      </div>
     </section>
 
     <section class="card" id="qrSection">
@@ -5138,6 +5147,9 @@ requestTypeCheckboxes.forEach(checkbox => {
         case 'mvc_full':
           description = 'mVC: vehicle registration details, vehicle characteristics, owner';
           break;
+        case 'fr_hsc_student':
+          description = 'FR Student Card (fr.ft.hsc.1): issuing authority, identity, education details';
+          break;
       }
       log(`Selected request type: ${type} - ${description}`);
     } else {
@@ -5148,6 +5160,7 @@ requestTypeCheckboxes.forEach(checkbox => {
         if (t.startsWith('photoid_')) return 'Photo ID';
         if (t.startsWith('micov_')) return 'mICOV';
         if (t.startsWith('mvc_')) return 'mVC';
+        if (t.startsWith('fr_hsc_')) return 'FR Student Card';
         return 'mDL';
       });
       const uniqueTypes = [...new Set(docTypes)];

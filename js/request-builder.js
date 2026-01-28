@@ -18,7 +18,7 @@
     if (!CBOR) throw new Error("CBOR library not available");
     if (!requestTypes) {
       requestTypes = Array.from(
-        document.querySelectorAll('input[name="requestType"]:checked')
+        document.querySelectorAll('input[name="requestType"]:checked'),
       ).map((cb) => cb.value);
     }
     if (!Array.isArray(requestTypes)) requestTypes = [requestTypes];
@@ -33,7 +33,7 @@
     }
 
     log(
-      `→ Device Request with ${deviceRequest.docRequests.length} document(s)`
+      `→ Device Request with ${deviceRequest.docRequests.length} document(s)`,
     );
 
     // Optionally add Reader Authentication per spec (inside each DocRequest)
@@ -43,11 +43,11 @@
       console.log("ReaderAuth object:", ra);
       console.log(
         "ReaderAuth.isEnabled():",
-        ra?.isEnabled ? ra.isEnabled() : undefined
+        ra?.isEnabled ? ra.isEnabled() : undefined,
       );
       console.log(
         "ReaderAuth.signReaderAuthentication:",
-        !!(ra && typeof ra.signReaderAuthentication === "function")
+        !!(ra && typeof ra.signReaderAuthentication === "function"),
       );
       if (ra && ra.isEnabled && ra.isEnabled()) {
         let addedCount = 0;
@@ -61,7 +61,7 @@
             } catch (signErr) {
               console.warn(
                 "ReaderAuth signing failed for a document:",
-                signErr?.message || signErr
+                signErr?.message || signErr,
               );
             }
           }
@@ -70,7 +70,7 @@
           log(`🔏 Added Reader Authentication to ${addedCount} document(s)`);
         } else {
           log(
-            "⚠️ ReaderAuth enabled but no itemsRequest found to sign in any DocRequest"
+            "⚠️ ReaderAuth enabled but no itemsRequest found to sign in any DocRequest",
           );
         }
       }
@@ -89,6 +89,8 @@
     let photoIdFields = null; // org.iso.23220.photoID.1
     let photoIdDGFields = null; // org.iso.23220.datagroups.1
     let micovAttestationFields = null;
+    let frHscIsoFields = null;
+    let frHscFields = null;
 
     if (requestType.startsWith("pid_")) {
       docType = "eu.europa.ec.eudi.pid.1";
@@ -103,7 +105,7 @@
       log(
         "📸 Building Photo ID request - docType: " +
           docType +
-          " (multi-namespace)"
+          " (multi-namespace)",
       );
     } else if (requestType.startsWith("micov_")) {
       docType = "org.micov.1";
@@ -112,7 +114,7 @@
         "💉 Building mICOV request - docType: " +
           docType +
           " namespace: " +
-          namespace
+          namespace,
       );
     } else if (requestType.startsWith("mvc_")) {
       docType = "org.iso.7367.1.mVC";
@@ -121,7 +123,16 @@
         "🚗 Building mVC request - docType: " +
           docType +
           " namespace: " +
-          namespace
+          namespace,
+      );
+    } else if (requestType.startsWith("fr_hsc_")) {
+      docType = "fr.ft.hsc.1";
+      namespace = "fr.ft.hsc.1";
+      log(
+        "🎓 Building FR student card request - docType: " +
+          docType +
+          " namespace: " +
+          namespace,
       );
     } else {
       docType = "org.iso.18013.5.1.mDL";
@@ -353,6 +364,31 @@
           registered_users: false,
         };
         break;
+      case "fr_hsc_student":
+        // Split into two namespaces: org.iso.23220.1 (core identity) and fr.ft.hsc.1 (student fields)
+        frHscIsoFields = {
+          issuing_authority: false,
+          issuing_authority_latin1: false,
+          issuing_country: false,
+          issue_date: false,
+          portrait: false,
+          family_name: false,
+          given_name: false,
+          birth_date: false,
+          sex: false,
+        };
+        frHscFields = {
+          ine: false,
+          grade: false,
+          class: false,
+          board: false,
+          grade_start_date: false,
+          grade_end_date: false,
+          highschool_identifier: false,
+          highschool_name: false,
+        };
+        fields = {}; // placeholder, real namespaces set below
+        break;
       default:
         console.warn("Unknown request type:", requestType);
         return null;
@@ -370,6 +406,11 @@
         "org.iso.23220.1": fields || {},
         "org.iso.23220.photoID.1": photoIdFields || {},
         "org.iso.23220.datagroups.1": photoIdDGFields || {},
+      };
+    } else if (requestType.startsWith("fr_hsc_")) {
+      nameSpacesObj = {
+        "org.iso.23220.1": frHscIsoFields || {},
+        "fr.ft.hsc.1": frHscFields || {},
       };
     } else {
       nameSpacesObj = { [namespace]: fields };
