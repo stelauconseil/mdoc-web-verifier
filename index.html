@@ -616,8 +616,8 @@
 </script>
 <!-- Feature modules (globals) -->
 <script src="js/activity-log.js"></script>
-  <script src="js/iaca-management.js"></script>
-  <script src="js/reader-authentication.js"></script>
+<script src="js/iaca-management.js"></script>
+<script src="js/reader-authentication.js"></script>
 <script src="js/device-engagement.js"></script>
 <script src="js/wallet-response.js"></script>
 <script src="js/request-builder.js"></script>
@@ -1597,14 +1597,27 @@ function renderResponseViewModel(model) {
       btn.addEventListener('click', async () => {
         btn.disabled = true; const prev = btn.textContent; btn.textContent = 'Verifying…'; if (resultEl) resultEl.textContent='';
         try {
-          const res = await window.verifyCOSESign1SignatureWithChain(sig.coseSign1);
+          const res = (typeof window.verifyCredentialSignature === 'function')
+            ? await window.verifyCredentialSignature(doc)
+            : await window.verifyCOSESign1SignatureWithChain(sig.coseSign1);
           const parts = [];
-          parts.push(res.signatureValid ? '✔ Signature valid' : '✗ Signature invalid');
+          const claimsOk = res.claims ? (res.claims.allMatched !== false) : true;
+          const overallSigOk = res.signatureValid && claimsOk;
+          parts.push(overallSigOk ? '✔ Signature valid' : '✗ Signature invalid');
           if (res.chainValid != null) parts.push(res.chainValid ? '✔ Chain valid' : '✗ Chain invalid');
           if (res.chainInfo && Array.isArray(res.chainInfo.chain)) parts.push('Chain: ' + res.chainInfo.chain.join(' '));
+          if (res.claims) {
+            if (res.claims.allMatched === true) {
+              parts.push('✔ Claims hash match');
+            } else if (res.claims.allMatched === false) {
+              parts.push(`✗ Claims hash mismatch (${res.claims.mismatched}/${res.claims.checked})`);
+            } else {
+              parts.push('Claims hash: not checked');
+            }
+          }
           if (Array.isArray(res.errors) && res.errors.length) parts.push('Errors: ' + res.errors.join('; '));
-          if (resultEl) { resultEl.textContent = parts.join(' · '); resultEl.style.color = (res.signatureValid && (res.chainValid !== false)) ? '#065f46' : '#991b1b'; }
-          if (sigEl) { sigEl.textContent = res.signatureValid ? '✅ Valid' : '❌ Invalid'; sigEl.style.color = res.signatureValid ? '#065f46' : '#991b1b'; }
+          if (resultEl) { resultEl.textContent = parts.join(' · '); resultEl.style.color = (overallSigOk && (res.chainValid !== false)) ? '#065f46' : '#991b1b'; }
+          if (sigEl) { sigEl.textContent = overallSigOk ? '✅ Valid' : '❌ Invalid'; sigEl.style.color = overallSigOk ? '#065f46' : '#991b1b'; }
           if (chainEl) { chainEl.textContent = res.chainValid ? '✅ Valid' : '❌ Invalid'; chainEl.style.color = res.chainValid ? '#065f46' : '#991b1b'; }
         } catch (err) {
           if (resultEl) { resultEl.textContent = 'Verification error: ' + (err.message || err); resultEl.style.color = '#991b1b'; }
@@ -1636,8 +1649,12 @@ function renderResponseViewModel(model) {
           const sigEl = document.getElementById(`sigStatus-${idx}`);
           const chainEl = document.getElementById(`chainStatus-${idx}`);
           const statusEl = document.getElementById(`revocationStatus-${idx}`);
-          const res = await window.verifyCOSESign1SignatureWithChain(sig.coseSign1);
-          if (sigEl) { sigEl.textContent = res.signatureValid ? '✅ Valid' : '❌ Invalid'; sigEl.style.color = res.signatureValid ? '#065f46' : '#991b1b'; }
+          const res = (typeof window.verifyCredentialSignature === 'function')
+            ? await window.verifyCredentialSignature(doc)
+            : await window.verifyCOSESign1SignatureWithChain(sig.coseSign1);
+          const claimsOk = res.claims ? (res.claims.allMatched !== false) : true;
+          const overallSigOk = res.signatureValid && claimsOk;
+          if (sigEl) { sigEl.textContent = overallSigOk ? '✅ Valid' : '❌ Invalid'; sigEl.style.color = overallSigOk ? '#065f46' : '#991b1b'; }
           if (chainEl) { 
             if (res.chainValid == null) { chainEl.textContent = '—'; chainEl.style.color = '#0f172a'; }
             else { chainEl.textContent = res.chainValid ? '✅ Valid' : '❌ Invalid'; chainEl.style.color = res.chainValid ? '#065f46' : '#991b1b'; }
@@ -4213,6 +4230,341 @@ async function verifyCOSESign1SignatureWithChain(coseSign1) {
   return result;
 }
 
+async function verifyIssuerSignedValueDigests(doc, coseSign1) {
+  const result = {
+    checked: 0,
+    matched: 0,
+    mismatched: 0,
+    skipped: 0,
+    allMatched: null,
+    errors: [],
+    details: [],
+  };
+
+  if (DEBUG_VERBOSE) console.log('[valueDigests] Starting verification');
+
+  const getFieldAny = (obj, keys) => {
+    if (!obj) return undefined;
+    for (const k of keys) {
+      if (obj instanceof Map) {
+        let v = obj.get(k);
+        if (v !== undefined) return v;
+        const kStr = String(k);
+        v = obj.get(kStr);
+        if (v !== undefined) return v;
+        if (typeof k === 'string' && !Number.isNaN(parseInt(k, 10))) {
+          const kNum = parseInt(k, 10);
+          v = obj.get(kNum);
+          if (v !== undefined) return v;
+        }
+      } else {
+        let v = obj?.[k];
+        if (v !== undefined) return v;
+        const kStr = String(k);
+        v = obj?.[kStr];
+        if (v !== undefined) return v;
+      }
+    }
+    return undefined;
+  };
+  const toUint8 = (v) => {
+    if (v instanceof Uint8Array) return v;
+    if (ArrayBuffer.isView(v)) return new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+    if (v instanceof ArrayBuffer) return new Uint8Array(v);
+    if (Array.isArray(v)) {
+      try { return new Uint8Array(v); } catch { return null; }
+    }
+    return null;
+  };
+  const fromJsonBytes = (obj) => {
+    if (!obj || typeof obj !== 'object') return null;
+    if (obj._type === 'bytes' && typeof obj._base64 === 'string') {
+      try {
+        const bin = atob(obj._base64);
+        const out = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+        return out;
+      } catch { return null; }
+    }
+    return null;
+  };
+  const bytesEqual = (a, b) => {
+    if (!a || !b || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  };
+  const normalizeDigestAlgorithm = (alg) => {
+    if (!alg) return null;
+    // Unwrap CBOR.Tagged or {tag,value} shapes
+    try {
+      if (alg && alg.constructor && alg.constructor.name === 'Tagged' && alg.value !== undefined) {
+        alg = alg.value;
+      } else if (alg && typeof alg === 'object' && 'tag' in alg && 'value' in alg) {
+        alg = alg.value;
+      }
+    } catch {}
+    if (typeof alg === 'number') {
+      const map = new Map([
+        [1, 'SHA-256'],
+        [2, 'SHA-384'],
+        [3, 'SHA-512'],
+        [-16, 'SHA-256'],
+        [-43, 'SHA-384'],
+        [-44, 'SHA-512'],
+      ]);
+      return map.get(alg) || null;
+    }
+    if (typeof alg === 'string') {
+      const up = alg.toUpperCase();
+      if (up.includes('SHA-256')) return 'SHA-256';
+      if (up.includes('SHA-384')) return 'SHA-384';
+      if (up.includes('SHA-512')) return 'SHA-512';
+      if (up === 'SHA256') return 'SHA-256';
+      if (up === 'SHA384') return 'SHA-384';
+      if (up === 'SHA512') return 'SHA-512';
+    }
+    return null;
+  };
+  const getDigestFromMap = (digestMap, digestId) => {
+    if (!digestMap) return undefined;
+    if (digestMap instanceof Map) {
+      if (digestMap.has(digestId)) return digestMap.get(digestId);
+      if (digestMap.has(String(digestId))) return digestMap.get(String(digestId));
+      if (typeof digestId === 'string' && !Number.isNaN(parseInt(digestId, 10))) {
+        const asNum = parseInt(digestId, 10);
+        if (digestMap.has(asNum)) return digestMap.get(asNum);
+      }
+      return undefined;
+    }
+    if (digestMap && typeof digestMap === 'object') {
+      if (digestMap[digestId] !== undefined) return digestMap[digestId];
+      if (digestMap[String(digestId)] !== undefined) return digestMap[String(digestId)];
+    }
+    return undefined;
+  };
+
+  try {
+    if (!doc || !coseSign1 || !Array.isArray(coseSign1) || coseSign1.length < 3) {
+      result.errors.push('Invalid COSE_Sign1 payload for valueDigests verification');
+      return result;
+    }
+
+    const payload = coseSign1[2];
+    const payloadBytes = toUint8(payload);
+
+    let mso = doc?.signature?.msoDecoded || null;
+    if (!mso) {
+      if (!payloadBytes) {
+        result.errors.push('MSO payload missing or not a byte array');
+        return result;
+      }
+      try {
+        mso = CBOR.decode(payloadBytes);
+        // Unwrap bstr.cbor or Tagged(24) if present
+        if (mso && mso.constructor && mso.constructor.name === 'Tagged' && mso.tag === 24 && mso.value !== undefined) {
+          mso = CBOR.decode(new Uint8Array(mso.value));
+        } else if (mso && typeof mso === 'object' && mso.tag === 24 && mso.value !== undefined) {
+          const inner = toUint8(mso.value) || fromJsonBytes(mso.value);
+          if (inner) mso = CBOR.decode(inner);
+        } else if (mso instanceof Uint8Array || mso instanceof ArrayBuffer || ArrayBuffer.isView(mso)) {
+          const inner = toUint8(mso);
+          if (inner) mso = CBOR.decode(inner);
+        }
+      } catch (e) {
+        result.errors.push(`Unable to decode MSO payload: ${e.message}`);
+        return result;
+      }
+    }
+
+    if (DEBUG_VERBOSE) {
+      const keys = mso instanceof Map ? Array.from(mso.keys()) : Object.keys(mso || {});
+      console.log('[valueDigests] MSO keys:', keys);
+    }
+
+    const digestAlgorithm = getFieldAny(mso, ['digestAlgorithm', 2]);
+    let hashAlg = normalizeDigestAlgorithm(digestAlgorithm);
+
+    const valueDigests = getFieldAny(mso, ['valueDigests', 1]);
+    if (!valueDigests) {
+      result.errors.push('MSO is missing valueDigests');
+      if (DEBUG_VERBOSE) console.warn('[valueDigests] MSO is missing valueDigests');
+      return result;
+    }
+
+    if (!hashAlg) {
+      // Try to infer from first digest length (32/48/64 bytes)
+      let inferred = null;
+      try {
+        const nsValues = valueDigests instanceof Map ? Array.from(valueDigests.values()) : Object.values(valueDigests || {});
+        const firstNs = nsValues.find(Boolean);
+        const firstDigest = firstNs instanceof Map
+          ? Array.from(firstNs.values()).find(Boolean)
+          : (firstNs ? Object.values(firstNs).find(Boolean) : null);
+        const firstBytes = toUint8(firstDigest) || fromJsonBytes(firstDigest);
+        if (firstBytes) {
+          if (firstBytes.length === 32) inferred = 'SHA-256';
+          else if (firstBytes.length === 48) inferred = 'SHA-384';
+          else if (firstBytes.length === 64) inferred = 'SHA-512';
+        }
+      } catch {}
+      if (inferred) {
+        hashAlg = inferred;
+        console.warn('[valueDigests] digestAlgorithm missing; inferred', inferred);
+      } else {
+        result.errors.push(`Unsupported digest algorithm: ${String(digestAlgorithm)}`);
+        console.warn('[valueDigests] Unsupported digest algorithm', digestAlgorithm);
+        console.warn('[valueDigests] MSO keys', (mso instanceof Map) ? Array.from(mso.keys()) : Object.keys(mso || {}));
+        return result;
+      }
+    }
+
+    if (DEBUG_VERBOSE) console.log('[valueDigests] Digest algorithm:', hashAlg);
+
+    const nsObj = doc?.issuerSigned?.nameSpaces || {};
+    const nsEntries = nsObj instanceof Map
+      ? Array.from(nsObj.entries())
+      : Object.entries(nsObj);
+
+    if (DEBUG_VERBOSE) {
+      console.log('[valueDigests] Namespaces found:', nsEntries.map(([k]) => String(k)));
+    }
+
+    for (const [nsName, items] of nsEntries) {
+      const nsDigests = valueDigests instanceof Map
+        ? (valueDigests.get(nsName) ?? valueDigests.get(String(nsName)))
+        : (valueDigests?.[nsName] ?? valueDigests?.[String(nsName)]);
+
+      if (!nsDigests && DEBUG_VERBOSE) {
+        console.warn(`[valueDigests] No valueDigests entry for namespace "${String(nsName)}"`);
+      }
+
+      const itemsArr = Array.isArray(items) ? items : [];
+      for (const entry of itemsArr) {
+        const digestId = entry?.digestId ?? entry?.digestID;
+        const issuerSignedItemBytes = entry?.issuerSignedItemBytes;
+        if (digestId === undefined || !issuerSignedItemBytes) {
+          if (DEBUG_VERBOSE) {
+            console.log(
+              `[valueDigests] Skipping entry: missing digestId or issuerSignedItemBytes (namespace="${String(nsName)}", elementIdentifier="${entry?.elementIdentifier}")`
+            );
+          }
+          result.skipped++;
+          continue;
+        }
+        if (!nsDigests) {
+          result.mismatched++;
+          result.details.push({
+            namespace: nsName,
+            elementIdentifier: entry?.elementIdentifier,
+            digestId,
+            reason: 'No valueDigests for namespace'
+          });
+          continue;
+        }
+        const expected = getDigestFromMap(nsDigests, digestId);
+        if (!expected) {
+          if (DEBUG_VERBOSE) {
+            console.warn(
+              `[valueDigests] Missing digestId in valueDigests (namespace="${String(nsName)}", elementIdentifier="${entry?.elementIdentifier}", digestId=${digestId})`
+            );
+          }
+          result.mismatched++;
+          result.details.push({
+            namespace: nsName,
+            elementIdentifier: entry?.elementIdentifier,
+            digestId,
+            reason: 'Missing digestId in valueDigests'
+          });
+          continue;
+        }
+        const expectedBytes = toUint8(expected) || fromJsonBytes(expected);
+        if (!expectedBytes) {
+          if (DEBUG_VERBOSE) {
+            console.warn(
+              `[valueDigests] Invalid digest bytes (namespace="${String(nsName)}", elementIdentifier="${entry?.elementIdentifier}", digestId=${digestId})`
+            );
+          }
+          result.mismatched++;
+          result.details.push({
+            namespace: nsName,
+            elementIdentifier: entry?.elementIdentifier,
+            digestId,
+            reason: 'Invalid digest bytes in valueDigests'
+          });
+          continue;
+        }
+
+        const computed = new Uint8Array(await crypto.subtle.digest(hashAlg, issuerSignedItemBytes));
+        if (bytesEqual(computed, expectedBytes)) {
+          result.matched++;
+          continue;
+        }
+
+        // hash tag(24, bstr) wrapper
+        try {
+          if (CBOR && typeof CBOR.Tagged === 'function') {
+            const tagged = new CBOR.Tagged(24, issuerSignedItemBytes);
+            const taggedBytes = CBOR.encode(tagged);
+            const computedTagged = new Uint8Array(await crypto.subtle.digest(hashAlg, taggedBytes));
+            if (bytesEqual(computedTagged, expectedBytes)) {
+              result.matched++;
+              continue;
+            }
+            if (DEBUG_VERBOSE) console.error(
+              `[valueDigests] Digest mismatch for namespace="${String(nsName)}", element="${entry?.elementIdentifier}", digestId=${digestId} (computed ≠ MSO valueDigests)`
+            );
+          }
+        } catch {}
+
+        result.mismatched++;
+        result.details.push({
+          namespace: nsName,
+          elementIdentifier: entry?.elementIdentifier,
+          digestId,
+          reason: 'Digest mismatch'
+        });
+      }
+    }
+  } catch (err) {
+    result.errors.push(`valueDigests verification error: ${err.message}`);
+    console.error('[valueDigests] Verification error:', err);
+  }
+
+  result.checked = result.matched + result.mismatched;
+  result.allMatched = result.checked > 0 ? result.mismatched === 0 : null;
+  if (DEBUG_VERBOSE) console.log('[valueDigests] Summary', {
+    checked: result.checked,
+    matched: result.matched,
+    mismatched: result.mismatched,
+    skipped: result.skipped,
+    allMatched: result.allMatched,
+  });
+  return result;
+}
+
+async function verifyCredentialSignature(doc) {
+  if (!doc || !doc.signature || !doc.signature.coseSign1) {
+    return {
+      signatureValid: false,
+      chainValid: null,
+      chainInfo: null,
+      errors: ['Missing signature for credential verification'],
+      claims: { checked: 0, matched: 0, mismatched: 0, skipped: 0, allMatched: null, errors: ['Missing signature'] }
+    };
+  }
+
+  const res = await verifyCOSESign1SignatureWithChain(doc.signature.coseSign1);
+  const claims = await verifyIssuerSignedValueDigests(doc, doc.signature.coseSign1);
+  res.claims = claims;
+  if (claims.checked > 0 && !claims.allMatched) {
+    res.errors.push('MSO valueDigests mismatch');
+  }
+  if (Array.isArray(claims.errors) && claims.errors.length) {
+    res.errors.push(...claims.errors);
+  }
+  return res;
+}
+
 // ===== IACA CERTIFICATE MANAGEMENT =====
 
 // Default IACA certificates (exposed globally for IACA module)
@@ -4376,6 +4728,7 @@ window.extractCertInfo = extractCertInfo;
 window.escapeHtml = escapeHtml;
 // Expose verification helper so wallet-response can call it after rendering
 window.verifyCOSESign1SignatureWithChain = verifyCOSESign1SignatureWithChain;
+window.verifyCredentialSignature = verifyCredentialSignature;
 // (Optionally expose the underlying helpers if needed elsewhere)
 window.verifyCoseSign1 = verifyCoseSign1;
 window.validateCertificateChain = validateCertificateChain;

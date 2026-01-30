@@ -110,7 +110,7 @@
       keyBytes,
       { name: "AES-GCM", length: 256 },
       false,
-      ["decrypt"]
+      ["decrypt"],
     );
     const ivU8 = iv instanceof Uint8Array ? iv : new Uint8Array(iv);
     let aadU8 = null;
@@ -136,7 +136,9 @@
     const pt = await crypto.subtle.decrypt(
       params,
       key,
-      ciphertext instanceof Uint8Array ? ciphertext : new Uint8Array(ciphertext)
+      ciphertext instanceof Uint8Array
+        ? ciphertext
+        : new Uint8Array(ciphertext),
     );
     return new Uint8Array(pt);
   }
@@ -329,6 +331,45 @@
       return it;
     };
 
+    const extractIssuerSignedItemBytes = (item) => {
+      try {
+        if (
+          item &&
+          item.constructor &&
+          item.constructor.name === "Tagged" &&
+          item.tag === 24 &&
+          item.value !== undefined
+        ) {
+          return new Uint8Array(item.value);
+        }
+        if (
+          item &&
+          typeof item === "object" &&
+          item.tag === 24 &&
+          item.value !== undefined
+        ) {
+          let bytes = toUint8(item.value);
+          if (!bytes) bytes = fromJsonBytes(item.value);
+          return bytes || null;
+        }
+        const bytes = toUint8(item);
+        if (bytes) {
+          const dec = tryDecodeCBOR(bytes);
+          const looksLikeIssuerSignedItem = (obj) => {
+            const hasElementIdentifier =
+              getFieldAny(obj, ["elementIdentifier", 0]) !== undefined;
+            const hasElementValue =
+              getFieldAny(obj, ["elementValue", 1]) !== undefined;
+            return hasElementIdentifier && hasElementValue;
+          };
+          if (dec && looksLikeIssuerSignedItem(dec)) return bytes;
+        }
+      } catch (_) {}
+      return null;
+    };
+
+    const getDigestId = (it) => getFieldAny(it, ["digestID", "digestId", 2]);
+
     const isPortraitField = (id) => {
       const s = String(id || "").toLowerCase();
       return (
@@ -382,11 +423,11 @@
             const lenInfo2 = readLength(u8, off + 2);
             mrzBytes = u8.slice(
               lenInfo2.next,
-              Math.min(lenInfo2.next + lenInfo2.length, end)
+              Math.min(lenInfo2.next + lenInfo2.length, end),
             );
             console.warn(
               "DG1: 5F1F detected at start; using its value slice. Size:",
-              mrzBytes.length
+              mrzBytes.length,
             );
           } else {
             // Last resort: treat content as plain ASCII and attempt to clean a stray leading tag/len
@@ -394,14 +435,14 @@
             console.warn(
               "DG1: 5F1F not found; using raw DG1 content as MRZ candidate (size:",
               mrzBytes.length,
-              ")"
+              ")",
             );
           }
         }
 
         // Sanitize ASCII: keep printable + '<'; drop control chars
         let mrzText = new TextDecoder("ascii", { fatal: false }).decode(
-          mrzBytes
+          mrzBytes,
         );
         mrzText = mrzText.replace(/[\x00\r\n]+/g, "");
         // If the content accidentally starts with 0x5F 0x1F and a single printable (length echo like 'Z'), strip them
@@ -587,7 +628,7 @@
             console.log(
               "🖼️ Decoded ICAO DG2 (Portrait), image bytes:",
               imageData.length,
-              embedded ? `(embedded ${embedded.kind})` : "(raw BDB)"
+              embedded ? `(embedded ${embedded.kind})` : "(raw BDB)",
             );
 
             return {
@@ -737,7 +778,7 @@
         console.log("🖼️ Attempting JP2 to JPEG conversion, bytes:", u8.length);
         if (typeof openjpeg === "undefined") {
           console.warn(
-            "⚠️ openjpeg not available for JP2 conversion - check if openjpeg.js loaded properly"
+            "⚠️ openjpeg not available for JP2 conversion - check if openjpeg.js loaded properly",
           );
           return null;
         }
@@ -756,7 +797,7 @@
           "📐 JP2 parsed, dimensions:",
           result.width,
           "x",
-          result.height
+          result.height,
         );
 
         const { width, height, data } = result;
@@ -790,7 +831,7 @@
         const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
         console.log(
           "✅ JP2 to JPEG conversion successful, data URL length:",
-          dataUrl.length
+          dataUrl.length,
         );
         return dataUrl;
       } catch (e) {
@@ -799,7 +840,7 @@
       }
     }
 
-    const valueToEntry = (elementIdentifier, elementValue) => {
+    const valueToEntry = (elementIdentifier, elementValue, options = {}) => {
       // Default entry
       const entry = {
         elementIdentifier,
@@ -813,6 +854,12 @@
         raw: null,
         binary: null,
       };
+      if (options && options.digestId !== undefined) {
+        entry.digestId = options.digestId;
+      }
+      if (options && options.issuerSignedItemBytes instanceof Uint8Array) {
+        entry.issuerSignedItemBytes = options.issuerSignedItemBytes;
+      }
       try {
         entry.raw = convertToJSON(elementValue);
       } catch (_) {
@@ -899,7 +946,7 @@
             : new Uint8Array(
                 elementValue.buffer,
                 elementValue.byteOffset,
-                elementValue.byteLength
+                elementValue.byteLength,
               );
 
         // Check if this is an ICAO 9303 data group
@@ -931,13 +978,13 @@
             ) {
               console.log(
                 "🖼️ Processing JPEG2000 ICAO portrait field:",
-                elementIdentifier
+                elementIdentifier,
               );
               const dataUrl = jp2ToJpegDataUrl(imgU8);
               if (dataUrl) {
                 console.log(
                   "✅ JP2 conversion successful for ICAO",
-                  elementIdentifier
+                  elementIdentifier,
                 );
                 entry.binary.converted = true;
                 entry.binary.convertedFrom = mimeType;
@@ -947,7 +994,7 @@
               } else {
                 console.warn(
                   "❌ JP2 conversion failed for ICAO",
-                  elementIdentifier
+                  elementIdentifier,
                 );
               }
             } else {
@@ -958,7 +1005,7 @@
             }
             console.log(
               "✅ Decoded ICAO DG2 (Portrait) for",
-              elementIdentifier
+              elementIdentifier,
             );
             return entry;
           }
@@ -1115,16 +1162,27 @@
 
           // Case 1: Standard array of IssuerSignedItem
           if (Array.isArray(nsItems)) {
-            for (let item of nsItems) {
+            const rawItems = Array.isArray(nsItemsRaw) ? nsItemsRaw : null;
+            for (let idx = 0; idx < nsItems.length; idx++) {
+              const item = nsItems[idx];
               try {
+                const rawItem = rawItems ? rawItems[idx] : item;
+                const issuerSignedItemBytes =
+                  extractIssuerSignedItemBytes(rawItem);
                 const it = unwrapTaggedOrCbor(normalizeIssuerItem(item));
                 let elementIdentifier = getFieldAny(it, [
                   "elementIdentifier",
                   0,
                 ]);
                 let elementValue = getFieldAny(it, ["elementValue", 1]);
+                const digestId = getDigestId(it);
                 if (elementIdentifier !== undefined) {
-                  items.push(valueToEntry(elementIdentifier, elementValue));
+                  items.push(
+                    valueToEntry(elementIdentifier, elementValue, {
+                      digestId,
+                      issuerSignedItemBytes,
+                    }),
+                  );
                 }
               } catch (_) {}
             }
@@ -1134,18 +1192,28 @@
           else if (nsItems instanceof Map) {
             for (const [k, v] of nsItems.entries()) {
               try {
+                const rawVal =
+                  nsItemsRaw instanceof Map ? nsItemsRaw.get(k) : v;
+                const issuerSignedItemBytes =
+                  extractIssuerSignedItemBytes(rawVal);
                 const it = unwrapTaggedOrCbor(normalizeIssuerItem(v));
                 let elementIdentifier = getFieldAny(it, [
                   "elementIdentifier",
                   0,
                 ]);
                 let elementValue = getFieldAny(it, ["elementValue", 1]);
+                const digestId = getDigestId(it);
                 if (elementIdentifier === undefined) {
                   // Treat key as identifier and value as the element value
                   elementIdentifier = k;
                   elementValue = it;
                 }
-                items.push(valueToEntry(elementIdentifier, elementValue));
+                items.push(
+                  valueToEntry(elementIdentifier, elementValue, {
+                    digestId,
+                    issuerSignedItemBytes,
+                  }),
+                );
               } catch (_) {}
             }
           }
@@ -1154,17 +1222,29 @@
           else if (nsItems && typeof nsItems === "object") {
             for (const [k, v] of Object.entries(nsItems)) {
               try {
+                const rawVal =
+                  nsItemsRaw && typeof nsItemsRaw === "object"
+                    ? nsItemsRaw[k]
+                    : v;
+                const issuerSignedItemBytes =
+                  extractIssuerSignedItemBytes(rawVal);
                 const it = unwrapTaggedOrCbor(normalizeIssuerItem(v));
                 let elementIdentifier = getFieldAny(it, [
                   "elementIdentifier",
                   0,
                 ]);
                 let elementValue = getFieldAny(it, ["elementValue", 1]);
+                const digestId = getDigestId(it);
                 if (elementIdentifier === undefined) {
                   elementIdentifier = k;
                   elementValue = it;
                 }
-                items.push(valueToEntry(elementIdentifier, elementValue));
+                items.push(
+                  valueToEntry(elementIdentifier, elementValue, {
+                    digestId,
+                    issuerSignedItemBytes,
+                  }),
+                );
               } catch (_) {}
             }
           }
@@ -1227,7 +1307,7 @@
                     : new Uint8Array(
                         firstCert.buffer,
                         firstCert.byteOffset,
-                        firstCert.byteLength
+                        firstCert.byteLength,
                       );
                 const info = window.extractCertInfo
                   ? window.extractCertInfo(der)
@@ -1363,6 +1443,7 @@
               algorithm: algLabel,
               certificate: certSummary,
               mso: msoSummary,
+              msoDecoded: mso || null,
               coseSign1: cose,
             };
           }
@@ -1383,7 +1464,7 @@
     const coseEnc0 = CBOR.decode(encryptedData);
     if (!Array.isArray(coseEnc0) || coseEnc0.length !== 3)
       throw new Error(
-        "Invalid COSE_Encrypt0 structure - expected 3-element array"
+        "Invalid COSE_Encrypt0 structure - expected 3-element array",
       );
     const [protectedHeaderBytes, unprotectedHeader, ciphertext] = coseEnc0;
     // Read IV from unprotected header (header key 5)
@@ -1396,7 +1477,7 @@
       new Uint8Array(ciphertext),
       window.skDevice ? new Uint8Array(window.skDevice) : null,
       new Uint8Array(iv),
-      ""
+      "",
     );
     return CBOR.decode(plaintext);
   }
@@ -1412,7 +1493,7 @@
       encryptedData,
       window.skDevice ? new Uint8Array(window.skDevice) : null,
       iv,
-      new Uint8Array(0)
+      new Uint8Array(0),
     );
     return getCBOR().decode(plaintext);
   }
@@ -1433,7 +1514,7 @@
     // Back-compat shim: deprecated name returns the view model
     displayDeviceResponse: function (deviceResponse) {
       console.warn(
-        "[WalletResponse] displayDeviceResponse is deprecated; use buildResponseViewModel instead."
+        "[WalletResponse] displayDeviceResponse is deprecated; use buildResponseViewModel instead.",
       );
       return buildResponseViewModel(deviceResponse);
     },
