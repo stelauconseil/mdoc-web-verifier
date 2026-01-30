@@ -1661,8 +1661,7 @@ function renderResponseViewModel(model) {
           }
           // Trigger MSO status check (revocation) if status list is advertised
           try {
-            console.log("statusEl", statusEl)
-            console.log("sig", sig, sig?.mso, sig?.mso?.status);
+            //console.log("sig", sig, sig?.mso, sig?.mso?.status);
             if (statusEl && sig) {
               // Decode MSO payload (COSE_Sign1 content) and locate a status container
               let statusContainer = null;
