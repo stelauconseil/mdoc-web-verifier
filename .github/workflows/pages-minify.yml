@@ -1,0 +1,78 @@
+name: Build & Deploy (minify + obfuscate)
+
+on:
+    push:
+        branches: ["main"]
+    workflow_dispatch:
+
+permissions:
+    contents: read
+    pages: write
+    id-token: write
+
+concurrency:
+    group: "pages"
+    cancel-in-progress: true
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Setup Node
+              uses: actions/setup-node@v4
+              with:
+                  node-version: "20"
+
+            # Minify index.html (inline JS/CSS too)
+            - name: Minify HTML (inline JS/CSS)
+              run: |
+                  npx html-minifier-terser \
+                    --collapse-whitespace \
+                    --remove-comments \
+                    --remove-redundant-attributes \
+                    --remove-script-type-attributes \
+                    --remove-style-link-type-attributes \
+                    --minify-css true \
+                    --minify-js true \
+                    --input-dir . \
+                    --output-dir . \
+                    --file-ext html
+
+            # Minify external JS
+            - name: Minify JS (in place)
+              run: |
+                  for f in js/*.js; do
+                    [ -f "$f" ] || continue
+                    npx terser "$f" -c -m -o "$f"
+                  done
+
+            # Obfuscate external JS
+            - name: Obfuscate JS (in place)
+              run: |
+                  for f in js/*.js; do
+                    [ -f "$f" ] || continue
+                    npx javascript-obfuscator "$f" --output "$f" \
+                      --compact true \
+                      --control-flow-flattening false \
+                      --dead-code-injection false \
+                      --self-defending false
+                  done
+
+            - name: Upload Pages artifact
+              uses: actions/upload-pages-artifact@v3
+              with:
+                  path: .
+
+    deploy:
+        runs-on: ubuntu-latest
+        needs: build
+        environment:
+            name: github-pages
+            url: ${{ steps.deployment.outputs.page_url }}
+        steps:
+            - name: Deploy to GitHub Pages
+              id: deployment
+              uses: actions/deploy-pages@v4
