@@ -26,6 +26,26 @@ jobs:
               with:
                   node-version: "20"
 
+            # Obfuscate external JS
+            - name: Obfuscate JS (in place)
+              run: |
+                  for f in js/*.js; do
+                    [ -f "$f" ] || continue
+                    npx javascript-obfuscator "$f" --output "$f" \
+                      --compact true \
+                      --control-flow-flattening false \
+                      --dead-code-injection false \
+                      --self-defending false
+                  done
+
+            # Minify external JS
+            - name: Minify JS (in place)
+              run: |
+                  for f in js/*.js; do
+                    [ -f "$f" ] || continue
+                    npx terser "$f" -c -m -o "$f"
+                  done
+
             # Minify index.html (inline JS/CSS too)
             - name: Minify HTML (inline JS/CSS)
               run: |
@@ -40,26 +60,6 @@ jobs:
                     --input-dir . \
                     --output-dir . \
                     --file-ext html
-
-            # Minify external JS
-            - name: Minify JS (in place)
-              run: |
-                  for f in js/*.js; do
-                    [ -f "$f" ] || continue
-                    npx terser "$f" -c -m -o "$f"
-                  done
-
-            # Obfuscate external JS
-            - name: Obfuscate JS (in place)
-              run: |
-                  for f in js/*.js; do
-                    [ -f "$f" ] || continue
-                    npx javascript-obfuscator "$f" --output "$f" \
-                      --compact true \
-                      --control-flow-flattening false \
-                      --dead-code-injection false \
-                      --self-defending false
-                  done
 
             - name: Upload Pages artifact
               uses: actions/upload-pages-artifact@v3
