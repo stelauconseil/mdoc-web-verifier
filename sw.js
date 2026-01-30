@@ -7,7 +7,7 @@
   ALSO UPDATE: APP_VERSION in index.html (line ~395) must match this value
 */
 
-const CACHE_VERSION = 46; // <-- INCREMENT THIS NUMBER WHEN UPDATING
+const CACHE_VERSION = 47; // <-- INCREMENT THIS NUMBER WHEN UPDATING
 const CACHE_NAME = `mdocreader-v${CACHE_VERSION}`;
 const RUNTIME_CACHE = `mdoc-runtime-v${CACHE_VERSION}`;
 
