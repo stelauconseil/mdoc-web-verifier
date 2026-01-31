@@ -7,16 +7,16 @@
   ALSO UPDATE: APP_VERSION in index.html (line ~395) must match this value
 */
 
-const CACHE_VERSION = 47; // <-- INCREMENT THIS NUMBER WHEN UPDATING
+const CACHE_VERSION = 48; // <-- INCREMENT THIS NUMBER WHEN UPDATING
 const CACHE_NAME = `mdocreader-v${CACHE_VERSION}`;
 const RUNTIME_CACHE = `mdoc-runtime-v${CACHE_VERSION}`;
 
 // Files to cache on install
 const PRECACHE_URLS = [
   "/",
-  "/index.html",
-  "/js/activity-log.js",
-  "/js/iaca-management.js",
+  "index.html",
+  "js/activity-log.js",
+  "js/iaca-management.js",
   "js/reader-authentication.js",
   "js/device-engagement.js",
   "js/wallet-response.js",
@@ -24,13 +24,14 @@ const PRECACHE_URLS = [
   "js/ble-transport.js",
   "js/session-crypto.js",
   "js/session-establishment.js",
-  "/js/jsQR.js",
-  "/js/cbor.min.js",
-  "/js/noble-curves.min.js",
-  "/js/openjpeg.js",
-  "/manifest.json",
-  "/assets/icon-192.png",
-  "/assets/icon-512.png",
+  "js/verification.js",
+  "js/jsQR.js",
+  "js/cbor.min.js",
+  "js/noble-curves.min.js",
+  "js/openjpeg.js",
+  "manifest.json",
+  "assets/icon-192.png",
+  "assets/icon-512.png",
 ];
 
 // CDN resources - cache but don't precache
