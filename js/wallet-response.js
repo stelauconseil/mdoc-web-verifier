@@ -1135,7 +1135,7 @@
           nameSpaces: {},
           _rawNameSpaces: {}, // for debugging/renderer fallback
         },
-        deviceSigned: null, // not expanded for now
+        deviceSigned: null,
         signature: null, // summary of issuerAuth
       };
 
@@ -1450,6 +1450,57 @@
         } catch (_) {
           docModel.signature = null;
         }
+      }
+
+      // DeviceSigned: capture deviceAuth COSE_Sign1 (holder auth)
+      let deviceSigned = getFieldAny(doc, ["deviceSigned", 2]);
+      const deviceSignedRaw = deviceSigned;
+      deviceSigned = unwrapTaggedOrCbor(deviceSigned);
+      if (deviceSigned) {
+        let deviceAuth = getFieldAny(deviceSigned, ["deviceAuth", 0]);
+        let deviceAuthCose = null;
+        if (deviceAuth) {
+          let cur = deviceAuth;
+          // Some wallets wrap COSE_Sign1 under deviceSignature
+          if (cur && typeof cur === "object" && cur.deviceSignature) {
+            cur = cur.deviceSignature;
+          }
+          if (
+            cur &&
+            cur.constructor &&
+            cur.constructor.name === "Tagged" &&
+            cur.tag === 24
+          ) {
+            const bytes = toUint8(cur.value) || fromJsonBytes(cur.value);
+            if (bytes && CBOR && typeof CBOR.decode === "function") {
+              try {
+                cur = CBOR.decode(bytes);
+              } catch (_) {}
+            }
+          } else {
+            const bytes = toUint8(cur) || fromJsonBytes(cur);
+            if (bytes && CBOR && typeof CBOR.decode === "function") {
+              try {
+                const dec = CBOR.decode(bytes);
+                if (Array.isArray(dec)) cur = dec;
+              } catch (_) {}
+            }
+          }
+          if (!Array.isArray(cur)) {
+            const rawBytes = toUint8(cur) || fromJsonBytes(cur);
+            if (rawBytes && CBOR && typeof CBOR.decode === "function") {
+              try {
+                const dec = CBOR.decode(rawBytes);
+                if (Array.isArray(dec)) cur = dec;
+              } catch (_) {}
+            }
+          }
+          if (Array.isArray(cur)) deviceAuthCose = cur;
+        }
+        docModel.deviceSigned = {
+          deviceAuth: deviceAuthCose,
+          raw: deviceSignedRaw,
+        };
       }
 
       model.documents.push(docModel);

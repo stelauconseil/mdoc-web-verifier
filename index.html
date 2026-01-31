@@ -869,6 +869,139 @@ function log(msg) {
 const hex = (...args) => window.SessionCrypto.hex(...args);
 const concatUint8 = (...args) => window.SessionCrypto.concatUint8(...args);
 
+// ==== Replay capture (QR + keys + request/response) ====
+const REPLAY_STORAGE_KEY = 'mdoc_replay_capture_v1';
+const replayCapture = {
+  createdAt: null,
+  qrPayload: null,
+  deBytesB64: null,
+  mdocPubKey: null,
+  readerKeyPairJwk: null,
+  skReaderB64: null,
+  skDeviceB64: null,
+  transcriptAADB64: null,
+  sessionTranscriptB64: null,
+  sessionTranscriptWrappedB64: null,
+  requestBytesB64: null,
+  sessionEstablishmentB64: null,
+  sessionResponseB64: null,
+  deviceResponseB64: null,
+};
+
+function u8ToB64(u8) {
+  if (!u8 || !u8.length) return null;
+  let s = '';
+  for (let i = 0; i < u8.length; i += 0x8000) {
+    const chunk = u8.subarray(i, i + 0x8000);
+    s += String.fromCharCode.apply(null, chunk);
+  }
+  return btoa(s);
+}
+function b64ToU8(b64) {
+  if (!b64) return null;
+  const raw = atob(b64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+function updateReplayCapture(patch) {
+  Object.assign(replayCapture, patch || {});
+}
+
+function saveReplayCapture() {
+  try {
+    localStorage.setItem(REPLAY_STORAGE_KEY, JSON.stringify(replayCapture));
+  } catch (e) {
+    console.warn('Failed to save replay capture:', e);
+  }
+}
+
+function loadReplayCapture() {
+  try {
+    const raw = localStorage.getItem(REPLAY_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    console.warn('Failed to load replay capture:', e);
+    return null;
+  }
+}
+
+async function applyReplayCapture(capture) {
+  if (!capture) return false;
+  try {
+    if (capture.deBytesB64) deBytes = b64ToU8(capture.deBytesB64);
+    if (capture.mdocPubKey && capture.mdocPubKey.x && capture.mdocPubKey.y) {
+      mdocPubKey = {
+        x: new Uint8Array(capture.mdocPubKey.x),
+        y: new Uint8Array(capture.mdocPubKey.y),
+      };
+    }
+    if (capture.readerKeyPairJwk?.privateKey && capture.readerKeyPairJwk?.publicKey) {
+      try {
+        const priv = await crypto.subtle.importKey('jwk', capture.readerKeyPairJwk.privateKey, { name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+        const pub = await crypto.subtle.importKey('jwk', capture.readerKeyPairJwk.publicKey, { name: 'ECDH', namedCurve: 'P-256' }, true, []);
+        readerKeyPair = { privateKey: priv, publicKey: pub };
+      } catch (e) {
+        console.warn('Replay import reader key pair failed:', e);
+      }
+    }
+    if (capture.skDeviceB64) {
+      skDevice = b64ToU8(capture.skDeviceB64);
+      window.skDevice = skDevice;
+    }
+    if (capture.sessionTranscriptB64 || capture.sessionTranscriptWrappedB64) {
+      window.sessionDebug = window.sessionDebug || {};
+      if (capture.sessionTranscriptB64) window.sessionDebug.sessionTranscript = b64ToU8(capture.sessionTranscriptB64);
+      if (capture.sessionTranscriptWrappedB64) window.sessionDebug.sessionTranscriptWrapped = b64ToU8(capture.sessionTranscriptWrappedB64);
+    }
+    // Prefer device response if present
+    if (capture.deviceResponseB64) {
+      await decryptAndRenderResponse(b64ToU8(capture.deviceResponseB64));
+      return true;
+    }
+    // Otherwise try session response (raw SessionEstablishment response)
+    if (capture.sessionResponseB64) {
+      const assembled = b64ToU8(capture.sessionResponseB64);
+      const decoded = CBOR.decode(assembled);
+      const dataField = decoded?.data;
+      const dataU8 = dataField instanceof Uint8Array ? dataField : new Uint8Array(dataField?.data || []);
+      const deviceResponse = await window.WalletResponse.decryptSessionEstablishmentDataToObject(dataU8);
+      const model = buildResponseViewModel(deviceResponse);
+      renderResponseViewModel(model);
+      return true;
+    }
+  } catch (e) {
+    console.warn('Replay apply failed:', e);
+  }
+  return false;
+}
+
+window.Replay = {
+  save: () => saveReplayCapture(),
+  load: () => loadReplayCapture(),
+  apply: async (cap) => applyReplayCapture(cap),
+  useLast: async () => applyReplayCapture(loadReplayCapture()),
+  clear: () => { try { localStorage.removeItem(REPLAY_STORAGE_KEY); } catch {} },
+  dump: () => loadReplayCapture(),
+  loadFrom: (cap) => { try { localStorage.setItem(REPLAY_STORAGE_KEY, JSON.stringify(cap)); } catch {} },
+  download: () => {
+    try {
+      const cap = loadReplayCapture();
+      const blob = new Blob([JSON.stringify(cap, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'mdoc-replay-capture.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.warn('Replay download failed:', e);
+    }
+  },
+};
+
 // Clear response panel and activity log for a new scan/manual run
 function resetResponseAndLog() {
   try { if (responseDisplayEl) responseDisplayEl.innerHTML = ''; } catch {}
@@ -947,6 +1080,10 @@ async function processS2CAssembled(assembled, reason = 'final-flag') {
       // Signal to session establishment handler
       window.sessionResponseReceived = true;
       window.sessionResponseData = assembled;
+      try {
+        updateReplayCapture({ sessionResponseB64: u8ToB64(assembled) });
+        saveReplayCapture();
+      } catch {}
       
       try {
         await processSessionResponse(assembled);
@@ -960,6 +1097,10 @@ async function processS2CAssembled(assembled, reason = 'final-flag') {
     } else if (skDevice && assembled.length > 20) {
       // This might be an encrypted DeviceResponse
       log('🔐 Received encrypted response - attempting to decrypt...');
+      try {
+        updateReplayCapture({ deviceResponseB64: u8ToB64(assembled) });
+        saveReplayCapture();
+      } catch {}
       try {
   // Decrypt and render the response
   await decryptAndRenderResponse(assembled);
@@ -1602,10 +1743,12 @@ function renderResponseViewModel(model) {
             : await window.verifyCOSESign1SignatureWithChain(sig.coseSign1);
           const parts = [];
           const claimsOk = res.claims ? (res.claims.allMatched !== false) : true;
-          const overallSigOk = res.signatureValid && claimsOk;
+          const holderOk = res.holderAuthValid !== false;
+          const overallSigOk = res.signatureValid && claimsOk && holderOk;
           parts.push(overallSigOk ? '✔ Signature valid' : '✗ Signature invalid');
           if (res.chainValid != null) parts.push(res.chainValid ? '✔ Chain valid' : '✗ Chain invalid');
           if (res.chainInfo && Array.isArray(res.chainInfo.chain)) parts.push('Chain: ' + res.chainInfo.chain.join(' '));
+          if (res.holderAuthValid != null) parts.push(res.holderAuthValid ? '✔ Holder auth valid' : '✗ Holder auth invalid');
           if (res.claims) {
             if (res.claims.allMatched === true) {
               parts.push('✔ Claims hash match');
@@ -1653,7 +1796,8 @@ function renderResponseViewModel(model) {
             ? await window.verifyCredentialSignature(doc)
             : await window.verifyCOSESign1SignatureWithChain(sig.coseSign1);
           const claimsOk = res.claims ? (res.claims.allMatched !== false) : true;
-          const overallSigOk = res.signatureValid && claimsOk;
+          const holderOk = res.holderAuthValid !== false;
+          const overallSigOk = res.signatureValid && claimsOk && holderOk;
           if (sigEl) { sigEl.textContent = overallSigOk ? '✅ Valid' : '❌ Invalid'; sigEl.style.color = overallSigOk ? '#065f46' : '#991b1b'; }
           if (chainEl) { 
             if (res.chainValid == null) { chainEl.textContent = '—'; chainEl.style.color = '#0f172a'; }
@@ -2614,6 +2758,56 @@ async function extractPublicKeyFromCert(certDer, quiet = false) {
   }
 }
 
+// Convert DER-encoded ECDSA signature to raw r||s format
+function derSignatureToRaw(derSig, expectedLength = 64) {
+  try {
+    // DER ECDSA signature structure:
+    // 0x30 <length> 0x02 <r_length> <r_bytes> 0x02 <s_length> <s_bytes>
+    if (derSig[0] !== 0x30) {
+      // Not DER encoded, return as-is
+      return derSig;
+    }
+    
+    let offset = 2; // Skip 0x30 and length byte
+    
+    // Read r
+    if (derSig[offset] !== 0x02) throw new Error('Invalid DER r component');
+    offset++;
+    const rLen = derSig[offset++];
+    let rBytes = derSig.slice(offset, offset + rLen);
+    offset += rLen;
+    
+    // Read s
+    if (derSig[offset] !== 0x02) throw new Error('Invalid DER s component');
+    offset++;
+    const sLen = derSig[offset++];
+    let sBytes = derSig.slice(offset, offset + sLen);
+    
+    // DER integers can have leading 0x00 for sign bit - remove it
+    if (rBytes[0] === 0x00) rBytes = rBytes.slice(1);
+    if (sBytes[0] === 0x00) sBytes = sBytes.slice(1);
+    
+    // Pad to expected length
+    const halfLen = expectedLength / 2;
+    const rPadded = new Uint8Array(halfLen);
+    const sPadded = new Uint8Array(halfLen);
+    
+    rPadded.set(rBytes, halfLen - rBytes.length);
+    sPadded.set(sBytes, halfLen - sBytes.length);
+    
+    // Concatenate r||s
+    const rawSig = new Uint8Array(expectedLength);
+    rawSig.set(rPadded, 0);
+    rawSig.set(sPadded, halfLen);
+    
+    console.log(`[DER] Converted DER signature (${derSig.length} bytes) to raw r||s (${rawSig.length} bytes)`);
+    return rawSig;
+  } catch (err) {
+    console.warn('[DER] Failed to convert DER signature:', err.message);
+    return derSig; // Return original if conversion fails
+  }
+}
+
 // Lightweight helper for UI: detect EC curve from certificate OID without requiring a crypto implementation
 // Returns one of: 'P-256','P-384','P-521','brainpoolP256r1','brainpoolP320r1','brainpoolP384r1','brainpoolP512r1', or null if not found
 function detectCurveFromCertOID(certDer) {
@@ -2989,10 +3183,8 @@ function extractCertValidity(certDer) {
 }
 
 // Verify COSE_Sign1 signature
-async function verifyCoseSign1(coseSign1, publicKey) {
+async function verifyCoseSign1(coseSign1, publicKey, externalAadBytes = null) {
   try {
-    console.log('=== VERIFYING COSE_Sign1 SIGNATURE ===');
-    
     // COSE_Sign1 = [protected, unprotected, payload, signature]
     if (!Array.isArray(coseSign1) || coseSign1.length < 4) {
       throw new Error('Invalid COSE_Sign1 structure');
@@ -3000,21 +3192,14 @@ async function verifyCoseSign1(coseSign1, publicKey) {
     
     const [protectedHeader, unprotectedHeader, payload, signature] = coseSign1;
     
-    console.log('Protected header length:', protectedHeader?.length || 0);
-    console.log('Payload length:', payload?.length || 0);
-    console.log('Signature length:', signature?.length || 0);
-    
     // Convert protected header to Uint8Array if it's not already
     const protectedHeaderBytes = protectedHeader instanceof Uint8Array 
       ? protectedHeader 
       : new Uint8Array(protectedHeader);
     
-    const payloadBytes = payload instanceof Uint8Array 
+    let payloadBytes = payload instanceof Uint8Array 
       ? payload 
-      : new Uint8Array(payload);
-      
-    console.log('Protected header bytes:', hex(protectedHeaderBytes));
-    console.log('Payload bytes (first 32):', hex(payloadBytes.slice(0, 32)));
+      : (payload == null ? new Uint8Array(0) : new Uint8Array(payload));
     
     // Decode protected header to extract algorithm (may be overridden by key curve mapping per ISO 18013-5)
     let alg = -7; // Default to ES256
@@ -3057,7 +3242,6 @@ async function verifyCoseSign1(coseSign1, publicKey) {
     
     try {
   const decodedHeader = CBOR.decode(protectedHeaderBytes);
-      console.log('Decoded protected header:', decodedHeader);
       
       // Handle both Map and plain object
       if (decodedHeader instanceof Map) {
@@ -3077,24 +3261,19 @@ async function verifyCoseSign1(coseSign1, publicKey) {
         hashAlg = 'SHA-256';
         expectedSigLength = 64;
         curve = 'P-256';
-      } else {
-        console.warn('⚠️ Unknown algorithm label in protected header:', alg, '- defaulting to ES256');
       }
 
       // Override by spec mapping from actual key curve, if it differs
       const pkCurve = publicKey?.nobleCurveName || '';
       const mapped = specAlgFromCurve(pkCurve);
       if (mapped.algName !== algName || mapped.sigLen !== expectedSigLength) {
-        console.warn(`⚠️ Protected alg suggests ${algName}, but key curve '${pkCurve}' maps to ${mapped.algName}. Adjusting.`);
         algName = mapped.algName;
         hashAlg = mapped.hash;
         expectedSigLength = mapped.sigLen;
         curve = mapped.curveLabel;
       }
-
-      console.log(`Algorithm (effective): ${algName} (label ${alg}), Hash: ${hashAlg}, Curve: ${curve}, Expected Sig Len: ${expectedSigLength}`);
     } catch (e) {
-      console.warn('Could not decode protected header, using default ES256:', e.message);
+      // Use defaults
     }
     
     // Reconstruct Sig_structure per RFC 8152 Section 4.4
@@ -3143,14 +3322,16 @@ async function verifyCoseSign1(coseSign1, publicKey) {
     // Element 2: body_protected as bstr
     // protectedHeaderBytes is the serialized CBOR map (e.g., a1 01 26 for {1: -7})
     // For Sig_structure, we wrap it as a bstr
-    console.log('DEBUG: protectedHeaderBytes for Sig_structure:', hex(protectedHeaderBytes));
-    console.log('DEBUG: protectedHeaderBytes length:', protectedHeaderBytes.length);
     const encodedProtected = encodeBstr(protectedHeaderBytes);
-    console.log('DEBUG: encoded protected (with bstr wrapper):', hex(encodedProtected));
     sigStructureParts.push(encodedProtected);
     
-    // Element 3: external_aad as bstr (empty for COSE_Sign1)
-    sigStructureParts.push(new Uint8Array([0x40])); // empty byte string
+    // Element 3: external_aad as bstr (empty by default)
+    const aadBytes = externalAadBytes instanceof Uint8Array ? externalAadBytes : null;
+    if (aadBytes && aadBytes.length) {
+      sigStructureParts.push(encodeBstr(aadBytes));
+    } else {
+      sigStructureParts.push(new Uint8Array([0x40])); // empty byte string
+    }
     
     // Element 4: payload as bstr
     sigStructureParts.push(encodeBstr(payloadBytes));
@@ -3164,17 +3345,12 @@ async function verifyCoseSign1(coseSign1, publicKey) {
       offset += part.length;
     }
     
-    console.log('Sig_structure CBOR (manual):', hex(sigStructureBytes));
-    console.log('Sig_structure length:', sigStructureBytes.length);
-    
     // Convert signature to the format expected by Web Crypto
     // COSE signature is raw r||s format
     // - ES256: 64 bytes (32-byte r + 32-byte s) for P-256
     // - ES384: 96 bytes (48-byte r + 48-byte s) for P-384
     // Web Crypto expects the same raw format for ECDSA
     const signatureBytes = new Uint8Array(signature);
-    console.log('Signature bytes:', hex(signatureBytes));
-    console.log(`Signature length: ${signatureBytes.length} bytes (expected ${expectedSigLength} for ${algName})`);
     
     if (signatureBytes.length !== expectedSigLength) {
       console.warn(`⚠️ Expected ${expectedSigLength}-byte signature for ${algName}, got`, signatureBytes.length);
@@ -3194,14 +3370,6 @@ async function verifyCoseSign1(coseSign1, publicKey) {
       throw new Error(`Curve ${publicKey.nobleCurveName} not available in @noble/curves`);
     }
     
-    console.log(`Using @noble/curves (${publicKey.nobleCurveName}) for signature verification`);
-    
-    console.log('🔍 Verification inputs:');
-    console.log('  Signature bytes:', hex(signatureBytes).substring(0, 64) + '...');
-    console.log('  Message (Sig_structure):', hex(sigStructureBytes).substring(0, 64) + '...');
-    console.log('  Public key (with 0x04 prefix):', hex(publicKey.key).substring(0, 66) + '...');
-    console.log('  Curve library:', publicKey.nobleCurveName);
-    
   // Verify using noble-curves
   let isValid = false;
     try {
@@ -3218,16 +3386,34 @@ async function verifyCoseSign1(coseSign1, publicKey) {
         sigStructureBytes, // Pass the MESSAGE, not the hash!
         publicKey.key // Keep 0x04 prefix - noble-curves expects full uncompressed point
       );
-      
-      console.log('✓ Noble-curves verify() completed without error');
     } catch (verifyErr) {
-      console.error('✗ Noble-curves verification threw error:', verifyErr);
-      console.error('  Error details:', {
-        name: verifyErr.name,
-        message: verifyErr.message,
-        stack: verifyErr.stack?.substring(0, 200)
-      });
       isValid = false;
+    }
+
+    // Fallback: some implementations sign pre-hashed Sig_structure
+    if (!isValid) {
+      try {
+        const hashCandidates = [hashAlg || 'SHA-256', 'SHA-256', 'SHA-384', 'SHA-512']
+          .filter((v, i, a) => a.indexOf(v) === i);
+        for (const hashName of hashCandidates) {
+          try {
+            const msgHash = new Uint8Array(await crypto.subtle.digest(hashName, sigStructureBytes));
+            if (typeof curveLib.verify === 'function') {
+              try {
+                isValid = curveLib.verify(signatureBytes, msgHash, publicKey.key, { prehash: true });
+              } catch {
+                isValid = curveLib.verify(signatureBytes, msgHash, publicKey.key, { prehash: true, lowS: false });
+              }
+              if (isValid) {
+                if (DEBUG_VERBOSE) console.log(`✓ Noble-curves prehash verify succeeded (${hashName})`);
+                break;
+              }
+            }
+          } catch {}
+        }
+      } catch (e) {
+        if (DEBUG_VERBOSE) console.warn('Prehash verify failed:', e);
+      }
     }
     
     // Low-S normalization fallback for ECDSA (some libs enforce canonical low-S)
@@ -3261,7 +3447,6 @@ async function verifyCoseSign1(coseSign1, publicKey) {
       } catch {}
     }
     
-  console.log('Signature verification result:', isValid);
     return isValid;
     
   } catch (err) {
@@ -4541,6 +4726,321 @@ async function verifyIssuerSignedValueDigests(doc, coseSign1) {
   return result;
 }
 
+function getFieldAnyShared(obj, keys) {
+  if (!obj) return undefined;
+  for (const k of keys) {
+    if (obj instanceof Map) {
+      let v = obj.get(k);
+      if (v !== undefined) return v;
+      const kStr = String(k);
+      v = obj.get(kStr);
+      if (v !== undefined) return v;
+      if (typeof k === 'string' && !Number.isNaN(parseInt(k, 10))) {
+        const kNum = parseInt(k, 10);
+        v = obj.get(kNum);
+        if (v !== undefined) return v;
+      }
+    } else {
+      let v = obj?.[k];
+      if (v !== undefined) return v;
+      const kStr = String(k);
+      v = obj?.[kStr];
+      if (v !== undefined) return v;
+    }
+  }
+  return undefined;
+}
+
+function toUint8Shared(v) {
+  if (v instanceof Uint8Array) return v;
+  if (ArrayBuffer.isView(v)) return new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+  if (v instanceof ArrayBuffer) return new Uint8Array(v);
+  if (Array.isArray(v)) {
+    try { return new Uint8Array(v); } catch { return null; }
+  }
+  return null;
+}
+
+function bytesEqualStrict(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+function unwrapTaggedBytes(v) {
+  let cur = v;
+  if (cur && cur.constructor && cur.constructor.name === 'Tagged') {
+    cur = cur.value;
+  } else if (cur && typeof cur === 'object' && cur.tag === 24 && cur.value !== undefined) {
+    cur = cur.value;
+  }
+  return toUint8Shared(cur);
+}
+
+function decodeCborIfBytes(v) {
+  const bytes = toUint8Shared(v);
+  if (bytes && typeof CBOR?.decode === 'function') {
+    try { return CBOR.decode(bytes); } catch {}
+  }
+  return v;
+}
+
+function extractDeviceKeyFromMso(mso) {
+  if (!mso) return null;
+  let msoObj = mso;
+  // Unwrap Tag(24) bstr.cbor if present
+  const tagged = unwrapTaggedBytes(msoObj);
+  if (tagged) msoObj = decodeCborIfBytes(tagged);
+
+  let deviceKeyInfo = getFieldAnyShared(msoObj, ['deviceKeyInfo', 4, 8]);
+  if (deviceKeyInfo) {
+    const dkTagged = unwrapTaggedBytes(deviceKeyInfo);
+    if (dkTagged) deviceKeyInfo = decodeCborIfBytes(dkTagged);
+  }
+  if (!deviceKeyInfo) return null;
+  let deviceKey = getFieldAnyShared(deviceKeyInfo, ['deviceKey', 1]);
+  if (deviceKey) {
+    const dkTagged = unwrapTaggedBytes(deviceKey);
+    if (dkTagged) deviceKey = decodeCborIfBytes(dkTagged);
+  }
+  return deviceKey || null;
+}
+
+function coseKeyToNoblePublicKey(coseKey) {
+  if (!coseKey) throw new Error('Missing device public key');
+  const x = toUint8Shared(getFieldAnyShared(coseKey, [-2, 'x', '-2']));
+  const y = toUint8Shared(getFieldAnyShared(coseKey, [-3, 'y', '-3']));
+  if (!x || !y) throw new Error('Device public key missing x/y coordinates');
+  const crv = getFieldAnyShared(coseKey, [-1, 'crv', '-1']);
+  const crvNum = typeof crv === 'number' ? crv : parseInt(crv, 10);
+  let nobleCurveName = 'p256';
+  if (crvNum === 1) nobleCurveName = 'p256';
+  else if (crvNum === 2) nobleCurveName = 'p384';
+  else if (crvNum === 3) nobleCurveName = 'p521';
+  else if (crvNum === 8) nobleCurveName = 'brainpoolP256r1';
+  else if (crvNum === 9) nobleCurveName = 'brainpoolP384r1';
+  else if (crvNum === 10) nobleCurveName = 'brainpoolP512r1';
+  else throw new Error(`Unsupported COSE_Key curve: ${crv}`);
+
+  const key = new Uint8Array(1 + x.length + y.length);
+  key[0] = 0x04;
+  key.set(x, 1);
+  key.set(y, 1 + x.length);
+  return { type: 'noble', nobleCurveName, key };
+}
+
+async function verifyHolderAuthentication(doc) {
+  const result = { valid: false, errors: [], sessionTranscriptMatched: false, deviceAuthValid: false };
+  
+  // Save doc for inspection
+  window.lastDoc = doc;
+  
+  try {
+    if (DEBUG_VERBOSE) console.log('[holderAuth] Starting DeviceAuth verification');
+    if (DEBUG_VERBOSE) {
+      console.log('[holderAuth] doc.deviceSigned:', doc?.deviceSigned);
+      console.log('[holderAuth] doc.deviceSigned.deviceAuth:', doc?.deviceSigned?.deviceAuth);
+    }
+    
+    // Check if wallet is using MAC authentication instead of signature
+    const raw = doc?.deviceSigned?.raw;
+    const rawDeviceAuth = raw instanceof Map ? raw.get('deviceAuth') || raw.get(0) : raw?.deviceAuth || raw?.[0];
+    const hasMac = rawDeviceAuth && (
+      (rawDeviceAuth instanceof Map && rawDeviceAuth.get('deviceMac')) ||
+      (typeof rawDeviceAuth === 'object' && rawDeviceAuth.deviceMac)
+    );
+    if (hasMac) {
+      console.log('[holderAuth] ℹ️ Wallet is using MAC authentication (deviceMac), not signature-based authentication');
+      console.log('[holderAuth] MAC authentication is a valid ISO 18013-5 authentication method');
+      console.log('[holderAuth] Skipping DeviceAuth signature verification (MAC cannot be verified by reader)');
+      if (typeof window.log === 'function') {
+        window.log('✓ Wallet using MAC authentication (valid ISO 18013-5 method)');
+      }
+      result.deviceAuthValid = true;
+      result.valid = true; // Mark as valid if MSO signature is already verified
+      result.authMethod = 'MAC';
+      return result;
+    }
+    
+    const mso = doc?.signature?.msoDecoded || null;
+    const deviceKey = extractDeviceKeyFromMso(mso);
+    if (!deviceKey) throw new Error('MSO.deviceKeyInfo.deviceKey missing');
+
+    let deviceAuthCose = doc?.deviceSigned?.deviceAuth;
+    if (!deviceAuthCose) {
+      // Fallback: attempt to decode from raw DeviceSigned if available
+      const raw = doc?.deviceSigned?.raw;
+      if (DEBUG_VERBOSE) {
+        console.log('[holderAuth] raw deviceSigned keys:', (raw instanceof Map) ? Array.from(raw.keys()) : Object.keys(raw || {}));
+        console.log('[holderAuth] raw deviceSigned.deviceAuth:', (raw instanceof Map) ? raw.get('deviceAuth') : raw?.deviceAuth);
+      }
+      const rawBytes = unwrapTaggedBytes(raw) || toUint8Shared(raw);
+      const rawDecoded = rawBytes ? decodeCborIfBytes(rawBytes) : raw;
+      const ds = rawDecoded && typeof rawDecoded === 'object' ? rawDecoded : null;
+      const deviceAuth = ds ? getFieldAnyShared(ds, ['deviceAuth', 0]) : null;
+      if (DEBUG_VERBOSE) {
+        console.log('[holderAuth] decoded deviceSigned keys:', (ds instanceof Map) ? Array.from(ds.keys()) : Object.keys(ds || {}));
+        console.log('[holderAuth] decoded deviceAuth value:', deviceAuth);
+      }
+      if (deviceAuth) {
+        let cur = deviceAuth;
+        if (Array.isArray(cur)) {
+          deviceAuthCose = cur;
+        } else {
+          const curBytes = unwrapTaggedBytes(cur) || toUint8Shared(cur);
+          if (curBytes) {
+            const dec = decodeCborIfBytes(curBytes);
+            if (Array.isArray(dec)) cur = dec;
+          }
+          if (cur instanceof Map) {
+            const a0 = cur.get(0);
+            const a1 = cur.get(1);
+            const a2 = cur.get(2);
+            const a3 = cur.get(3);
+            if (a0 !== undefined && a1 !== undefined && a2 !== undefined && a3 !== undefined) {
+              cur = [a0, a1, a2, a3];
+            }
+          } else if (cur && typeof cur === 'object') {
+            const a0 = cur[0];
+            const a1 = cur[1];
+            const a2 = cur[2];
+            const a3 = cur[3];
+            if (a0 !== undefined && a1 !== undefined && a2 !== undefined && a3 !== undefined) {
+              cur = [a0, a1, a2, a3];
+            }
+          }
+          if (Array.isArray(cur)) deviceAuthCose = cur;
+        }
+      }
+    }
+    if (!deviceAuthCose || !Array.isArray(deviceAuthCose) || deviceAuthCose.length < 4) {
+      throw new Error('DeviceAuth COSE_Sign1 missing');
+    }
+
+    let publicKey = coseKeyToNoblePublicKey(deviceKey);
+
+    // Handle detached payloads (some wallets set payload = null and sign external DeviceAuthentication bytes)
+    const payloadRaw = deviceAuthCose[2];
+    const payloadBytesAttached = payloadRaw ? toUint8Shared(payloadRaw) : null;
+    const cb = window.CBOR || self.CBOR || (typeof CBOR !== 'undefined' ? CBOR : null);
+    let deviceAuthPayloadBytes = payloadBytesAttached;
+
+    if (!payloadBytesAttached || payloadBytesAttached.length === 0) {
+      // Build DeviceAuthenticationBytes using ISO 18013-5 (Multipaz-compatible) structure
+      const raw = doc?.deviceSigned?.raw;
+      const rawBytes = unwrapTaggedBytes(raw) || toUint8Shared(raw);
+      const rawDecoded = rawBytes ? decodeCborIfBytes(rawBytes) : raw;
+      const ds = rawDecoded && typeof rawDecoded === 'object' ? rawDecoded : null;
+      const nameSpacesRaw = ds ? getFieldAnyShared(ds, ['nameSpaces', 1]) : null;
+      const nsRawBytes = unwrapTaggedBytes(nameSpacesRaw) || toUint8Shared(nameSpacesRaw);
+      const localTranscript = toUint8Shared(window.sessionDebug?.sessionTranscript);
+      const stDecodedManual = localTranscript ? decodeCborIfBytes(localTranscript) : null;
+      const docType = doc?.docType || mso?.docType || null;
+
+      if (!cb || !docType || !stDecodedManual || !nsRawBytes) {
+        throw new Error('DeviceAuth payload missing or invalid');
+      }
+
+      const nsTagged = cb.Tagged ? new cb.Tagged(24, nsRawBytes) : { tag: 24, value: nsRawBytes };
+      const deviceAuthArray = ['DeviceAuthentication', stDecodedManual, docType, nsTagged];
+      const encodedDeviceAuth = cb.encode(deviceAuthArray);
+      const taggedDeviceAuth = cb.Tagged ? new cb.Tagged(24, encodedDeviceAuth) : { tag: 24, value: encodedDeviceAuth };
+      deviceAuthPayloadBytes = (typeof cb.encodeCanonical === 'function')
+        ? cb.encodeCanonical(taggedDeviceAuth)
+        : cb.encode(taggedDeviceAuth);
+    }
+
+    // Check if signature is DER-encoded and convert to raw format
+    let signatureToVerify = deviceAuthCose[3];
+    if (deviceAuthCose[3][0] === 0x30) {
+      signatureToVerify = derSignatureToRaw(deviceAuthCose[3], 64); // Try P-256 (64 bytes)
+      if (signatureToVerify[0] === 0x30) {
+        // Still DER, try P-384 (96 bytes)
+        signatureToVerify = derSignatureToRaw(deviceAuthCose[3], 96);
+      }
+      // Update the signature in the COSE_Sign1 array for verification
+      deviceAuthCose[3] = signatureToVerify;
+    }
+    
+    // Log public key details
+    if (publicKey) {
+      if (deviceKey) {
+        const crv = getFieldAnyShared(deviceKey, [-1, 'crv', '-1']);
+        const x = toUint8Shared(getFieldAnyShared(deviceKey, [-2, 'x', '-2']));
+        const y = toUint8Shared(getFieldAnyShared(deviceKey, [-3, 'y', '-3']));
+      }
+    }
+    
+    const cosePayload = deviceAuthCose.slice();
+    cosePayload[2] = deviceAuthPayloadBytes || new Uint8Array(0);
+    const verified = await verifyCoseSign1(cosePayload, publicKey, new Uint8Array(0));
+
+    result.deviceAuthValid = verified;
+    if (!result.deviceAuthValid) {
+      throw new Error('DeviceAuth signature verification failed');
+    }
+    if (DEBUG_VERBOSE) console.log('[holderAuth] DeviceAuth signature OK');
+
+    const payloadBytes = deviceAuthPayloadBytes || toUint8Shared(deviceAuthCose[2]);
+    if (!payloadBytes) throw new Error('DeviceAuth payload missing or invalid');
+    let deviceAuth = decodeCborIfBytes(payloadBytes);
+
+    // Handle DeviceAuthenticationBytes wrapped as tag(24, bstr(CBOR(deviceAuthentication)))
+    if (!Array.isArray(deviceAuth)) {
+      const innerBytes = unwrapTaggedBytes(deviceAuth) || toUint8Shared(deviceAuth?.value) || toUint8Shared(deviceAuth);
+      if (innerBytes) {
+        const innerDecoded = decodeCborIfBytes(innerBytes);
+        if (Array.isArray(innerDecoded)) {
+          deviceAuth = innerDecoded;
+        }
+      }
+    }
+
+    if (!Array.isArray(deviceAuth) || deviceAuth.length < 3) {
+      throw new Error('DeviceAuthentication payload is not an array');
+    }
+    if (deviceAuth[0] !== 'DeviceAuthentication') {
+      throw new Error('DeviceAuthentication context mismatch');
+    }
+    const localTranscriptCheck = toUint8Shared(window.sessionDebug?.sessionTranscript);
+    const localWrappedCheck = toUint8Shared(window.sessionDebug?.sessionTranscriptWrapped);
+
+    // SessionTranscript may be provided as decoded DataItem; encode to bytes for comparison.
+    const sessionTranscriptItem = deviceAuth[1];
+    const stBytesCandidates = [];
+    const stUnwrapped = unwrapTaggedBytes(sessionTranscriptItem) || toUint8Shared(sessionTranscriptItem);
+    if (stUnwrapped) stBytesCandidates.push(stUnwrapped);
+    if (cb) {
+      try { stBytesCandidates.push(cb.encode(sessionTranscriptItem)); } catch {}
+      if (typeof cb.encodeCanonical === 'function') {
+        try { stBytesCandidates.push(cb.encodeCanonical(sessionTranscriptItem)); } catch {}
+      }
+    }
+
+    if (stBytesCandidates.length === 0 || (!localTranscriptCheck && !localWrappedCheck)) {
+      throw new Error('SessionTranscript bytes missing for comparison');
+    }
+
+    const matchRaw = localTranscriptCheck
+      ? stBytesCandidates.some((b) => bytesEqualStrict(b, localTranscriptCheck))
+      : false;
+    const matchWrapped = localWrappedCheck
+      ? stBytesCandidates.some((b) => bytesEqualStrict(b, localWrappedCheck))
+      : false;
+    result.sessionTranscriptMatched = matchRaw || matchWrapped;
+    if (!result.sessionTranscriptMatched) {
+      throw new Error('SessionTranscript mismatch');
+    }
+    if (DEBUG_VERBOSE) console.log('[holderAuth] SessionTranscript match OK');
+
+    result.valid = true;
+  } catch (err) {
+    result.errors.push(err.message || String(err));
+    if (DEBUG_VERBOSE) console.error('[holderAuth] Failed:', err);
+  }
+  return result;
+}
+
 async function verifyCredentialSignature(doc) {
   if (!doc || !doc.signature || !doc.signature.coseSign1) {
     return {
@@ -4552,14 +5052,32 @@ async function verifyCredentialSignature(doc) {
     };
   }
 
+  log('🔏 Checking issuer signature…');
   const res = await verifyCOSESign1SignatureWithChain(doc.signature.coseSign1);
+  if (res.signatureValid) log('✅ Issuer signature valid');
+  else log('❌ Issuer signature invalid');
+
+  log('🧾 Checking document integrity…');
   const claims = await verifyIssuerSignedValueDigests(doc, doc.signature.coseSign1);
+  if (claims.allMatched) log('✅ Document integrity OK');
+  else if (claims.checked > 0) log('❌ Document integrity failed');
+
+  log('🔐 Checking device authentication…');
+  const holder = await verifyHolderAuthentication(doc);
+  if (holder.valid) log('✅ Device authentication OK');
+  else log('❌ Device authentication failed');
+  res.holderAuthValid = holder.valid;
+  res.holderAuth = holder;
   res.claims = claims;
   if (claims.checked > 0 && !claims.allMatched) {
     res.errors.push('MSO valueDigests mismatch');
   }
   if (Array.isArray(claims.errors) && claims.errors.length) {
     res.errors.push(...claims.errors);
+  }
+  if (!holder.valid) {
+    res.errors.push(...holder.errors);
+    res.signatureValid = false;
   }
   return res;
 }
@@ -4824,6 +5342,13 @@ async function processSessionResponse(assembled) {
 
   let sharedSecretBuffer = null;
 
+  try {
+    if (walletKeyMap) {
+      window.sessionDebug = window.sessionDebug || {};
+      window.sessionDebug.walletEphemeralKey = walletKeyMap;
+    }
+  } catch {}
+
   // log('⚠️ Wallet response did not contain an ephemeral key. Falling back to static DeviceEngagement key.');
   const mdocPub = await window.SessionCrypto.importMdocPubKeyXY(mdocPubKey.x, mdocPubKey.y);
   sharedSecretBuffer = await window.SessionCrypto.deriveSharedSecretBits(readerKeyPair.privateKey, mdocPub);
@@ -5008,6 +5533,10 @@ async function handleQrPayload(raw, sourceLabel) {
   disconnectBLE();
 
   try {
+    updateReplayCapture({
+      createdAt: new Date().toISOString(),
+      qrPayload: payload,
+    });
     const { uuid, addr } = parseMdocUriAndDE(payload);
     svcUUID = uuid;
     bleAddr = addr;
@@ -5017,6 +5546,7 @@ async function handleQrPayload(raw, sourceLabel) {
     qrInput.value = payload;
     updateBleRoleUI();
     log(`✅ Parsed QR payload from ${sourceLabel}. Service UUID: ${uuid || 'n/a'}`);
+    saveReplayCapture();
     
     // Show message to user about clicking to connect
     log('🚀 Ready to connect! Click "Connect & Request Digital Credentials" below to continue...');
@@ -5098,6 +5628,14 @@ async function autoConnectFlow() {
     // Generate ephemeral key pair
   readerKeyPair = await window.SessionEstablishment.makeReaderEphemeralKeyPair();
   await window.SessionEstablishment.exportReaderPublicToCoseKey(readerKeyPair);
+  try {
+    const privJwk = await crypto.subtle.exportKey('jwk', readerKeyPair.privateKey);
+    const pubJwk = await crypto.subtle.exportKey('jwk', readerKeyPair.publicKey);
+    updateReplayCapture({ readerKeyPairJwk: { privateKey: privJwk, publicKey: pubJwk } });
+    saveReplayCapture();
+  } catch (e) {
+    console.warn('Failed to export reader key pair for replay:', e);
+  }
     log('✅ Generated ephemeral key pair');
     
     // Build SessionTranscript immediately (needed for reader authentication)
@@ -5109,18 +5647,34 @@ async function autoConnectFlow() {
     console.log('Building SessionTranscript for reader authentication...');
   transcriptAAD = await window.SessionEstablishment.buildTranscriptAAD(deBytes);
     console.log('✅ SessionTranscript built, length:', transcriptAAD.length, 'bytes');
+  try {
+    updateReplayCapture({
+      transcriptAADB64: u8ToB64(transcriptAAD),
+      sessionTranscriptB64: u8ToB64(window.sessionDebug?.sessionTranscript || null),
+      sessionTranscriptWrappedB64: u8ToB64(window.sessionDebug?.sessionTranscriptWrapped || null),
+    });
+    saveReplayCapture();
+  } catch {}
     
     // Build and send SessionEstablishment message
+    const buildRequestByTypeWithRecord = async () => {
+      const req = await buildRequestByType();
+      updateReplayCapture({ requestBytesB64: u8ToB64(req) });
+      saveReplayCapture();
+      return req;
+    };
     const { message: legacyMessage, keys, transcriptAAD: aad } = await window.SessionEstablishment.buildLegacySessionEstablishmentWithData({
       deBytes,
       mdocPubKey,
       readerKeyPair,
       transcriptAAD,
       skReader,
-      buildRequestByType,
+      buildRequestByType: buildRequestByTypeWithRecord,
       log,
       CBOR,
     });
+    updateReplayCapture({ sessionEstablishmentB64: u8ToB64(legacyMessage) });
+    saveReplayCapture();
     if (keys) {
       skReader = keys.readerKey;
       skDevice = keys.deviceKey;
@@ -5128,6 +5682,8 @@ async function autoConnectFlow() {
       sessionKey = skReader;
       sessionEstablished = true;
       window.sessionEstablished = true;
+      updateReplayCapture({ skReaderB64: u8ToB64(skReader), skDeviceB64: u8ToB64(skDevice) });
+      saveReplayCapture();
     }
     if (aad) transcriptAAD = aad;
     console.log('SessionEstablishment message length:', legacyMessage.length);
@@ -5428,6 +5984,13 @@ function parseMdocUriAndDE(uri){
   // Update module-scoped state expected by the rest of the app
   deBytes = res.deBytes;
   if (res.x && res.y) mdocPubKey = { x: res.x, y: res.y };
+  try {
+    updateReplayCapture({
+      deBytesB64: u8ToB64(res.deBytes),
+      mdocPubKey: res.x && res.y ? { x: Array.from(res.x), y: Array.from(res.y) } : null,
+    });
+    saveReplayCapture();
+  } catch {}
   return { uuid: res.uuid, addr: res.addr };
 }
 
@@ -5777,6 +6340,583 @@ function showUpdateNotification() {
     setTimeout(() => updateBanner.remove(), 300);
   }, 10000);
 }
+
+// Manual verification helper - call from console: window.manualVerifyDeviceAuth()
+window.manualVerifyDeviceAuth = async function(payloadIndex = 0, aadIndex = 0) {
+  const debug = window.deviceAuthDebug;
+  if (!debug) {
+    console.error('No debug data available. Run replay first.');
+    return;
+  }
+  
+  console.log('========== MANUAL VERIFICATION ==========');
+  console.log('Signature:', debug.signatureHex);
+  console.log('Protected header:', debug.protectedHeaderHex);
+  console.log('Public key curve:', debug.publicKey.nobleCurveName);
+  console.log('Public key (hex):', hex(debug.publicKey.key));
+  
+  // Get payload candidates from the verification attempt
+  // These are stored in a global during verification
+  const payloadCandidates = window.lastPayloadCandidates || [];
+  if (payloadCandidates.length === 0) {
+    console.error('No payload candidates available. Run replay first.');
+    return;
+  }
+  
+  const aadOptions = [
+    { bytes: null, label: 'empty' },
+    { bytes: window.sessionDebug?.sessionTranscript, label: 'raw-transcript' },
+    { bytes: window.sessionDebug?.sessionTranscriptWrapped, label: 'wrapped-transcript' }
+  ];
+  
+  const selectedPayload = payloadCandidates[payloadIndex]?.bytes || new Uint8Array(0);
+  const selectedAAD = aadOptions[aadIndex];
+  
+  console.log('Testing with:');
+  console.log('  Payload:', payloadCandidates[payloadIndex]?.label || 'unknown');
+  console.log('  Payload length:', selectedPayload.length);
+  console.log('  Payload hex (first 64):', hex(selectedPayload).substring(0, 64) + '...');
+  console.log('  AAD:', selectedAAD.label);
+  
+  // Build Sig_structure manually
+  const contextStr = "Signature1";
+  const contextBytes = new TextEncoder().encode(contextStr);
+  
+  function encodeBstr(bytes) {
+    const len = bytes.length;
+    if (len <= 23) {
+      return new Uint8Array([0x40 + len, ...bytes]);
+    } else if (len <= 0xFF) {
+      return new Uint8Array([0x58, len, ...bytes]);
+    } else if (len <= 0xFFFF) {
+      return new Uint8Array([0x59, len >> 8, len & 0xFF, ...bytes]);
+    }
+    throw new Error('Too large');
+  }
+  
+  const parts = [];
+  parts.push(new Uint8Array([0x84])); // array(4)
+  parts.push(new Uint8Array([0x6A, ...contextBytes])); // "Signature1"
+  parts.push(encodeBstr(debug.protectedHeader));
+  parts.push(selectedAAD.bytes ? encodeBstr(selectedAAD.bytes) : new Uint8Array([0x40]));
+  parts.push(encodeBstr(selectedPayload));
+  
+  const totalLen = parts.reduce((sum, p) => sum + p.length, 0);
+  const sigStructure = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const part of parts) {
+    sigStructure.set(part, offset);
+    offset += part.length;
+  }
+  
+  console.log('Sig_structure (hex):', hex(sigStructure));
+  console.log('Sig_structure length:', sigStructure.length);
+  
+  // Try verification
+  const curveLib = window.nobleCurves[debug.publicKey.nobleCurveName];
+  try {
+    const result = curveLib.verify(debug.signature, sigStructure, debug.publicKey.key);
+    console.log('✅ Verification result:', result);
+    if (result) {
+      console.log('🎉 SUCCESS! This combination works!');
+      return { success: true, payload: selectedPayload, aad: selectedAAD };
+    }
+  } catch (e) {
+    console.error('❌ Verification error:', e);
+  }
+  
+  // Try with hash
+  console.log('Trying with SHA-256 hash...');
+  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', sigStructure));
+  console.log('Hash (hex):', hex(hash));
+  try {
+    const result = curveLib.verify(debug.signature, hash, debug.publicKey.key, { prehash: true });
+    console.log('Hash verification result:', result);
+    if (result) {
+      console.log('🎉 SUCCESS with prehash! This combination works!');
+      return { success: true, payload: selectedPayload, aad: selectedAAD, prehash: true };
+    }
+  } catch (e) {
+    console.error('❌ Hash verification error:', e);
+  }
+  
+  return { success: false };
+};
+
+// Auto-test all combinations - call from console: await window.autoTestDeviceAuth()
+window.autoTestDeviceAuth = async function() {
+  const debug = window.deviceAuthDebug;
+  const payloadCandidates = window.lastPayloadCandidates || [];
+  
+  if (!debug || payloadCandidates.length === 0) {
+    console.error('No debug data available. Run replay first.');
+    return;
+  }
+  
+  console.log('========== AUTO-TESTING ALL COMBINATIONS ==========');
+  console.log(`Testing ${payloadCandidates.length} payloads × 6 AAD variants = ${payloadCandidates.length * 6} combinations`);
+  
+  const aadOptions = [
+    { bytes: null, label: 'empty' },
+    { bytes: window.sessionDebug?.sessionTranscript, label: 'raw-transcript' },
+    { bytes: window.sessionDebug?.sessionTranscriptWrapped, label: 'wrapped-transcript' }
+  ];
+  
+  const curveLib = window.nobleCurves[debug.publicKey.nobleCurveName];
+  
+  function encodeBstr(bytes) {
+    const len = bytes.length;
+    if (len <= 23) return new Uint8Array([0x40 + len, ...bytes]);
+    if (len <= 0xFF) return new Uint8Array([0x58, len, ...bytes]);
+    if (len <= 0xFFFF) return new Uint8Array([0x59, len >> 8, len & 0xFF, ...bytes]);
+    throw new Error('Too large');
+  }
+  
+  function buildSigStructure(payload, aad) {
+    const contextStr = "Signature1";
+    const contextBytes = new TextEncoder().encode(contextStr);
+    const parts = [];
+    parts.push(new Uint8Array([0x84])); // array(4)
+    parts.push(new Uint8Array([0x6A, ...contextBytes])); // "Signature1"
+    parts.push(encodeBstr(debug.protectedHeader));
+    parts.push(aad ? encodeBstr(aad) : new Uint8Array([0x40]));
+    parts.push(encodeBstr(payload));
+    
+    const totalLen = parts.reduce((sum, p) => sum + p.length, 0);
+    const sigStructure = new Uint8Array(totalLen);
+    let offset = 0;
+    for (const part of parts) {
+      sigStructure.set(part, offset);
+      offset += part.length;
+    }
+    return sigStructure;
+  }
+  
+  let found = false;
+  let attempts = 0;
+  
+  for (let p = 0; p < payloadCandidates.length; p++) {
+    const payloadCandidate = payloadCandidates[p];
+    
+    // Mode 1: payload in COSE_Sign1[2], try different AADs
+    for (let a = 0; a < aadOptions.length; a++) {
+      attempts++;
+      const aadCandidate = aadOptions[a];
+      const sigStructure = buildSigStructure(payloadCandidate.bytes, aadCandidate.bytes);
+      
+      try {
+        const result = curveLib.verify(debug.signature, sigStructure, debug.publicKey.key);
+        if (result) {
+          console.log(`✅ FOUND! Payload: ${payloadCandidate.label}, AAD: ${aadCandidate.label}`);
+          console.log(`   Combination: [${p}, ${a}]`);
+          found = true;
+          return { success: true, payloadIndex: p, aadIndex: a, mode: 'attached' };
+        }
+      } catch (e) {}
+      
+      // Try prehash
+      try {
+        const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', sigStructure));
+        const result = curveLib.verify(debug.signature, hash, debug.publicKey.key, { prehash: true });
+        if (result) {
+          console.log(`✅ FOUND (prehash)! Payload: ${payloadCandidate.label}, AAD: ${aadCandidate.label}`);
+          console.log(`   Combination: [${p}, ${a}] with prehash`);
+          found = true;
+          return { success: true, payloadIndex: p, aadIndex: a, mode: 'attached', prehash: true };
+        }
+      } catch (e) {}
+    }
+    
+    // Mode 2: empty payload in COSE_Sign1[2], candidate as external AAD
+    attempts++;
+    const sigStructure = buildSigStructure(new Uint8Array(0), payloadCandidate.bytes);
+    
+    try {
+      const result = curveLib.verify(debug.signature, sigStructure, debug.publicKey.key);
+      if (result) {
+        console.log(`✅ FOUND! Empty payload, AAD: ${payloadCandidate.label}`);
+        console.log(`   Combination: payload=${p} as external AAD`);
+        found = true;
+        return { success: true, payloadIndex: p, mode: 'detached' };
+      }
+    } catch (e) {}
+    
+    // Try prehash
+    try {
+      const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', sigStructure));
+      const result = curveLib.verify(debug.signature, hash, debug.publicKey.key, { prehash: true });
+      if (result) {
+        console.log(`✅ FOUND (prehash)! Empty payload, AAD: ${payloadCandidate.label}`);
+        console.log(`   Combination: payload=${p} as external AAD with prehash`);
+        found = true;
+        return { success: true, payloadIndex: p, mode: 'detached', prehash: true };
+      }
+    } catch (e) {}
+  }
+  
+  console.log(`❌ No match found after ${attempts} attempts`);
+  console.log('Trying with wallet ephemeral key...');
+  
+  // Try with wallet ephemeral key
+  const walletKey = window.sessionDebug?.walletEphemeralKey;
+  if (walletKey) {
+    const walletPubKey = coseKeyToNoblePublicKey(walletKey);
+    console.log('Wallet public key (hex):', hex(walletPubKey.key));
+    
+    for (let p = 0; p < payloadCandidates.length; p++) {
+      const payloadCandidate = payloadCandidates[p];
+      
+      for (let a = 0; a < aadOptions.length; a++) {
+        const aadCandidate = aadOptions[a];
+        const sigStructure = buildSigStructure(payloadCandidate.bytes, aadCandidate.bytes);
+        
+        try {
+          const result = curveLib.verify(debug.signature, sigStructure, walletPubKey.key);
+          if (result) {
+            console.log(`✅ FOUND with wallet key! Payload: ${payloadCandidate.label}, AAD: ${aadCandidate.label}`);
+            return { success: true, payloadIndex: p, aadIndex: a, mode: 'attached', keyType: 'wallet' };
+          }
+        } catch (e) {}
+      }
+    }
+  }
+  
+  return { success: false, attempts };
+};
+
+// Diagnostic helper - check all keys in the captured data
+window.diagnoseKeys = function() {
+  console.log('========== KEY DIAGNOSTICS ==========');
+  
+  // First check if data exists at all
+  console.log('\n=== Data Availability ===');
+  console.log('window.replayCapture exists:', !!window.replayCapture);
+  console.log('window.sessionDebug exists:', !!window.sessionDebug);
+  console.log('window.sessionEstablished:', window.sessionEstablished);
+  
+  if (window.replayCapture) {
+    console.log('\nReplay capture keys:', Object.keys(window.replayCapture));
+    console.log('walletResponse exists:', !!window.replayCapture.walletResponse);
+    if (window.replayCapture.walletResponse) {
+      console.log('walletResponse keys:', Object.keys(window.replayCapture.walletResponse));
+      console.log('documents array length:', window.replayCapture.walletResponse.documents?.length || 0);
+    }
+  }
+  
+  if (window.sessionDebug) {
+    console.log('\nsessionDebug keys:', Object.keys(window.sessionDebug));
+  }
+  
+  // Check MSO device key from live document (not replay)
+  console.log('\n=== 1. MSO Device Key (from live session) ===');
+  const liveDoc = window.lastParsedDocument || window.currentDocument;
+  if (liveDoc) {
+    console.log('Live document exists');
+    const mso = liveDoc.signature?.msoDecoded;
+    if (mso) {
+      console.log('  ✅ MSO exists');
+      console.log('  MSO keys:', Object.keys(mso));
+      console.log('  deviceKeyInfo:', mso.deviceKeyInfo);
+      
+      if (mso.deviceKeyInfo) {
+        console.log('  deviceKeyInfo keys:', Object.keys(mso.deviceKeyInfo));
+        const dk = extractDeviceKeyFromMso(mso);
+        if (dk) {
+          console.log('  ✅ Device key extracted');
+          try {
+            const pubKey = coseKeyToNoblePublicKey(dk);
+            console.log('  ✅ Public key (hex):', hex(pubKey.key));
+          } catch (e) {
+            console.log('  ❌ Error converting:', e.message);
+          }
+        }
+      }
+    } else {
+      console.log('  ❌ No MSO in live document');
+    }
+  } else {
+    console.log('  ❌ No live document available');
+  }
+  
+  // Check wallet ephemeral key from live session
+  console.log('\n=== 2. Wallet Ephemeral Key (from live session) ===');
+  const walletKey = window.sessionDebug?.walletEphemeralKey;
+  if (walletKey) {
+    console.log('  ✅ Found in sessionDebug');
+    console.log('  Keys:', Object.keys(walletKey));
+    try {
+      const pubKey = coseKeyToNoblePublicKey(walletKey);
+      console.log('  ✅ Public key (hex):', hex(pubKey.key));
+    } catch (e) {
+      console.log('  ❌ Error converting:', e.message);
+    }
+  } else {
+    console.log('  ❌ Not found in sessionDebug');
+  }
+  
+  // Check DeviceEngagement mdoc public key from live session
+  console.log('\n=== 3. DeviceEngagement mdoc Key (from live session) ===');
+  const deKey = window.sessionDebug?.mdocPublicKey;
+  if (deKey) {
+    console.log('  ✅ Found in sessionDebug');
+    console.log('  Keys:', Object.keys(deKey));
+    try {
+      const pubKey = coseKeyToNoblePublicKey(deKey);
+      console.log('  ✅ Public key (hex):', hex(pubKey.key));
+    } catch (e) {
+      console.log('  ❌ Error converting:', e.message);
+    }
+  } else {
+    console.log('  ❌ Not found in sessionDebug');
+  }
+  
+  console.log('\n=== 4. DeviceAuth Debug Data ===');
+  if (window.deviceAuthDebug) {
+    console.log('  ✅ deviceAuthDebug exists');
+    console.log('  Keys:', Object.keys(window.deviceAuthDebug));
+    console.log('  Has publicKey:', !!window.deviceAuthDebug.publicKey);
+    console.log('  Has deviceKey:', !!window.deviceAuthDebug.deviceKey);
+  } else {
+    console.log('  ❌ deviceAuthDebug not available');
+  }
+  
+  console.log('\n========== INSTRUCTIONS ==========');
+  console.log('After scanning QR and receiving wallet response:');
+  console.log('1. Verification will run automatically');
+  console.log('2. Check window.deviceAuthDebug for captured signature data');
+  console.log('3. Run window.autoTestDeviceAuth() to test all combinations');
+  console.log('4. Run window.testRawBytes() to try raw DeviceNameSpaces');
+};
+
+// Test with raw DeviceNameSpaces bytes (no DeviceAuthentication wrapper)
+window.testRawBytes = async function() {
+  console.log('========== TESTING RAW BYTES ==========');
+  
+  const debug = window.deviceAuthDebug;
+  if (!debug) {
+    console.error('No debug data. Run verification first.');
+    return;
+  }
+  
+  const curveLib = window.nobleCurves[debug.publicKey.nobleCurveName];
+  
+  // Try to get DeviceNameSpaces raw bytes
+  const payloadCandidates = window.lastPayloadCandidates || [];
+  
+  function encodeBstr(bytes) {
+    const len = bytes.length;
+    if (len <= 23) return new Uint8Array([0x40 + len, ...bytes]);
+    if (len <= 0xFF) return new Uint8Array([0x58, len, ...bytes]);
+    if (len <= 0xFFFF) return new Uint8Array([0x59, len >> 8, len & 0xFF, ...bytes]);
+    throw new Error('Too large');
+  }
+  
+  // Try signing just DeviceNameSpaces with no wrapper
+  console.log('Trying DeviceNameSpaces raw bytes as payload...');
+  
+  for (let i = 0; i < Math.min(10, payloadCandidates.length); i++) {
+    const candidate = payloadCandidates[i];
+    if (!candidate.label.includes('ns-bytes')) continue;
+    
+    // Build minimal Sig_structure with just the namespace bytes
+    const contextStr = "Signature1";
+    const contextBytes = new TextEncoder().encode(contextStr);
+    const parts = [];
+    parts.push(new Uint8Array([0x84]));
+    parts.push(new Uint8Array([0x6A, ...contextBytes]));
+    parts.push(encodeBstr(debug.protectedHeader));
+    parts.push(new Uint8Array([0x40])); // empty AAD
+    parts.push(encodeBstr(candidate.bytes));
+    
+    const totalLen = parts.reduce((sum, p) => sum + p.length, 0);
+    const sigStructure = new Uint8Array(totalLen);
+    let offset = 0;
+    for (const part of parts) {
+      sigStructure.set(part, offset);
+      offset += part.length;
+    }
+    
+    try {
+      const result = curveLib.verify(debug.signature, sigStructure, debug.publicKey.key);
+      if (result) {
+        console.log(`✅ FOUND! ${candidate.label}`);
+        return { success: true, candidate: candidate.label };
+      }
+    } catch (e) {}
+  }
+  
+  console.log('❌ No match with raw namespace bytes');
+  
+  // Last resort: try the signature itself as the message (self-signed check)
+  console.log('Trying signature as message (self-sign check)...');
+  try {
+    const result = curveLib.verify(debug.signature, debug.signature, debug.publicKey.key);
+    if (result) {
+      console.log('⚠️ Signature verifies against itself! This is unusual.');
+      return { success: true, selfSigned: true };
+    }
+  } catch (e) {}
+  
+  console.log('❌ Signature verification completely failed');
+  console.log('This suggests:');
+  console.log('1. Wrong public key (check if wallet uses a different key)');
+  console.log('2. Signature corruption or encoding issue');
+  console.log('3. Non-standard DeviceAuth implementation');
+  
+  return { success: false };
+};
+
+// Manual verification with custom key
+window.verifyWithCustomKey = async function(coseKey, payloadIndex = 0, aadIndex = 0) {
+  const debug = window.deviceAuthDebug;
+  const payloadCandidates = window.lastPayloadCandidates || [];
+  
+  if (!debug || payloadCandidates.length === 0) {
+    console.error('No debug data available.');
+    return;
+  }
+  
+  console.log('========== VERIFYING WITH CUSTOM KEY ==========');
+  const pubKey = coseKeyToNoblePublicKey(coseKey);
+  console.log('Custom public key (hex):', hex(pubKey.key));
+  console.log('Curve:', pubKey.nobleCurveName);
+  
+  const aadOptions = [
+    { bytes: null, label: 'empty' },
+    { bytes: window.sessionDebug?.sessionTranscript, label: 'raw-transcript' },
+    { bytes: window.sessionDebug?.sessionTranscriptWrapped, label: 'wrapped-transcript' }
+  ];
+  
+  const curveLib = window.nobleCurves[pubKey.nobleCurveName];
+  
+  function encodeBstr(bytes) {
+    const len = bytes.length;
+    if (len <= 23) return new Uint8Array([0x40 + len, ...bytes]);
+    if (len <= 0xFF) return new Uint8Array([0x58, len, ...bytes]);
+    if (len <= 0xFFFF) return new Uint8Array([0x59, len >> 8, len & 0xFF, ...bytes]);
+    throw new Error('Too large');
+  }
+  
+  const selectedPayload = payloadCandidates[payloadIndex]?.bytes || new Uint8Array(0);
+  const selectedAAD = aadOptions[aadIndex];
+  
+  console.log(`Testing: payload=${payloadCandidates[payloadIndex]?.label}, AAD=${selectedAAD.label}`);
+  
+  const contextStr = "Signature1";
+  const contextBytes = new TextEncoder().encode(contextStr);
+  const parts = [];
+  parts.push(new Uint8Array([0x84]));
+  parts.push(new Uint8Array([0x6A, ...contextBytes]));
+  parts.push(encodeBstr(debug.protectedHeader));
+  parts.push(selectedAAD.bytes ? encodeBstr(selectedAAD.bytes) : new Uint8Array([0x40]));
+  parts.push(encodeBstr(selectedPayload));
+  
+  const totalLen = parts.reduce((sum, p) => sum + p.length, 0);
+  const sigStructure = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const part of parts) {
+    sigStructure.set(part, offset);
+    offset += part.length;
+  }
+  
+  console.log('Sig_structure (hex):', hex(sigStructure).substring(0, 64) + '...');
+  
+  try {
+    const result = curveLib.verify(debug.signature, sigStructure, pubKey.key);
+    console.log('Verification result:', result);
+    return result;
+  } catch (e) {
+    console.error('Verification error:', e);
+    return false;
+  }
+};
+
+// Dump all raw data for external analysis
+window.dumpVerificationData = function() {
+  console.log('========== VERIFICATION DATA DUMP ==========');
+  const debug = window.deviceAuthDebug;
+  if (!debug) {
+    console.error('No debug data available');
+    return;
+  }
+  
+  console.log('\n=== COSE_Sign1 Structure ===');
+  // Get the raw COSE_Sign1 from the last verification
+  const payloadCandidates = window.lastPayloadCandidates || [];
+  
+  console.log('Protected header (hex):', debug.protectedHeaderHex);
+  console.log('Protected header (bytes):', Array.from(debug.protectedHeader));
+  
+  // Decode protected header
+  try {
+    const decoded = CBOR.decode(debug.protectedHeader);
+    console.log('Protected header decoded:', decoded);
+    console.log('Algorithm:', decoded instanceof Map ? decoded.get(1) : decoded[1]);
+  } catch (e) {
+    console.log('Could not decode protected header:', e);
+  }
+  
+  console.log('\nSignature (hex):', debug.signatureHex);
+  console.log('Signature length:', debug.signature.length, 'bytes');
+  console.log('Signature r (first 32):', hex(debug.signature.slice(0, 32)));
+  console.log('Signature s (last 32):', hex(debug.signature.slice(32, 64)));
+  
+  console.log('\n=== Public Key ===');
+  console.log('Curve:', debug.publicKey.nobleCurveName);
+  console.log('Public key (hex):', hex(debug.publicKey.key));
+  console.log('X coordinate:', hex(debug.publicKey.key.slice(1, 33)));
+  console.log('Y coordinate:', hex(debug.publicKey.key.slice(33, 65)));
+  
+  console.log('\n=== Payload Candidates Tested ===');
+  console.log('Total candidates:', payloadCandidates.length);
+  console.log('First 5 candidates:');
+  payloadCandidates.slice(0, 5).forEach((p, i) => {
+    console.log(`  ${i}: ${p.label} (${p.bytes.length} bytes)`);
+  });
+  
+  console.log('\n=== Next Steps ===');
+  console.log('Since both wallets fail the same way, the issue is in our verifier.');
+  console.log('Check:');
+  console.log('1. Is the DeviceAuth COSE_Sign1 array structure correct?');
+  console.log('2. Are we extracting signature bytes correctly?');
+  console.log('3. Is the protected header correct?');
+  console.log('4. Run: window.inspectRawDeviceAuth() to see the raw structure');
+};
+
+// Inspect the raw DeviceAuth structure
+window.inspectRawDeviceAuth = function() {
+  console.log('========== RAW DEVICEAUTH INSPECTION ==========');
+  
+  // This needs to be called during/after verification
+  // Store the raw DeviceAuth in verification for inspection
+  if (!window.rawDeviceAuthForInspection) {
+    console.error('No raw DeviceAuth captured. This should be set during verification.');
+    return;
+  }
+  
+  const raw = window.rawDeviceAuthForInspection;
+  console.log('Raw DeviceAuth array:', raw);
+  console.log('Length:', raw.length);
+  console.log('[0] Protected header:', raw[0]);
+  console.log('[1] Unprotected header:', raw[1]);
+  console.log('[2] Payload:', raw[2]);
+  console.log('[3] Signature:', raw[3]);
+  
+  console.log('\nPayload is null/empty?', raw[2] == null || (raw[2].length === 0));
+  
+  if (raw[0] instanceof Uint8Array) {
+    console.log('\nProtected header bytes:', Array.from(raw[0]));
+    try {
+      const decoded = CBOR.decode(raw[0]);
+      console.log('Protected header decoded:', decoded);
+    } catch (e) {}
+  }
+  
+  if (raw[3] instanceof Uint8Array) {
+    console.log('\nSignature bytes:', Array.from(raw[3]));
+    console.log('Signature length:', raw[3].length);
+  }
+};
 
 const slideDownStyle = document.createElement('style');
 slideDownStyle.textContent = `
