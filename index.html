@@ -4884,6 +4884,10 @@ async function verifyHolderAuthentication(doc) {
       }
       if (deviceAuth) {
         let cur = deviceAuth;
+        // Some wallets wrap COSE_Sign1 under deviceSignature
+        if (cur && typeof cur === 'object' && cur.deviceSignature) {
+          cur = cur.deviceSignature;
+        }
         if (Array.isArray(cur)) {
           deviceAuthCose = cur;
         } else {
