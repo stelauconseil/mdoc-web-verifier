@@ -31,6 +31,12 @@ jobs:
               run: |
                   for f in js/*.js; do
                     [ -f "$f" ] || continue
+                    case "$f" in
+                      js/cbor.min.js|js/noble-curves.min.js|js/openjpeg.js|js/jsQR.js)
+                        echo "Skipping obfuscation for $f";
+                        continue
+                        ;;
+                    esac
                     npx javascript-obfuscator "$f" --output "$f" \
                       --compact true \
                       --control-flow-flattening false \
@@ -43,6 +49,12 @@ jobs:
               run: |
                   for f in js/*.js; do
                     [ -f "$f" ] || continue
+                    case "$f" in
+                      js/cbor.min.js|js/noble-curves.min.js|js/openjpeg.js|js/jsQR.js)
+                        echo "Skipping minification for $f";
+                        continue
+                        ;;
+                    esac
                     npx terser "$f" -c -m -o "$f"
                   done
 
