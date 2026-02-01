@@ -97,6 +97,7 @@ Depending on your wallet, the main reader and example pages can work with:
 - **Photo ID** – `org.iso.23220.photoID.1` (+ related ISO 23220 namespaces)
 - **mICOV** – `org.micov.1` (vaccination / test attestations)
 - **mVC** – `org.iso.7367.1.mVC` (vehicle card)
+- **Studend Card** - `fr.ft.hsc.1` (+elated ISO 23220 namespaces)
 
 Your wallet may not support all of these doctypes; the app will only show data for documents actually returned by the wallet.
 
@@ -115,10 +116,28 @@ If your browser does not support Web Bluetooth or you are not on HTTPS, connecti
 
 ## Security & privacy
 
-- Sessions are established using the algorithms defined in ISO 18013‑5.
-- Session keys live only in browser memory and are cleared when you reload or close the page.
-- The **Visitor Log** and **Unlinkability Test** pages store data only in your browser (local storage) for your own experiments.
-- No data is sent to any backend by this app.
+This verifier implements comprehensive security controls per ISO 18013-5:
+
+### Cryptographic Verification
+
+- **COSE_Sign1 signature verification** – Validates the issuer's digital signature on each document using ECDSA with curves P-256, P-384, P-521, and Brainpool variants
+- **Certificate chain validation** – Verifies issuer certificates against trusted IACA (Issuer Authority Certificate Authority) root certificates with automatic AKI/SKI matching
+- **Value digests integrity checks** – Validates SHA-256 digests with tag(24) encoding for all data elements per ISO 18013-5 specification
+- **DeviceAuth verification** – Confirms holder authentication using device signatures and session transcript matching
+- **SessionTranscript validation** – Ensures session context integrity between reader and wallet
+
+### Privacy & Data Handling
+
+- Sessions are established using the algorithms defined in ISO 18013‑5
+- Session keys live only in browser memory and are cleared when you reload or close the page
+- The **Visitor Log** and **Unlinkability Test** pages store data only in your browser (local storage) for your own experiments
+- **No data is sent to any backend by this app**
+
+### Trust Anchors
+
+- Pre-loaded with 36+ IACA root certificates from major issuers (France, Netherlands, US states, test environments)
+- Support for custom IACA certificate import via VICAL format
+- Automatic detection of certificate curve types and signature algorithms
 
 ---
 
