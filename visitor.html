@@ -324,7 +324,6 @@
     <script src="js/verification.js"></script>
     <!-- Feature modules used by visitor page -->
     <script src="js/device-engagement.js"></script>
-    <script src="js/reader-authentication.js"></script>
     <script src="js/wallet-response.js"></script>
     <script src="js/request-builder.js"></script>
 
@@ -390,7 +389,6 @@
       window.CBOR = CBOR;
 
       // ==== Globals / DOM ====
-      const logEl = null; // minimal log; use console only
       const statusEl = document.getElementById("qrStatus");
       const video = document.getElementById("video");
       const canvas = document.getElementById("canvas");
@@ -463,11 +461,6 @@
         }
         resetSessionState();
       }
-
-      // ==== Utils (from SessionCrypto) ====
-      const hex = (...args) => window.SessionCrypto.hex(...args);
-      const concatUint8 = (...args) =>
-        window.SessionCrypto.concatUint8(...args);
 
       // BLE UUIDs are managed by the BLE transport module
 
