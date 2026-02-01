@@ -376,29 +376,47 @@
     <script type="module">
       // Structured data (JSON-LD) for SEO
       try {
-        const ld = document.createElement('script');
-        ld.type = 'application/ld+json';
+        const ld = document.createElement("script");
+        ld.type = "application/ld+json";
         ld.text = JSON.stringify({
           "@context": "https://schema.org",
           "@type": "WebPage",
-          "name": "Attestation Unlinkability Test · mDoc BLE",
-          "description": "Unlinkability test for EU PID,  Age Verification or mDL attestations comparing MSO deviceKey values.",
-          "url": (location && location.href) ? location.href : undefined,
-          "breadcrumb": {
+          name: "Attestation Unlinkability Test · mDoc BLE",
+          description:
+            "Unlinkability test for EU PID,  Age Verification or mDL attestations comparing MSO deviceKey values.",
+          url: location && location.href ? location.href : undefined,
+          breadcrumb: {
             "@type": "BreadcrumbList",
-            "itemListElement": [
-              { "@type": "ListItem", "position": 1, "name": "Home", "item": (location && location.origin) ? location.origin + "/index.html" : "index.html" },
-              { "@type": "ListItem", "position": 2, "name": "Unlinkability Test", "item": (location && location.href) ? location.href : "unlikability_test.html" }
-            ]
-          }
+            itemListElement: [
+              {
+                "@type": "ListItem",
+                position: 1,
+                name: "Home",
+                item:
+                  location && location.origin
+                    ? location.origin + "/index.html"
+                    : "index.html",
+              },
+              {
+                "@type": "ListItem",
+                position: 2,
+                name: "Unlinkability Test",
+                item:
+                  location && location.href
+                    ? location.href
+                    : "unlikability_test.html",
+              },
+            ],
+          },
         });
         document.head.appendChild(ld);
       } catch {}
 
       // Footer: show APP_VERSION if available
-      window.addEventListener('DOMContentLoaded', () => {
-        const footerVersion = document.getElementById('appVersionFooter');
-        const ver = (typeof window.APP_VERSION !== 'undefined') ? window.APP_VERSION : null;
+      window.addEventListener("DOMContentLoaded", () => {
+        const footerVersion = document.getElementById("appVersionFooter");
+        const ver =
+          typeof window.APP_VERSION !== "undefined" ? window.APP_VERSION : null;
         if (footerVersion && ver != null) {
           footerVersion.innerText = `v${ver}`;
         }
@@ -407,54 +425,83 @@
       // ==== CBOR bootstrap ====
       let CBORRef = self.CBOR || self.cbor;
       if (!CBORRef) {
-        try { CBORRef = await import('https://cdn.jsdelivr.net/npm/cbor-web@9.0.2/dist/cbor.mjs'); }
-        catch (e) { console.error('CBOR library load failed', e); }
+        try {
+          CBORRef =
+            await import("https://cdn.jsdelivr.net/npm/cbor-web@9.0.2/dist/cbor.mjs");
+        } catch (e) {
+          console.error("CBOR library load failed", e);
+        }
       }
-      if (!CBORRef) throw new Error('CBOR library unavailable');
-      const CBOR = CBORRef; window.CBOR = CBOR;
+      if (!CBORRef) throw new Error("CBOR library unavailable");
+      const CBOR = CBORRef;
+      window.CBOR = CBOR;
 
       // ==== Globals / DOM ====
-      const statusEl = document.getElementById('qrStatus');
-      const video = document.getElementById('video');
-      const canvas = document.getElementById('canvas');
-      const ctx = canvas.getContext('2d', { willReadFrequently:true });
-      const qrInput = document.getElementById('qrInput');
-      const btnParseQr = document.getElementById('btnParseQr');
-      const btnClearQr = document.getElementById('btnClearQr');
-      const btnScan = document.getElementById('btnScan');
-      const requestTypeSelect = document.getElementById('requestTypeSelect');
-      const chunkInput = document.getElementById('chunk');
-      const holderStatusEl = document.getElementById('holderStatus');
-      const lastDeviceKeyEl = document.getElementById('lastDeviceKey');
-      const lastDocTypeEl = document.getElementById('lastDocType');
-      const historyBodyEl = document.getElementById('historyBody');
-      const btnResetUnlinkability = document.getElementById('btnResetUnlinkability');
+      const statusEl = document.getElementById("qrStatus");
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      const qrInput = document.getElementById("qrInput");
+      const btnParseQr = document.getElementById("btnParseQr");
+      const btnClearQr = document.getElementById("btnClearQr");
+      const btnScan = document.getElementById("btnScan");
+      const requestTypeSelect = document.getElementById("requestTypeSelect");
+      const chunkInput = document.getElementById("chunk");
+      const holderStatusEl = document.getElementById("holderStatus");
+      const lastDeviceKeyEl = document.getElementById("lastDeviceKey");
+      const lastDocTypeEl = document.getElementById("lastDocType");
+      const historyBodyEl = document.getElementById("historyBody");
+      const btnResetUnlinkability = document.getElementById(
+        "btnResetUnlinkability",
+      );
 
       // Auto mode: each scan establishes a fresh session and evaluates linkability
 
       // ==== Minimal logger ====
-      function log(msg){ console.log(msg); if (statusEl) { statusEl.textContent = String(msg).slice(0,140); } }
+      function log(msg) {
+        console.log(msg);
+        if (statusEl) {
+          statusEl.textContent = String(msg).slice(0, 140);
+        }
+      }
 
       // ==== State ====
       let scanRunning = false;
-      let svcUUID = null, bleAddr = null;
-      let deBytes = null; let mdocPubKey = null; let readerKeyPair = null; let skReader=null, skDevice=null; let transcriptAAD=null; let sessionEstablished=false;
+      let svcUUID = null,
+        bleAddr = null;
+      let deBytes = null;
+      let mdocPubKey = null;
+      let readerKeyPair = null;
+      let skReader = null,
+        skDevice = null;
+      let transcriptAAD = null;
+      let sessionEstablished = false;
       window.skDevice = skDevice;
 
-      function resetSessionState(){
-        try { sessionEstablished = false; } catch {}
-        try { readerKeyPair = null; } catch {}
-        try { skReader = null; skDevice = null; window.skDevice = null; } catch {}
-        try { transcriptAAD = null; } catch {}
+      function resetSessionState() {
+        try {
+          sessionEstablished = false;
+        } catch {}
+        try {
+          readerKeyPair = null;
+        } catch {}
+        try {
+          skReader = null;
+          skDevice = null;
+          window.skDevice = null;
+        } catch {}
+        try {
+          transcriptAAD = null;
+        } catch {}
       }
 
-      function disconnectBLE(){
+      function disconnectBLE() {
         try {
-          if (window.BLE && typeof window.BLE.disconnect === 'function') {
+          if (window.BLE && typeof window.BLE.disconnect === "function") {
             window.BLE.disconnect();
           }
         } catch (e) {
-          console.warn('Error disconnecting BLE device:', e);
+          console.warn("Error disconnecting BLE device:", e);
         }
         resetSessionState();
       }
@@ -462,49 +509,93 @@
       // BLE UUIDs are managed by the BLE transport module
 
       // ==== QR Camera ====
-      async function startCamera(){
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        video.srcObject = stream; await video.play();
-        canvas.width = video.videoWidth || 1280; canvas.height = video.videoHeight || 720;
-        scanRunning = true; statusEl.textContent='Scanning…'; requestAnimationFrame(tick);
+      async function startCamera() {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+        });
+        video.srcObject = stream;
+        await video.play();
+        canvas.width = video.videoWidth || 1280;
+        canvas.height = video.videoHeight || 720;
+        scanRunning = true;
+        statusEl.textContent = "Scanning…";
+        requestAnimationFrame(tick);
       }
-      function stopCamera(){ scanRunning=false; try{ video.pause(); }catch{} if (video.srcObject){ for(const t of video.srcObject.getTracks()){ t.stop(); } video.srcObject=null; }}
-      function tick(){ if (!scanRunning) return; const ctx2d = canvas.getContext('2d',{ willReadFrequently:true }); ctx2d.drawImage(video,0,0,canvas.width,canvas.height); const img=ctx2d.getImageData(0,0,canvas.width,canvas.height); const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' }); if (code?.data){ stopCamera(); statusEl.textContent='QR detected'; handleQrPayload(code.data, 'camera'); return;} requestAnimationFrame(tick); }
-      btnScan.addEventListener('click', ()=>{
+      function stopCamera() {
+        scanRunning = false;
+        try {
+          video.pause();
+        } catch {}
+        if (video.srcObject) {
+          for (const t of video.srcObject.getTracks()) {
+            t.stop();
+          }
+          video.srcObject = null;
+        }
+      }
+      function tick() {
+        if (!scanRunning) return;
+        const ctx2d = canvas.getContext("2d", { willReadFrequently: true });
+        ctx2d.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const img = ctx2d.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(img.data, img.width, img.height, {
+          inversionAttempts: "dontInvert",
+        });
+        if (code?.data) {
+          stopCamera();
+          statusEl.textContent = "QR detected";
+          handleQrPayload(code.data, "camera");
+          return;
+        }
+        requestAnimationFrame(tick);
+      }
+      btnScan.addEventListener("click", () => {
         disconnectBLE();
-        startCamera().catch(e=>log('Camera error: '+e.message));
+        startCamera().catch((e) => log("Camera error: " + e.message));
       });
-      btnParseQr.addEventListener('click', ()=>{ handleQrPayload(qrInput.value, 'manual'); });
-      btnClearQr.addEventListener('click', ()=>{ qrInput.value=''; statusEl.textContent='Idle'; });
+      btnParseQr.addEventListener("click", () => {
+        handleQrPayload(qrInput.value, "manual");
+      });
+      btnClearQr.addEventListener("click", () => {
+        qrInput.value = "";
+        statusEl.textContent = "Idle";
+      });
 
       // ==== DeviceEngagement helpers ====
-      function parseMdocUriAndDE(uri){ const res = window.DeviceEngagement.parseMdocUriAndDE(uri); deBytes = res.deBytes; if (res.x && res.y) mdocPubKey = { x: res.x, y: res.y }; return { uuid: res.uuid, addr: res.addr }; }
+      function parseMdocUriAndDE(uri) {
+        const res = window.DeviceEngagement.parseMdocUriAndDE(uri);
+        deBytes = res.deBytes;
+        if (res.x && res.y) mdocPubKey = { x: res.x, y: res.y };
+        return { uuid: res.uuid, addr: res.addr };
+      }
 
       // ==== Session key + transcript via modules ====
       // Use SessionCrypto and SessionEstablishment provided by shared modules
 
       // ==== Messages ====
-      async function buildLegacySessionEstablishmentWithData(){
+      async function buildLegacySessionEstablishmentWithData() {
         // Build a DeviceRequest based on the selected request type:
         // - PID : nationality
         // - AV  : age_over_18
         // - mDL : age_over_18
         const buildSelectedRequest = async () => {
-          const deviceRequest = { version: '1.0', docRequests: [] };
-          const sel = (requestTypeSelect && requestTypeSelect.value) || 'av_age18';
+          const deviceRequest = { version: "1.0", docRequests: [] };
+          const sel =
+            (requestTypeSelect && requestTypeSelect.value) || "av_age18";
 
           let docType, namespace, fields;
-          if (sel === 'pid_nationality') {
-            docType = 'eu.europa.ec.eudi.pid.1';
-            namespace = 'eu.europa.ec.eudi.pid.1';
+          if (sel === "pid_nationality") {
+            docType = "eu.europa.ec.eudi.pid.1";
+            namespace = "eu.europa.ec.eudi.pid.1";
             fields = { nationality: false };
-          } else if (sel === 'mdl_age18') {
-            docType = 'org.iso.18013.5.1.mDL';
-            namespace = 'org.iso.18013.5.1';
+          } else if (sel === "mdl_age18") {
+            docType = "org.iso.18013.5.1.mDL";
+            namespace = "org.iso.18013.5.1";
             fields = { age_over_18: false };
-          } else { // 'av_age18' default
-            docType = 'eu.europa.ec.av.1';
-            namespace = 'eu.europa.ec.av.1';
+          } else {
+            // 'av_age18' default
+            docType = "eu.europa.ec.av.1";
+            namespace = "eu.europa.ec.av.1";
             fields = { age_over_18: false };
           }
 
@@ -518,16 +609,22 @@
           return CBOR.encode(deviceRequest);
         };
 
-        const { message, keys, transcriptAAD: aad } = await window.SessionEstablishment.buildLegacySessionEstablishmentWithData({
-          deBytes,
-          mdocPubKey,
-          readerKeyPair,
-          transcriptAAD,
-          skReader,
-          buildRequestByType: buildSelectedRequest,
-          log,
-          CBOR,
-        });
+        const {
+          message,
+          keys,
+          transcriptAAD: aad,
+        } = await window.SessionEstablishment.buildLegacySessionEstablishmentWithData(
+          {
+            deBytes,
+            mdocPubKey,
+            readerKeyPair,
+            transcriptAAD,
+            skReader,
+            buildRequestByType: buildSelectedRequest,
+            log,
+            CBOR,
+          },
+        );
         if (keys) {
           skReader = keys.readerKey;
           skDevice = keys.deviceKey;
@@ -541,13 +638,21 @@
 
       // ==== BLE transport via module ====
 
-      async function autoConnectFlow(){
+      async function autoConnectFlow() {
         // Connect
-        const connected = !!(window.BLE && typeof window.BLE.isConnected==='function' && window.BLE.isConnected());
+        const connected = !!(
+          window.BLE &&
+          typeof window.BLE.isConnected === "function" &&
+          window.BLE.isConnected()
+        );
         if (!connected) {
-          if (!svcUUID) throw new Error('Service UUID missing');
-          if (!window.BLE || typeof window.BLE.connect !== 'function' || typeof window.BLE.init !== 'function') {
-            throw new Error('BLE module not available');
+          if (!svcUUID) throw new Error("Service UUID missing");
+          if (
+            !window.BLE ||
+            typeof window.BLE.connect !== "function" ||
+            typeof window.BLE.init !== "function"
+          ) {
+            throw new Error("BLE module not available");
           }
           window.BLE.init({
             onAssembled: processS2CAssembled,
@@ -559,40 +664,66 @@
             await window.BLE.connect(svcUUID);
           } catch (e) {
             // If the underlying cached service/characteristics were invalidated, force a full reset and retry once
-            console.warn('First connect attempt failed, retrying after reset:', e);
-            try { window.BLE.disconnect(); } catch {}
-            await new Promise(r=>setTimeout(r,300));
+            console.warn(
+              "First connect attempt failed, retrying after reset:",
+              e,
+            );
+            try {
+              window.BLE.disconnect();
+            } catch {}
+            await new Promise((r) => setTimeout(r, 300));
             await window.BLE.connect(svcUUID);
           }
-          await new Promise(r=>setTimeout(r,300));
+          await new Promise((r) => setTimeout(r, 300));
         }
         // Start session
         await window.BLE.writeState(0x01);
-        await new Promise(r=>setTimeout(r,300));
+        await new Promise((r) => setTimeout(r, 300));
         // Ephemeral key + transcript
-        readerKeyPair = await window.SessionEstablishment.makeReaderEphemeralKeyPair();
-        await window.SessionEstablishment.exportReaderPublicToCoseKey(readerKeyPair);
-        transcriptAAD = await window.SessionEstablishment.buildTranscriptAAD(deBytes);
+        readerKeyPair =
+          await window.SessionEstablishment.makeReaderEphemeralKeyPair();
+        await window.SessionEstablishment.exportReaderPublicToCoseKey(
+          readerKeyPair,
+        );
+        transcriptAAD =
+          await window.SessionEstablishment.buildTranscriptAAD(deBytes);
         // Build + send request
         const legacyMessage = await buildLegacySessionEstablishmentWithData();
         statusEl.textContent = `Sending request… (${legacyMessage.length} bytes)`;
-        await window.BLE.sendFragmented(legacyMessage, parseInt(chunkInput.value, 10) || 185);
-        statusEl.textContent = 'Request sent. Waiting for wallet…';
+        await window.BLE.sendFragmented(
+          legacyMessage,
+          parseInt(chunkInput.value, 10) || 185,
+        );
+        statusEl.textContent = "Request sent. Waiting for wallet…";
       }
 
       // ==== S->C assembly and processing ====
-      async function processS2CAssembled(assembled, reason='final-flag'){
+      async function processS2CAssembled(assembled, reason = "final-flag") {
         try {
           const decoded = CBOR.decode(assembled);
           // Treat as session response until keys are ready
           let isSessionResponse = !skReader || !skDevice;
-          if (!isSessionResponse){ // still allow by heuristic
-            if (decoded instanceof Map) isSessionResponse = decoded.has('eDeviceKey') || decoded.has('data') || decoded.has('status');
-            else if (decoded && typeof decoded==='object') isSessionResponse = ('eDeviceKey' in decoded) || ('data' in decoded) || ('status' in decoded);
+          if (!isSessionResponse) {
+            // still allow by heuristic
+            if (decoded instanceof Map)
+              isSessionResponse =
+                decoded.has("eDeviceKey") ||
+                decoded.has("data") ||
+                decoded.has("status");
+            else if (decoded && typeof decoded === "object")
+              isSessionResponse =
+                "eDeviceKey" in decoded ||
+                "data" in decoded ||
+                "status" in decoded;
           }
-          if (isSessionResponse){ await processSessionResponse(assembled); }
-          else { await decryptAndDisplayResponse(assembled); }
-        } catch(e){ console.warn('CBOR decode failed, treating as binary', e); }
+          if (isSessionResponse) {
+            await processSessionResponse(assembled);
+          } else {
+            await decryptAndDisplayResponse(assembled);
+          }
+        } catch (e) {
+          console.warn("CBOR decode failed, treating as binary", e);
+        }
       }
 
       // BLE notifications assembly is handled in BLE transport module
@@ -602,65 +733,139 @@
       // that don't exist on this page. We'll do local decrypt-to-object and then call the
       // overridden display function.
 
-      async function decryptSessionEstablishmentDataLocal(encryptedData){
+      async function decryptSessionEstablishmentDataLocal(encryptedData) {
         // IV: mdoc identifier (8 bytes) || counter (4 bytes, big-endian 1)
-        const mdocIdentifier = new Uint8Array([0,0,0,0,0,0,0,1]);
+        const mdocIdentifier = new Uint8Array([0, 0, 0, 0, 0, 0, 0, 1]);
         const iv = new Uint8Array(12);
         iv.set(mdocIdentifier, 0);
         new DataView(iv.buffer, 8, 4).setUint32(0, 1, false);
-        if (!window.skDevice) throw new Error('SKDevice key not set');
-        const key = await crypto.subtle.importKey('raw', new Uint8Array(window.skDevice), { name:'AES-GCM', length:256 }, false, ['decrypt']);
-        const plaintext = await crypto.subtle.decrypt({ name:'AES-GCM', iv, additionalData:new Uint8Array(0), tagLength:128 }, key, encryptedData);
+        if (!window.skDevice) throw new Error("SKDevice key not set");
+        const key = await crypto.subtle.importKey(
+          "raw",
+          new Uint8Array(window.skDevice),
+          { name: "AES-GCM", length: 256 },
+          false,
+          ["decrypt"],
+        );
+        const plaintext = await crypto.subtle.decrypt(
+          {
+            name: "AES-GCM",
+            iv,
+            additionalData: new Uint8Array(0),
+            tagLength: 128,
+          },
+          key,
+          encryptedData,
+        );
         return CBOR.decode(new Uint8Array(plaintext));
       }
 
-      async function decryptCoseEncrypt0ToObjectLocal(encryptedCose){
+      async function decryptCoseEncrypt0ToObjectLocal(encryptedCose) {
         const cose = CBOR.decode(encryptedCose);
-        if (!Array.isArray(cose) || cose.length!==3) throw new Error('Invalid COSE_Encrypt0');
+        if (!Array.isArray(cose) || cose.length !== 3)
+          throw new Error("Invalid COSE_Encrypt0");
         const [_prot, unprot, ciphertext] = cose;
-        const iv = (unprot instanceof Map) ? unprot.get(5) : (unprot ? unprot[5] : null);
-        if (!iv) throw new Error('No IV in COSE unprotected header');
-        if (!window.skDevice) throw new Error('SKDevice key not set');
-        const key = await crypto.subtle.importKey('raw', new Uint8Array(window.skDevice), { name:'AES-GCM', length:256 }, false, ['decrypt']);
-        const plaintext = await crypto.subtle.decrypt({ name:'AES-GCM', iv:new Uint8Array(iv), additionalData:new Uint8Array(0), tagLength:128 }, key, new Uint8Array(ciphertext));
+        const iv =
+          unprot instanceof Map ? unprot.get(5) : unprot ? unprot[5] : null;
+        if (!iv) throw new Error("No IV in COSE unprotected header");
+        if (!window.skDevice) throw new Error("SKDevice key not set");
+        const key = await crypto.subtle.importKey(
+          "raw",
+          new Uint8Array(window.skDevice),
+          { name: "AES-GCM", length: 256 },
+          false,
+          ["decrypt"],
+        );
+        const plaintext = await crypto.subtle.decrypt(
+          {
+            name: "AES-GCM",
+            iv: new Uint8Array(iv),
+            additionalData: new Uint8Array(0),
+            tagLength: 128,
+          },
+          key,
+          new Uint8Array(ciphertext),
+        );
         return CBOR.decode(new Uint8Array(plaintext));
       }
 
       // ==== Session finalization (from index) simplified ====
-      async function processSessionResponse(assembled){
-        if (!readerKeyPair) throw new Error('Reader ephemeral key pair not initialized');
-        let decoded=null; try { decoded = CBOR.decode(assembled);} catch{};
-        const toMap = (v)=>{ if (!v) return null; if (v instanceof Map) return v; if (typeof v==='object'){ const m=new Map(); for (const k of Object.keys(v)) m.set(k, v[k]); return m;} return null; };
+      async function processSessionResponse(assembled) {
+        if (!readerKeyPair)
+          throw new Error("Reader ephemeral key pair not initialized");
+        let decoded = null;
+        try {
+          decoded = CBOR.decode(assembled);
+        } catch {}
+        const toMap = (v) => {
+          if (!v) return null;
+          if (v instanceof Map) return v;
+          if (typeof v === "object") {
+            const m = new Map();
+            for (const k of Object.keys(v)) m.set(k, v[k]);
+            return m;
+          }
+          return null;
+        };
         const decodedMap = toMap(decoded);
         // Derive keys using DeviceEngagement key
-        const mdocPub = await window.SessionCrypto.importMdocPubKeyXY(mdocPubKey.x, mdocPubKey.y);
-        const sharedSecretBuffer = await window.SessionCrypto.deriveSharedSecretBits(readerKeyPair.privateKey, mdocPub);
-        transcriptAAD = await window.SessionEstablishment.buildTranscriptAAD(deBytes);
-        const keys = await window.SessionCrypto.deriveSessionKey(new Uint8Array(sharedSecretBuffer), transcriptAAD);
-        skReader = keys.readerKey; skDevice = keys.deviceKey; window.skDevice = skDevice; sessionEstablished = true;
+        const mdocPub = await window.SessionCrypto.importMdocPubKeyXY(
+          mdocPubKey.x,
+          mdocPubKey.y,
+        );
+        const sharedSecretBuffer =
+          await window.SessionCrypto.deriveSharedSecretBits(
+            readerKeyPair.privateKey,
+            mdocPub,
+          );
+        transcriptAAD =
+          await window.SessionEstablishment.buildTranscriptAAD(deBytes);
+        const keys = await window.SessionCrypto.deriveSessionKey(
+          new Uint8Array(sharedSecretBuffer),
+          transcriptAAD,
+        );
+        skReader = keys.readerKey;
+        skDevice = keys.deviceKey;
+        window.skDevice = skDevice;
+        sessionEstablished = true;
         // Decrypt raw data if present
-        const responseData = decodedMap ? (decodedMap.get('data') || decodedMap.get(4)) : null;
-        const toBytes=(v)=>{ try{ if (v && v.constructor && v.constructor.name==='Tagged') v=v.value; }catch{} if (v instanceof Uint8Array) return v; if (ArrayBuffer.isView(v)) return new Uint8Array(v.buffer, v.byteOffset, v.byteLength); if (v instanceof ArrayBuffer) return new Uint8Array(v); if (Array.isArray(v)) return new Uint8Array(v); return null; };
+        const responseData = decodedMap
+          ? decodedMap.get("data") || decodedMap.get(4)
+          : null;
+        const toBytes = (v) => {
+          try {
+            if (v && v.constructor && v.constructor.name === "Tagged")
+              v = v.value;
+          } catch {}
+          if (v instanceof Uint8Array) return v;
+          if (ArrayBuffer.isView(v))
+            return new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+          if (v instanceof ArrayBuffer) return new Uint8Array(v);
+          if (Array.isArray(v)) return new Uint8Array(v);
+          return null;
+        };
         const dataBytes = toBytes(responseData);
-        if (dataBytes && dataBytes.length>0){
-          const deviceResponse = await decryptSessionEstablishmentDataLocal(dataBytes);
+        if (dataBytes && dataBytes.length > 0) {
+          const deviceResponse =
+            await decryptSessionEstablishmentDataLocal(dataBytes);
           await handleDeviceResponseForUnlinkability(deviceResponse);
         } else {
           // In alternate flow, wallet may send DeviceResponse directly as the first message
           try {
-            const deviceResponse = await decryptCoseEncrypt0ToObjectLocal(assembled);
+            const deviceResponse =
+              await decryptCoseEncrypt0ToObjectLocal(assembled);
             await handleDeviceResponseForUnlinkability(deviceResponse);
-          } catch(e) {
-            console.warn('Fallback decrypt failed:', e);
+          } catch (e) {
+            console.warn("Fallback decrypt failed:", e);
           }
         }
       }
 
       // ==== DeviceKey extraction and unlinkability tracking ====
 
-      const DEVICE_KEY_STORE_KEY = 'unlinkability_device_keys';
+      const DEVICE_KEY_STORE_KEY = "unlinkability_device_keys";
 
-      function loadDeviceKeyStore(){
+      function loadDeviceKeyStore() {
         try {
           const raw = localStorage.getItem(DEVICE_KEY_STORE_KEY);
           return raw ? JSON.parse(raw) : {};
@@ -669,42 +874,58 @@
         }
       }
 
-      function saveDeviceKeyStore(store){
+      function saveDeviceKeyStore(store) {
         try {
           localStorage.setItem(DEVICE_KEY_STORE_KEY, JSON.stringify(store));
         } catch {}
       }
 
-      function renderDeviceKeyHistory(){
+      function renderDeviceKeyHistory() {
         if (!historyBodyEl) return;
         const store = loadDeviceKeyStore();
         const entries = Object.entries(store)
           .map(([fingerprint, info]) => ({ fingerprint, ...info }))
-          .sort((a, b) => (a.firstSeen || '').localeCompare(b.firstSeen || ''));
-        historyBodyEl.innerHTML = entries.map(row => {
-          const shortFp = row.fingerprint ? row.fingerprint.slice(0, 16) + (row.fingerprint.length > 16 ? '…' : '') : '—';
-          return `<tr>
-            <td>${row.firstSeen ? new Date(row.firstSeen).toLocaleString() : ''}</td>
-            <td>${row.lastSeen ? new Date(row.lastSeen).toLocaleString() : ''}</td>
-            <td>${row.lastDocType || ''}</td>
+          .sort((a, b) => (a.firstSeen || "").localeCompare(b.firstSeen || ""));
+        historyBodyEl.innerHTML = entries
+          .map((row) => {
+            const shortFp = row.fingerprint
+              ? row.fingerprint.slice(0, 16) +
+                (row.fingerprint.length > 16 ? "…" : "")
+              : "—";
+            return `<tr>
+            <td>${row.firstSeen ? new Date(row.firstSeen).toLocaleString() : ""}</td>
+            <td>${row.lastSeen ? new Date(row.lastSeen).toLocaleString() : ""}</td>
+            <td>${row.lastDocType || ""}</td>
             <td>${row.count || 1}</td>
             <td>${shortFp}</td>
           </tr>`;
-        }).join('');
+          })
+          .join("");
       }
 
-      function fingerprintDeviceKey(deviceKey){
+      function fingerprintDeviceKey(deviceKey) {
         try {
           let keyObj = deviceKey;
-          console.log('Raw deviceKey for fingerprinting:', keyObj);
+          console.log("Raw deviceKey for fingerprinting:", keyObj);
           // Unwrap CBOR Tag(24, bstr .cbor COSE_Key) if present
-          if (keyObj && typeof keyObj === 'object' && keyObj.tag === 24 && keyObj.value) {
+          if (
+            keyObj &&
+            typeof keyObj === "object" &&
+            keyObj.tag === 24 &&
+            keyObj.value
+          ) {
             const inner = keyObj.value;
             let bytes = null;
             if (inner instanceof Uint8Array) bytes = inner;
             else if (Array.isArray(inner)) bytes = new Uint8Array(inner);
-            else if (inner && inner.type === 'Buffer' && Array.isArray(inner.data)) bytes = new Uint8Array(inner.data);
-            else if (inner instanceof ArrayBuffer) bytes = new Uint8Array(inner);
+            else if (
+              inner &&
+              inner.type === "Buffer" &&
+              Array.isArray(inner.data)
+            )
+              bytes = new Uint8Array(inner.data);
+            else if (inner instanceof ArrayBuffer)
+              bytes = new Uint8Array(inner);
             if (bytes) {
               keyObj = CBOR.decode(bytes);
             }
@@ -713,7 +934,8 @@
             if (!v) return null;
             if (v instanceof Uint8Array) return v;
             if (Array.isArray(v)) return new Uint8Array(v);
-            if (v && v.type === 'Buffer' && Array.isArray(v.data)) return new Uint8Array(v.data);
+            if (v && v.type === "Buffer" && Array.isArray(v.data))
+              return new Uint8Array(v.data);
             if (v instanceof ArrayBuffer) return new Uint8Array(v);
             return null;
           };
@@ -721,37 +943,44 @@
           // Prefer a fingerprint based solely on the COSE_Key public key
           // coordinates (labels -2 and -3) so different device keys always
           // yield different fingerprints even if other fields are similar.
-          const getField = (o, k) => (o instanceof Map) ? o.get(k) : o?.[k];
-          const xVal = getField(keyObj, -2) ?? getField(keyObj, '-2');
-          const yVal = getField(keyObj, -3) ?? getField(keyObj, '-3');
+          const getField = (o, k) => (o instanceof Map ? o.get(k) : o?.[k]);
+          const xVal = getField(keyObj, -2) ?? getField(keyObj, "-2");
+          const yVal = getField(keyObj, -3) ?? getField(keyObj, "-3");
           const xBytes = toBytes(xVal);
           const yBytes = toBytes(yVal);
           if (xBytes && yBytes) {
             const concat = new Uint8Array(xBytes.length + yBytes.length);
             concat.set(xBytes, 0);
             concat.set(yBytes, xBytes.length);
-            return Array.from(concat).map(b => b.toString(16).padStart(2, '0')).join('');
+            return Array.from(concat)
+              .map((b) => b.toString(16).padStart(2, "0"))
+              .join("");
           }
 
           // Fallback: hash full COSE_Key structure via CBOR encoding
           const bytes = CBOR.encode(keyObj);
-          return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+          return Array.from(bytes)
+            .map((b) => b.toString(16).padStart(2, "0"))
+            .join("");
         } catch (e) {
-          console.warn('Failed to fingerprint deviceKey:', e);
+          console.warn("Failed to fingerprint deviceKey:", e);
           return null;
         }
       }
 
-      function msoToDebugJSON(mso){
+      function msoToDebugJSON(mso) {
         try {
-          if (window.WalletResponse && typeof window.WalletResponse.convertToJSON === 'function') {
+          if (
+            window.WalletResponse &&
+            typeof window.WalletResponse.convertToJSON === "function"
+          ) {
             return window.WalletResponse.convertToJSON(mso);
           }
         } catch {}
         return mso;
       }
 
-      function findDeviceKeyDeep(obj, visited){
+      function findDeviceKeyDeep(obj, visited) {
         if (!obj) return null;
         if (!visited) visited = new Set();
         if (visited.has(obj)) return null;
@@ -760,7 +989,12 @@
         const tryKey = (key, value) => {
           if (!key) return null;
           const k = String(key).toLowerCase();
-          if (k.includes('devicekey') || k.includes('device_key') || k === 'edevicekey' || k === 'e_device_key') {
+          if (
+            k.includes("devicekey") ||
+            k.includes("device_key") ||
+            k === "edevicekey" ||
+            k === "e_device_key"
+          ) {
             return value;
           }
           return null;
@@ -775,7 +1009,7 @@
           }
           return null;
         }
-        if (typeof obj === 'object') {
+        if (typeof obj === "object") {
           for (const k of Object.keys(obj)) {
             const v = obj[k];
             const direct = tryKey(k, v);
@@ -787,34 +1021,54 @@
         return null;
       }
 
-      function extractDeviceKeyFromDeviceResponse(deviceResponse){
-        console.log('Device Response for deviceKey extraction:', deviceResponse);
-        const getField = (o, k) => (o instanceof Map) ? o.get(k) : o?.[k];
-        const documents = getField(deviceResponse, 'documents');
+      function extractDeviceKeyFromDeviceResponse(deviceResponse) {
+        console.log(
+          "Device Response for deviceKey extraction:",
+          deviceResponse,
+        );
+        const getField = (o, k) => (o instanceof Map ? o.get(k) : o?.[k]);
+        const documents = getField(deviceResponse, "documents");
         if (!Array.isArray(documents) || documents.length === 0) return null;
 
-        for (const doc of documents){
+        for (const doc of documents) {
           try {
-            const issuerSigned = getField(doc, 'issuerSigned');
+            const issuerSigned = getField(doc, "issuerSigned");
             if (!issuerSigned) continue;
-            let issuerAuth = getField(issuerSigned, 'issuerAuth');
+            let issuerAuth = getField(issuerSigned, "issuerAuth");
             if (!issuerAuth) continue;
 
             let cose = issuerAuth;
             // Unwrap Tag(24, bstr .cbor COSE_Sign1)
-            if (cose && cose.constructor && cose.constructor.name === 'Tagged' && cose.tag === 24) {
+            if (
+              cose &&
+              cose.constructor &&
+              cose.constructor.name === "Tagged" &&
+              cose.tag === 24
+            ) {
               const value = cose.value;
-              const bytes = value instanceof Uint8Array ? value : new Uint8Array(value);
+              const bytes =
+                value instanceof Uint8Array ? value : new Uint8Array(value);
               cose = CBOR.decode(bytes);
-            } else if (cose && typeof cose === 'object' && cose.tag === 24 && cose.value !== undefined) {
+            } else if (
+              cose &&
+              typeof cose === "object" &&
+              cose.tag === 24 &&
+              cose.value !== undefined
+            ) {
               const value = cose.value;
-              const bytes = value instanceof Uint8Array ? value : (Array.isArray(value) ? new Uint8Array(value) : null);
+              const bytes =
+                value instanceof Uint8Array
+                  ? value
+                  : Array.isArray(value)
+                    ? new Uint8Array(value)
+                    : null;
               if (bytes) cose = CBOR.decode(bytes);
             }
 
             if (!Array.isArray(cose) || cose.length < 3) continue;
             const payload = cose[2];
-            const payloadBytes = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
+            const payloadBytes =
+              payload instanceof Uint8Array ? payload : new Uint8Array(payload);
             let mso = CBOR.decode(payloadBytes);
 
             // Unwrap nested Tag(24) around MSO (MobileSecurityObjectBytes)
@@ -822,13 +1076,25 @@
             let changed = true;
             while (changed && guard++ < 3) {
               changed = false;
-              if (mso && typeof mso === 'object' && mso.tag === 24 && mso.value) {
+              if (
+                mso &&
+                typeof mso === "object" &&
+                mso.tag === 24 &&
+                mso.value
+              ) {
                 const inner = mso.value;
                 let innerBytes = null;
                 if (inner instanceof Uint8Array) innerBytes = inner;
-                else if (Array.isArray(inner)) innerBytes = new Uint8Array(inner);
-                else if (inner && inner.type === 'Buffer' && Array.isArray(inner.data)) innerBytes = new Uint8Array(inner.data);
-                else if (inner instanceof ArrayBuffer) innerBytes = new Uint8Array(inner);
+                else if (Array.isArray(inner))
+                  innerBytes = new Uint8Array(inner);
+                else if (
+                  inner &&
+                  inner.type === "Buffer" &&
+                  Array.isArray(inner.data)
+                )
+                  innerBytes = new Uint8Array(inner.data);
+                else if (inner instanceof ArrayBuffer)
+                  innerBytes = new Uint8Array(inner);
                 if (innerBytes) {
                   mso = CBOR.decode(innerBytes);
                   changed = true;
@@ -837,9 +1103,12 @@
             }
 
             // Log the raw CBOR-decoded MSO object for inspection
-            console.log('MSO (raw CBOR-decoded):', mso);
+            console.log("MSO (raw CBOR-decoded):", mso);
 
-            console.log('MSO decoded for deviceKey extraction (debug JSON):', msoToDebugJSON(mso));
+            console.log(
+              "MSO decoded for deviceKey extraction (debug JSON):",
+              msoToDebugJSON(mso),
+            );
 
             const mget = (obj, keys) => {
               if (!obj) return undefined;
@@ -852,13 +1121,16 @@
 
             // In your MSO example, deviceKeyInfo is a named field, but
             // some implementations may use a numeric label (e.g. 4).
-            let deviceKeyInfo = mget(mso, ['deviceKeyInfo', 4]);
+            let deviceKeyInfo = mget(mso, ["deviceKeyInfo", 4]);
             if (!deviceKeyInfo) {
               // Some implementations may use different labels; try heuristic search
-              console.warn('MSO has no deviceKeyInfo field under expected keys; attempting heuristic search.', msoToDebugJSON(mso));
+              console.warn(
+                "MSO has no deviceKeyInfo field under expected keys; attempting heuristic search.",
+                msoToDebugJSON(mso),
+              );
               const heuristic = findDeviceKeyDeep(mso);
               if (heuristic != null) {
-                console.log('Heuristic found deviceKey-like value in MSO');
+                console.log("Heuristic found deviceKey-like value in MSO");
                 return heuristic;
               }
               continue;
@@ -867,44 +1139,57 @@
             // key 1 inside deviceKeyInfo (converted to "deviceKey" in JSON
             // view). Prefer that, but also allow the old numeric 0 for
             // compatibility with other wallets.
-            let deviceKey = mget(deviceKeyInfo, ['deviceKey', 1, 0]);
+            let deviceKey = mget(deviceKeyInfo, ["deviceKey", 1, 0]);
             if (!deviceKey) {
               // As a fallback, search inside deviceKeyInfo and the whole MSO
-              console.warn('deviceKeyInfo present but no deviceKey field; attempting heuristic search inside deviceKeyInfo.', msoToDebugJSON(deviceKeyInfo));
-              const inner = findDeviceKeyDeep(deviceKeyInfo) || findDeviceKeyDeep(mso);
+              console.warn(
+                "deviceKeyInfo present but no deviceKey field; attempting heuristic search inside deviceKeyInfo.",
+                msoToDebugJSON(deviceKeyInfo),
+              );
+              const inner =
+                findDeviceKeyDeep(deviceKeyInfo) || findDeviceKeyDeep(mso);
               if (inner == null) continue;
               deviceKey = inner;
             }
             return deviceKey;
           } catch (e) {
-            console.warn('Failed to extract deviceKey from document:', e);
+            console.warn("Failed to extract deviceKey from document:", e);
           }
         }
         return null;
       }
 
-      function determineDocTypeLabel(deviceResponse){
-        const getField = (o, k) => (o instanceof Map) ? o.get(k) : o?.[k];
-        const documents = getField(deviceResponse, 'documents');
-        if (!Array.isArray(documents) || documents.length === 0) return 'Unknown';
+      function determineDocTypeLabel(deviceResponse) {
+        const getField = (o, k) => (o instanceof Map ? o.get(k) : o?.[k]);
+        const documents = getField(deviceResponse, "documents");
+        if (!Array.isArray(documents) || documents.length === 0)
+          return "Unknown";
         const doc = documents[0];
-        const docType = getField(doc, 'docType') || 'Unknown';
-        if (docType === 'eu.europa.ec.eudi.pid.1') return 'EU PID';
-        if (docType === 'eu.europa.ec.av.1') return 'EU Age Verification';
+        const docType = getField(doc, "docType") || "Unknown";
+        if (docType === "eu.europa.ec.eudi.pid.1") return "EU PID";
+        if (docType === "eu.europa.ec.av.1") return "EU Age Verification";
         return docType;
       }
 
       async function verifyDocumentModel(model) {
         const docs = Array.isArray(model?.documents) ? model.documents : [];
         if (!docs.length) return { allValid: true, results: [] };
-        if (!window.Verification || typeof window.Verification.verifyCredentialSignature !== 'function') {
-          return { allValid: false, results: [], error: 'Verification module not loaded' };
+        if (
+          !window.Verification ||
+          typeof window.Verification.verifyCredentialSignature !== "function"
+        ) {
+          return {
+            allValid: false,
+            results: [],
+            error: "Verification module not loaded",
+          };
         }
         const results = [];
         let allValid = true;
         for (const doc of docs) {
           try {
-            const res = await window.Verification.verifyCredentialSignature(doc);
+            const res =
+              await window.Verification.verifyCredentialSignature(doc);
             results.push(res);
             const claimsOk = res?.claims?.allMatched !== false;
             const holderOk = res?.holderAuthValid !== false;
@@ -912,30 +1197,41 @@
             if (!claimsOk || !holderOk || !signatureOk) allValid = false;
           } catch (e) {
             allValid = false;
-            results.push({ signatureValid: false, errors: [String(e?.message || e)] });
+            results.push({
+              signatureValid: false,
+              errors: [String(e?.message || e)],
+            });
           }
         }
         return { allValid, results };
       }
 
-      async function handleDeviceResponseForUnlinkability(deviceResponse){
+      async function handleDeviceResponseForUnlinkability(deviceResponse) {
         try {
-            console.log('Device Response:', deviceResponse);
-          const model = window.WalletResponse.buildResponseViewModel(deviceResponse);
+          console.log("Device Response:", deviceResponse);
+          const model =
+            window.WalletResponse.buildResponseViewModel(deviceResponse);
           const verification = await verifyDocumentModel(model);
           if (!verification.allValid) {
-            console.warn('Verification failed for unlinkability response:', verification);
-            if (holderStatusEl) holderStatusEl.textContent = 'Verification failed — cannot evaluate linkability.';
+            console.warn(
+              "Verification failed for unlinkability response:",
+              verification,
+            );
+            if (holderStatusEl)
+              holderStatusEl.textContent =
+                "Verification failed — cannot evaluate linkability.";
             disconnectBLE();
-            statusEl.textContent = 'Verification failed';
+            statusEl.textContent = "Verification failed";
             return;
           }
           const deviceKey = extractDeviceKeyFromDeviceResponse(deviceResponse);
           const docTypeLabel = determineDocTypeLabel(deviceResponse);
 
           if (!deviceKey) {
-            console.warn('No deviceKey found in MSO deviceKeyInfo');
-            if (holderStatusEl) holderStatusEl.textContent = 'No deviceKey found in MSO – cannot evaluate linkability.';
+            console.warn("No deviceKey found in MSO deviceKeyInfo");
+            if (holderStatusEl)
+              holderStatusEl.textContent =
+                "No deviceKey found in MSO – cannot evaluate linkability.";
           } else {
             const fingerprint = fingerprintDeviceKey(deviceKey);
             const store = loadDeviceKeyStore();
@@ -946,7 +1242,9 @@
               existing.lastSeen = nowIso;
               existing.lastDocType = docTypeLabel;
               existing.count = (existing.count || 1) + 1;
-              if (holderStatusEl) holderStatusEl.textContent = 'Same holder as a previous attestation (deviceKey already seen).';
+              if (holderStatusEl)
+                holderStatusEl.textContent =
+                  "Same holder as a previous attestation (deviceKey already seen).";
             } else if (fingerprint) {
               store[fingerprint] = {
                 firstSeen: nowIso,
@@ -954,7 +1252,9 @@
                 lastDocType: docTypeLabel,
                 count: 1,
               };
-              if (holderStatusEl) holderStatusEl.textContent = 'New holder – this deviceKey has not been seen before.';
+              if (holderStatusEl)
+                holderStatusEl.textContent =
+                  "New holder – this deviceKey has not been seen before.";
             }
 
             saveDeviceKeyStore(store);
@@ -969,10 +1269,11 @@
 
           // Auto-disconnect once we have processed the response to avoid stale GATT objects on next scan
           disconnectBLE();
-          statusEl.textContent = 'Done — disconnected';
+          statusEl.textContent = "Done — disconnected";
         } catch (e) {
-          console.warn('Unlinkability processing failed:', e);
-          if (holderStatusEl) holderStatusEl.textContent = 'Error while processing attestation.';
+          console.warn("Unlinkability processing failed:", e);
+          if (holderStatusEl)
+            holderStatusEl.textContent = "Error while processing attestation.";
         }
       }
 
@@ -981,42 +1282,48 @@
 
       // Reset unlinkability history (local storage + UI)
       if (btnResetUnlinkability) {
-        btnResetUnlinkability.addEventListener('click', () => {
-          try { localStorage.removeItem(DEVICE_KEY_STORE_KEY); } catch {}
-          if (holderStatusEl) holderStatusEl.textContent = 'No attestation read yet.';
-          if (lastDeviceKeyEl) lastDeviceKeyEl.textContent = '—';
-          if (lastDocTypeEl) lastDocTypeEl.textContent = '—';
+        btnResetUnlinkability.addEventListener("click", () => {
+          try {
+            localStorage.removeItem(DEVICE_KEY_STORE_KEY);
+          } catch {}
+          if (holderStatusEl)
+            holderStatusEl.textContent = "No attestation read yet.";
+          if (lastDeviceKeyEl) lastDeviceKeyEl.textContent = "—";
+          if (lastDocTypeEl) lastDocTypeEl.textContent = "—";
           renderDeviceKeyHistory();
         });
       }
 
       // ==== QR payload handler → connection ====
-      async function handleQrPayload(raw, sourceLabel){
-        const payload=(raw||'').trim();
-        if (!payload){ statusEl.textContent='No payload'; return; }
+      async function handleQrPayload(raw, sourceLabel) {
+        const payload = (raw || "").trim();
+        if (!payload) {
+          statusEl.textContent = "No payload";
+          return;
+        }
         disconnectBLE();
-        await new Promise(r=>setTimeout(r,150));
+        await new Promise((r) => setTimeout(r, 150));
 
         let parsed;
         try {
           parsed = parseMdocUriAndDE(payload);
         } catch (e) {
           const reason = e?.message || e;
-          statusEl.textContent = `Parse failed${reason ? `: ${reason}` : ''}`;
-          console.error('QR parse error:', e, payload);
+          statusEl.textContent = `Parse failed${reason ? `: ${reason}` : ""}`;
+          console.error("QR parse error:", e, payload);
           return;
         }
 
         svcUUID = parsed.uuid;
         bleAddr = parsed.addr;
         if (qrInput) qrInput.value = payload;
-        statusEl.textContent = `Parsed from ${sourceLabel || 'QR'}`;
+        statusEl.textContent = `Parsed from ${sourceLabel || "QR"}`;
 
         try {
           await autoConnectFlow();
         } catch (e) {
           statusEl.textContent = `BLE error: ${e.message || e}`;
-          console.error('Auto-connect failed:', e);
+          console.error("Auto-connect failed:", e);
         }
       }
     </script>
