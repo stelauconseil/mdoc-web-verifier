@@ -58,6 +58,49 @@ jobs:
                     npx terser "$f" -c -m -o "$f"
                   done
 
+            # Obfuscate inline JS in HTML (index/visitor/unlikability)
+            - name: Obfuscate inline JS (HTML)
+              run: |
+                  node <<'NODE'
+                  const fs = require('fs');
+                  const { execSync } = require('child_process');
+
+                  const files = ['index.html', 'visitor.html', 'unlikability_test.html'];
+                  const obfArgs = [
+                    '--compact', 'true',
+                    '--control-flow-flattening', 'false',
+                    '--dead-code-injection', 'false',
+                    '--self-defending', 'false'
+                  ];
+
+                  function shouldSkip(attrs) {
+                    const a = (attrs || '').toLowerCase();
+                    if (a.includes('src=')) return true;
+                    if (a.includes('application/ld+json')) return true;
+                    if (a.includes('application/json')) return true;
+                    return false;
+                  }
+
+                  for (const file of files) {
+                    if (!fs.existsSync(file)) continue;
+                    let html = fs.readFileSync(file, 'utf8');
+                    let idx = 0;
+                    html = html.replace(/<script([^>]*)>([\s\S]*?)<\/script>/gi, (m, attrs, code) => {
+                      if (shouldSkip(attrs)) return m;
+                      if (!code || !code.trim()) return m;
+                      const inFile = `.inline-${file.replace(/[^a-z0-9]/gi, '_')}-${idx++}.js`;
+                      const outFile = inFile + '.obf.js';
+                      fs.writeFileSync(inFile, code, 'utf8');
+                      execSync(`npx -y javascript-obfuscator "${inFile}" --output "${outFile}" ${obfArgs.join(' ')}`, { stdio: 'inherit' });
+                      const obf = fs.readFileSync(outFile, 'utf8');
+                      fs.unlinkSync(inFile);
+                      fs.unlinkSync(outFile);
+                      return `<script${attrs}>${obf}</script>`;
+                    });
+                    fs.writeFileSync(file, html, 'utf8');
+                  }
+                  NODE
+
             # Minify index.html (inline JS/CSS too)
             - name: Minify HTML (inline JS/CSS)
               run: |
