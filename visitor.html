@@ -1,563 +1,1113 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Visitor Log · mDoc BLE</title>
-  <meta name="robots" content="index, follow" />
-  <meta name="description" content="Visitor check-in and check-out using mobile ID (EUDI PID or mDL) over Web Bluetooth. Scan QR codes in the browser—no app install required." />
-  <link rel="canonical" href="visitor.html" />
-  
-  <!-- Open Graph / Twitter for rich previews -->
-  <meta property="og:title" content="Visitor Log · mDoc BLE" />
-  <meta property="og:description" content="Visitor check-in and check-out using mobile ID (EUDI PID or mDL) over Web Bluetooth. Scan QR codes in the browser—no app install required." />
-  <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://mdoc-web-verifier.stelau.com/visitor.html" />
-  <meta name="twitter:card" content="summary" />
-  <meta name="twitter:title" content="Visitor Log · mDoc BLE" />
-  <meta name="twitter:description" content="Visitor check-in and check-out using mobile ID (EUDI PID or mDL) over Web Bluetooth. Scan QR codes in the browser—no app install required." />
-  <meta name="theme-color" content="#0f172a" />
-  <style>
-    :root { color-scheme: light dark; font-family: "Inter", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
-    body { margin: 0; background: #F2F4F8; color: #111827; }
-    .page-header { background: linear-gradient(135deg,#0f172a,#1e293b); color: #f8fafc; padding: 1rem; text-align: center; position: relative; }
-    .page-header h1 { margin: 0; font-size: clamp(1.4rem, 3vw, 2rem); }
-    .breadcrumb-nav { position: absolute; left: 1rem; top: 1rem; font-size: 0.85rem; }
-    main { max-width: 1100px; margin: 0 auto; padding: 1rem 1.25rem 2rem; }
-    .card { background: #ffffff; border-radius: 16px; padding: 1.25rem; margin-top: 1rem; box-shadow: 0 20px 45px -25px rgba(15,23,42,0.35); border: 1px solid rgba(148,163,184,0.25); }
-    .row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
-    button { font: inherit; font-weight: 600; padding: .55rem 1rem; border-radius: 10px; border: 1px solid rgba(15,23,42,0.08); background: #1d4ed8; color: #fff; cursor: pointer; }
-    button.secondary { background: #0f172a; }
-    button:disabled { opacity: .6; cursor: not-allowed; }
-    label.inline { display: flex; align-items: center; gap: .5rem; }
-    input, textarea { font: inherit; }
-    textarea { width: 97%; min-height: 60px; padding: .75rem .9rem; border-radius: 12px; border: 1px solid rgba(148,163,184,0.45); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9rem; background: #f8fafc; }
-    .muted { color: #64748b; font-size: .9rem; }
-    .status { background: #f1f5f9; border-radius: 12px; padding: .75rem 1rem; font-size: .9rem; }
-    table { width: 100%; border-collapse: collapse; font-size: .95rem; }
-    th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid rgba(148,163,184,0.35); }
-    th { background: #e2e8f0; color: #0f172a; position: sticky; top: 0; z-index: 1; }
-  .video-frame { position: relative; border-radius: 12px; overflow: hidden; background: #020617; height: 100px; min-height: 100px; width: 200px; max-width: 60vw; }
-  video { width: 200px; max-width: 60vw; height: 100px; object-fit: cover; display: block; }
-    canvas { display: none; }
-    footer { text-align: center; padding: 2rem 1rem 3rem; color: #64748b; font-size: 0.9rem; }
-    @media (max-width: 640px){
-      .page-header h1 { font-size: clamp(1.2rem, 5.5vw, 1.5rem); }
-      .card { padding: 1rem; border-radius: 14px; }
-      th, td { font-size: .9rem; }
-    }
-  </style>
-</head>
-<body>
-  <header class="page-header" role="banner">
-    <nav aria-label="Breadcrumb" class="breadcrumb-nav">
-      <a href="index.html" style="color:#cbd5e1; text-decoration: underline;">Home</a>
-      <span aria-hidden="true"> › </span>
-      <span>Visitor Log</span>
-    </nav>
-    <h1>Visitor Log</h1>
-  <p class="muted" style="margin:.5rem 0 0">Offline-capable check-in and check-out via mDoc BLE (EUDI PID or mDL)</p>
-    <p class="muted" style="margin:.25rem 0 0; font-size:.9rem;">
-      About: This example demonstrates an offline visitor log using ISO 18013‑5 proximity mobile IDs (mDL / EUDI PID) over Web Bluetooth. Entries are stored locally in your browser; no server is required.
-    </p>
-  </header>
-  <main>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Visitor Log · mDoc BLE</title>
+    <meta name="robots" content="index, follow" />
+    <meta
+      name="description"
+      content="Visitor check-in and check-out using mobile ID (EUDI PID or mDL) over Web Bluetooth. Scan QR codes in the browser—no app install required."
+    />
+    <link rel="canonical" href="visitor.html" />
 
-    <section class="card" id="logSection">
-      <h2 style="margin:0 0 .5rem 0; font-size:1.1rem;">Entries</h2>
-      <div class="muted" style="margin-bottom:.5rem; display:flex; justify-content:space-between; align-items:center; gap:.5rem;">
-        <span>Today: <span id="todayLabel">—</span></span>
-        <button
-          id="btnResetVisitor"
-          class="secondary"
-          title="Clear all visitor entries stored in this browser"
-          style="display:inline-flex; align-items:center; gap:6px; padding:6px 10px; font-size:0.8rem;"
+    <!-- Open Graph / Twitter for rich previews -->
+    <meta property="og:title" content="Visitor Log · mDoc BLE" />
+    <meta
+      property="og:description"
+      content="Visitor check-in and check-out using mobile ID (EUDI PID or mDL) over Web Bluetooth. Scan QR codes in the browser—no app install required."
+    />
+    <meta property="og:type" content="website" />
+    <meta
+      property="og:url"
+      content="https://mdoc-web-verifier.stelau.com/visitor.html"
+    />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Visitor Log · mDoc BLE" />
+    <meta
+      name="twitter:description"
+      content="Visitor check-in and check-out using mobile ID (EUDI PID or mDL) over Web Bluetooth. Scan QR codes in the browser—no app install required."
+    />
+    <meta name="theme-color" content="#0f172a" />
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family:
+          "Inter",
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          Arial,
+          sans-serif;
+      }
+      body {
+        margin: 0;
+        background: #f2f4f8;
+        color: #111827;
+      }
+      .page-header {
+        background: linear-gradient(135deg, #0f172a, #1e293b);
+        color: #f8fafc;
+        padding: 1rem;
+        text-align: center;
+        position: relative;
+      }
+      .page-header h1 {
+        margin: 0;
+        font-size: clamp(1.4rem, 3vw, 2rem);
+      }
+      .breadcrumb-nav {
+        position: absolute;
+        left: 1rem;
+        top: 1rem;
+        font-size: 0.85rem;
+      }
+      main {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 1rem 1.25rem 2rem;
+      }
+      .card {
+        background: #ffffff;
+        border-radius: 16px;
+        padding: 1.25rem;
+        margin-top: 1rem;
+        box-shadow: 0 20px 45px -25px rgba(15, 23, 42, 0.35);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        align-items: center;
+      }
+      button {
+        font: inherit;
+        font-weight: 600;
+        padding: 0.55rem 1rem;
+        border-radius: 10px;
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        background: #1d4ed8;
+        color: #fff;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: #0f172a;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      label.inline {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      input,
+      textarea {
+        font: inherit;
+      }
+      textarea {
+        width: 97%;
+        min-height: 60px;
+        padding: 0.75rem 0.9rem;
+        border-radius: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.45);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.9rem;
+        background: #f8fafc;
+      }
+      .muted {
+        color: #64748b;
+        font-size: 0.9rem;
+      }
+      .status {
+        background: #f1f5f9;
+        border-radius: 12px;
+        padding: 0.75rem 1rem;
+        font-size: 0.9rem;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.95rem;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 0.5rem 0.6rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.35);
+      }
+      th {
+        background: #e2e8f0;
+        color: #0f172a;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+      }
+      .video-frame {
+        position: relative;
+        border-radius: 12px;
+        overflow: hidden;
+        background: #020617;
+        height: 100px;
+        min-height: 100px;
+        width: 200px;
+        max-width: 60vw;
+      }
+      video {
+        width: 200px;
+        max-width: 60vw;
+        height: 100px;
+        object-fit: cover;
+        display: block;
+      }
+      canvas {
+        display: none;
+      }
+      footer {
+        text-align: center;
+        padding: 2rem 1rem 3rem;
+        color: #64748b;
+        font-size: 0.9rem;
+      }
+      @media (max-width: 640px) {
+        .page-header h1 {
+          font-size: clamp(1.2rem, 5.5vw, 1.5rem);
+        }
+        .card {
+          padding: 1rem;
+          border-radius: 14px;
+        }
+        th,
+        td {
+          font-size: 0.9rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-header" role="banner">
+      <nav aria-label="Breadcrumb" class="breadcrumb-nav">
+        <a href="index.html" style="color: #cbd5e1; text-decoration: underline"
+          >Home</a
         >
-          ♻️ Reset Entries
-        </button>
-      </div>
-      <div style="overflow:auto; max-height: 50vh;">
-        <table id="visitorTable">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Last name</th>
-              <th>First name</th>
-              <th>Document</th>
-              <th>Time in</th>
-              <th>Time out</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="card" id="controls">
-      <!-- Auto mode: no manual check-in/out controls -->
-      <div class="row" style="margin-top:.75rem;">
-        <button id="btnScan">Scan QR Code</button>
-        <label class="inline muted">BLE MTU
-          <input id="chunk" type="number" min="20" max="511" value="244" style="width:92px; padding:.35rem .5rem; border-radius:8px; border:1px solid rgba(148,163,184,0.6)" />
-        </label>
-      </div>
-      <div class="video-frame" style="margin-top:.75rem;">
-        <video id="video" playsinline muted></video>
-        <canvas id="canvas"></canvas>
-      </div>
-      <div class="status" style="margin-top:.75rem;">
-        <div><strong>Status:</strong> <span id="qrStatus">Idle</span></div>
-      </div>
-      <div style="margin-top:.75rem;">
-        <label class="muted" for="qrInput">Manual QR payload</label>
-        <textarea id="qrInput" placeholder="Paste the full mdoc: URI here"></textarea>
-        <div class="row" style="margin-top:.5rem;">
-          <button id="btnParseQr" class="secondary">Use manual payload</button>
-          <button id="btnClearQr">Clear</button>
+        <span aria-hidden="true"> › </span>
+        <span>Visitor Log</span>
+      </nav>
+      <h1>Visitor Log</h1>
+      <p class="muted" style="margin: 0.5rem 0 0">
+        Offline-capable check-in and check-out via mDoc BLE (EUDI PID or mDL)
+      </p>
+      <p class="muted" style="margin: 0.25rem 0 0; font-size: 0.9rem">
+        About: This example demonstrates an offline visitor log using ISO
+        18013‑5 proximity mobile IDs (mDL / EUDI PID) over Web Bluetooth.
+        Entries are stored locally in your browser; no server is required.
+      </p>
+    </header>
+    <main>
+      <section class="card" id="logSection">
+        <h2 style="margin: 0 0 0.5rem 0; font-size: 1.1rem">Entries</h2>
+        <div
+          class="muted"
+          style="
+            margin-bottom: 0.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.5rem;
+          "
+        >
+          <span>Today: <span id="todayLabel">—</span></span>
+          <button
+            id="btnResetVisitor"
+            class="secondary"
+            title="Clear all visitor entries stored in this browser"
+            style="
+              display: inline-flex;
+              align-items: center;
+              gap: 6px;
+              padding: 6px 10px;
+              font-size: 0.8rem;
+            "
+          >
+            ♻️ Reset Entries
+          </button>
         </div>
-      </div>
-    </section>
+        <div style="overflow: auto; max-height: 50vh">
+          <table id="visitorTable">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Last name</th>
+                <th>First name</th>
+                <th>Document</th>
+                <th>Time in</th>
+                <th>Time out</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
 
-  </main>
+      <section class="card" id="controls">
+        <!-- Auto mode: no manual check-in/out controls -->
+        <div class="row" style="margin-top: 0.75rem">
+          <button id="btnScan">Scan QR Code</button>
+          <label class="inline muted"
+            >BLE MTU
+            <input
+              id="chunk"
+              type="number"
+              min="20"
+              max="511"
+              value="244"
+              style="
+                width: 92px;
+                padding: 0.35rem 0.5rem;
+                border-radius: 8px;
+                border: 1px solid rgba(148, 163, 184, 0.6);
+              "
+            />
+          </label>
+        </div>
+        <div class="video-frame" style="margin-top: 0.75rem">
+          <video id="video" playsinline muted></video>
+          <canvas id="canvas"></canvas>
+        </div>
+        <div class="status" style="margin-top: 0.75rem">
+          <div><strong>Status:</strong> <span id="qrStatus">Idle</span></div>
+        </div>
+        <div style="margin-top: 0.75rem">
+          <label class="muted" for="qrInput">Manual QR payload</label>
+          <textarea
+            id="qrInput"
+            placeholder="Paste the full mdoc: URI here"
+          ></textarea>
+          <div class="row" style="margin-top: 0.5rem">
+            <button id="btnParseQr" class="secondary">
+              Use manual payload
+            </button>
+            <button id="btnClearQr">Clear</button>
+          </div>
+        </div>
+      </section>
+    </main>
 
-  <footer>
-    Built by <a href="https://stelau.com">Stelau</a> for ISO 18013-5 experimentation.
-    <span id="appVersionFooter" style="display:block;margin-top:0.5rem;color:#64748b;font-size:0.7rem;"></span>
-    <br>
-    <span style="font-size:0.9em;color:#888;">&copy; 2026 Stelau. All rights reserved.</span>
-  </footer>
+    <footer>
+      Built by <a href="https://stelau.com">Stelau</a> for ISO 18013-5
+      experimentation.
+      <span
+        id="appVersionFooter"
+        style="
+          display: block;
+          margin-top: 0.5rem;
+          color: #64748b;
+          font-size: 0.7rem;
+        "
+      ></span>
+      <br />
+      <span style="font-size: 0.9em; color: #888"
+        >&copy; 2026 Stelau. All rights reserved.</span
+      >
+    </footer>
 
-  <!-- Libs -->
-  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/cbor-web@9.0.2/dist/cbor.min.js"></script>
-  <script src="/js/noble-curves.min.js"></script>
-  <script src="/js/session-crypto.js"></script>
-  <script src="/js/ble-transport.js"></script>
-  <script src="/js/session-establishment.js"></script>
-  <!-- Feature modules used by visitor page -->
-  <script src="/js/device-engagement.js?v=20251030b"></script>
-  <script src="/js/reader-authentication.js?v=20251030b"></script>
-  <script src="/js/wallet-response.js?v=20251030b"></script>
-  <script src="/js/request-builder.js?v=20251030b"></script>
+    <!-- Libs -->
+    <script src="js/jsQR.js"></script>
+    <script src="js/cbor.min.js"></script>
+    <script src="js/noble-curves.min.js"></script>
+    <script src="js/session-crypto.js"></script>
+    <script src="js/ble-transport.js"></script>
+    <script src="js/session-establishment.js"></script>
+    <script src="js/verification.js"></script>
+    <!-- Feature modules used by visitor page -->
+    <script src="js/device-engagement.js"></script>
+    <script src="js/reader-authentication.js"></script>
+    <script src="js/wallet-response.js"></script>
+    <script src="js/request-builder.js"></script>
 
-  <script type="module">
-  // Structured data (JSON-LD) for SEO
-  try {
-    const ld = document.createElement('script');
-    ld.type = 'application/ld+json';
-    ld.text = JSON.stringify({
-      "@context": "https://schema.org",
-      "@type": "WebPage",
-      "name": "Visitor Log · mDoc BLE",
-      "description": "Visitor check-in and check-out using mobile ID (EUDI PID or mDL) over Web Bluetooth. Scan QR codes in the browser—no app install required.",
-      "url": (location && location.href) ? location.href : undefined,
-      "breadcrumb": {
-        "@type": "BreadcrumbList",
-        "itemListElement": [
-          { "@type": "ListItem", "position": 1, "name": "Home", "item": (location && location.origin) ? location.origin + "/index.html" : "index.html" },
-          { "@type": "ListItem", "position": 2, "name": "Visitor Log", "item": (location && location.href) ? location.href : "visitor.html" }
-        ]
-      }
-    });
-    document.head.appendChild(ld);
-  } catch {}
+    <script type="module">
+      // Structured data (JSON-LD) for SEO
+      try {
+        const ld = document.createElement("script");
+        ld.type = "application/ld+json";
+        ld.text = JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "WebPage",
+          name: "Visitor Log · mDoc BLE",
+          description:
+            "Visitor check-in and check-out using mobile ID (EUDI PID or mDL) over Web Bluetooth. Scan QR codes in the browser—no app install required.",
+          url: location && location.href ? location.href : undefined,
+          breadcrumb: {
+            "@type": "BreadcrumbList",
+            itemListElement: [
+              {
+                "@type": "ListItem",
+                position: 1,
+                name: "Home",
+                item:
+                  location && location.origin
+                    ? location.origin + "/index.html"
+                    : "index.html",
+              },
+              {
+                "@type": "ListItem",
+                position: 2,
+                name: "Visitor Log",
+                item:
+                  location && location.href ? location.href : "visitor.html",
+              },
+            ],
+          },
+        });
+        document.head.appendChild(ld);
+      } catch {}
 
-  // Footer: show APP_VERSION if available
-  window.addEventListener('DOMContentLoaded', () => {
-    const footerVersion = document.getElementById('appVersionFooter');
-    const ver = (typeof window.APP_VERSION !== 'undefined') ? window.APP_VERSION : null;
-    if (footerVersion && ver != null) {
-      footerVersion.innerText = `v${ver}`;
-    }
-  });
-  
-  // ==== CBOR bootstrap ====
-  let CBORRef = self.CBOR || self.cbor;
-  if (!CBORRef) {
-    try { CBORRef = await import('https://cdn.jsdelivr.net/npm/cbor-web@9.0.2/dist/cbor.mjs'); }
-    catch (e) { console.error('CBOR library load failed', e); }
-  }
-  if (!CBORRef) throw new Error('CBOR library unavailable');
-  const CBOR = CBORRef; window.CBOR = CBOR;
-
-  // ==== Globals / DOM ====
-  const logEl = null; // minimal log; use console only
-  const statusEl = document.getElementById('qrStatus');
-  const video = document.getElementById('video');
-  const canvas = document.getElementById('canvas');
-  const ctx = canvas.getContext('2d', { willReadFrequently:true });
-  const qrInput = document.getElementById('qrInput');
-  const btnParseQr = document.getElementById('btnParseQr');
-  const btnClearQr = document.getElementById('btnClearQr');
-  const btnScan = document.getElementById('btnScan');
-  const chunkInput = document.getElementById('chunk');
-  const todayLabel = document.getElementById('todayLabel');
-  const btnResetVisitor = document.getElementById('btnResetVisitor');
-
-  function todayISO(){ const d = new Date(); return d.toISOString().slice(0,10); }
-  function timeStr(){ const d = new Date(); return d.toLocaleTimeString(); }
-  todayLabel.textContent = new Date().toLocaleDateString();
-
-  // Auto mode: scanning determines check-in/out based on log state
-
-  // ==== Minimal logger ====
-  function log(msg){ console.log(msg); if (statusEl) { statusEl.textContent = String(msg).slice(0,140); } }
-
-  // ==== State ====
-  let scanRunning = false;
-  let svcUUID = null, bleAddr = null;
-  let deBytes = null; let mdocPubKey = null; let readerKeyPair = null; let skReader=null, skDevice=null; let transcriptAAD=null; let sessionEstablished=false;
-  window.skDevice = skDevice;
-
-  function resetSessionState(){
-    try { sessionEstablished = false; } catch {}
-    try { readerKeyPair = null; } catch {}
-    try { skReader = null; skDevice = null; window.skDevice = null; } catch {}
-    try { transcriptAAD = null; } catch {}
-  }
-
-  function disconnectBLE(){
-    try {
-      if (window.BLE && typeof window.BLE.disconnect === 'function') {
-        window.BLE.disconnect();
-      }
-    } catch (e) {
-      console.warn('Error disconnecting BLE device:', e);
-    }
-    resetSessionState();
-  }
-
-  // ==== Utils (from SessionCrypto) ====
-  const hex = (...args)=> window.SessionCrypto.hex(...args);
-  const concatUint8 = (...args)=> window.SessionCrypto.concatUint8(...args);
-
-  // BLE UUIDs are managed by the BLE transport module
-
-  // ==== QR Camera ====
-  async function startCamera(){
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-    video.srcObject = stream; await video.play();
-    canvas.width = video.videoWidth || 1280; canvas.height = video.videoHeight || 720;
-    scanRunning = true; statusEl.textContent='Scanning…'; requestAnimationFrame(tick);
-  }
-  function stopCamera(){ scanRunning=false; try{ video.pause(); }catch{} if (video.srcObject){ for(const t of video.srcObject.getTracks()){ t.stop(); } video.srcObject=null; }}
-  function tick(){ if (!scanRunning) return; const ctx2d = canvas.getContext('2d',{ willReadFrequently:true }); ctx2d.drawImage(video,0,0,canvas.width,canvas.height); const img=ctx2d.getImageData(0,0,canvas.width,canvas.height); const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' }); if (code?.data){ stopCamera(); statusEl.textContent='QR detected'; handleQrPayload(code.data, 'camera'); return;} requestAnimationFrame(tick); }
-  btnScan.addEventListener('click', ()=>{
-    disconnectBLE();
-    startCamera().catch(e=>log('Camera error: '+e.message));
-  });
-  btnParseQr.addEventListener('click', ()=>{ handleQrPayload(qrInput.value, 'manual'); });
-  btnClearQr.addEventListener('click', ()=>{ qrInput.value=''; statusEl.textContent='Idle'; });
-
-  // ==== DeviceEngagement helpers ====
-  function parseMdocUriAndDE(uri){ const res = window.DeviceEngagement.parseMdocUriAndDE(uri); deBytes = res.deBytes; if (res.x && res.y) mdocPubKey = { x: res.x, y: res.y }; return { uuid: res.uuid, addr: res.addr }; }
-
-  // ==== Session key + transcript via modules ====
-  // Use SessionCrypto and SessionEstablishment provided by shared modules
-
-  // ==== Messages ====
-  async function buildLegacySessionEstablishmentWithData(){
-    const { message, keys, transcriptAAD: aad } = await window.SessionEstablishment.buildLegacySessionEstablishmentWithData({
-      deBytes,
-      mdocPubKey,
-      readerKeyPair,
-      transcriptAAD,
-      skReader,
-      // Explicit request types for Visitor flow (avoid default 'full')
-      buildRequestByType: () => window.RequestBuilder.buildRequestByType(['pid_minimal','mdl_minimal']),
-      log,
-      CBOR,
-    });
-    if (keys) {
-      skReader = keys.readerKey;
-      skDevice = keys.deviceKey;
-      window.skDevice = skDevice;
-      sessionEstablished = true;
-      window.sessionEstablished = true;
-    }
-    if (aad) transcriptAAD = aad;
-    return message;
-  }
-
-  // ==== BLE transport via module ====
-
-  async function autoConnectFlow(){
-    // Connect
-    const connected = !!(window.BLE && typeof window.BLE.isConnected==='function' && window.BLE.isConnected());
-    if (!connected) {
-      if (!svcUUID) throw new Error('Service UUID missing');
-      if (!window.BLE || typeof window.BLE.connect !== 'function' || typeof window.BLE.init !== 'function') {
-        throw new Error('BLE module not available');
-      }
-      window.BLE.init({
-        onAssembled: processS2CAssembled,
-        logger: log,
-        defaultChunk: parseInt(chunkInput.value, 10) || 185,
+      // Footer: show APP_VERSION if available
+      window.addEventListener("DOMContentLoaded", () => {
+        const footerVersion = document.getElementById("appVersionFooter");
+        const ver =
+          typeof window.APP_VERSION !== "undefined" ? window.APP_VERSION : null;
+        if (footerVersion && ver != null) {
+          footerVersion.innerText = `v${ver}`;
+        }
       });
-      statusEl.textContent = `Connecting…`;
-      try {
-        await window.BLE.connect(svcUUID);
-      } catch (e) {
-        // If the underlying cached service/characteristics were invalidated, force a full reset and retry once
-        console.warn('First connect attempt failed, retrying after reset:', e);
-        try { window.BLE.disconnect(); } catch {}
-        await new Promise(r=>setTimeout(r,300));
-        await window.BLE.connect(svcUUID);
-      }
-      await new Promise(r=>setTimeout(r,300));
-    }
-    // Start session
-    await window.BLE.writeState(0x01);
-    await new Promise(r=>setTimeout(r,300));
-    // Ephemeral key + transcript
-    readerKeyPair = await window.SessionEstablishment.makeReaderEphemeralKeyPair();
-    await window.SessionEstablishment.exportReaderPublicToCoseKey(readerKeyPair);
-    transcriptAAD = await window.SessionEstablishment.buildTranscriptAAD(deBytes);
-    // Build + send request
-    const legacyMessage = await buildLegacySessionEstablishmentWithData();
-    statusEl.textContent = `Sending request… (${legacyMessage.length} bytes)`;
-    await window.BLE.sendFragmented(legacyMessage, parseInt(chunkInput.value, 10) || 185);
-    statusEl.textContent = 'Request sent. Waiting for wallet…';
-  }
 
-  // ==== S->C assembly and processing ====
-  async function processS2CAssembled(assembled, reason='final-flag'){
-    try {
-      const decoded = CBOR.decode(assembled);
-      // Treat as session response until keys are ready
-      let isSessionResponse = !skReader || !skDevice;
-      if (!isSessionResponse){ // still allow by heuristic
-        if (decoded instanceof Map) isSessionResponse = decoded.has('eDeviceKey') || decoded.has('data') || decoded.has('status');
-        else if (decoded && typeof decoded==='object') isSessionResponse = ('eDeviceKey' in decoded) || ('data' in decoded) || ('status' in decoded);
-      }
-      if (isSessionResponse){ await processSessionResponse(assembled); }
-      else { await decryptAndDisplayResponse(assembled); }
-    } catch(e){ console.warn('CBOR decode failed, treating as binary', e); }
-  }
-
-  // BLE notifications assembly is handled in BLE transport module
-
-  // Bridges to WalletResponse helpers
-  // Avoid calling WalletResponse decryptors directly here because they render UI elements
-  // that don't exist on this page. We'll do local decrypt-to-object and then call the
-  // overridden display function.
-
-  async function decryptSessionEstablishmentDataLocal(encryptedData){
-    // IV: mdoc identifier (8 bytes) || counter (4 bytes, big-endian 1)
-    const mdocIdentifier = new Uint8Array([0,0,0,0,0,0,0,1]);
-    const iv = new Uint8Array(12);
-    iv.set(mdocIdentifier, 0);
-    new DataView(iv.buffer, 8, 4).setUint32(0, 1, false);
-    if (!window.skDevice) throw new Error('SKDevice key not set');
-    const key = await crypto.subtle.importKey('raw', new Uint8Array(window.skDevice), { name:'AES-GCM', length:256 }, false, ['decrypt']);
-    const plaintext = await crypto.subtle.decrypt({ name:'AES-GCM', iv, additionalData:new Uint8Array(0), tagLength:128 }, key, encryptedData);
-    return CBOR.decode(new Uint8Array(plaintext));
-  }
-
-  async function decryptCoseEncrypt0ToObjectLocal(encryptedCose){
-    const cose = CBOR.decode(encryptedCose);
-    if (!Array.isArray(cose) || cose.length!==3) throw new Error('Invalid COSE_Encrypt0');
-    const [_prot, unprot, ciphertext] = cose;
-    const iv = (unprot instanceof Map) ? unprot.get(5) : (unprot ? unprot[5] : null);
-    if (!iv) throw new Error('No IV in COSE unprotected header');
-    if (!window.skDevice) throw new Error('SKDevice key not set');
-    const key = await crypto.subtle.importKey('raw', new Uint8Array(window.skDevice), { name:'AES-GCM', length:256 }, false, ['decrypt']);
-    const plaintext = await crypto.subtle.decrypt({ name:'AES-GCM', iv:new Uint8Array(iv), additionalData:new Uint8Array(0), tagLength:128 }, key, new Uint8Array(ciphertext));
-    return CBOR.decode(new Uint8Array(plaintext));
-  }
-
-  // ==== Session finalization (from index) simplified ====
-  async function processSessionResponse(assembled){
-    if (!readerKeyPair) throw new Error('Reader ephemeral key pair not initialized');
-    let decoded=null; try { decoded = CBOR.decode(assembled);} catch{};
-    const toMap = (v)=>{ if (!v) return null; if (v instanceof Map) return v; if (typeof v==='object'){ const m=new Map(); for (const k of Object.keys(v)) m.set(k, v[k]); return m;} return null; };
-    const decodedMap = toMap(decoded);
-    // Derive keys using DeviceEngagement key
-    const mdocPub = await window.SessionCrypto.importMdocPubKeyXY(mdocPubKey.x, mdocPubKey.y);
-    const sharedSecretBuffer = await window.SessionCrypto.deriveSharedSecretBits(readerKeyPair.privateKey, mdocPub);
-    transcriptAAD = await window.SessionEstablishment.buildTranscriptAAD(deBytes);
-    const keys = await window.SessionCrypto.deriveSessionKey(new Uint8Array(sharedSecretBuffer), transcriptAAD);
-    skReader = keys.readerKey; skDevice = keys.deviceKey; window.skDevice = skDevice; sessionEstablished = true;
-    // Decrypt raw data if present
-    const responseData = decodedMap ? (decodedMap.get('data') || decodedMap.get(4)) : null;
-    const toBytes=(v)=>{ try{ if (v && v.constructor && v.constructor.name==='Tagged') v=v.value; }catch{} if (v instanceof Uint8Array) return v; if (ArrayBuffer.isView(v)) return new Uint8Array(v.buffer, v.byteOffset, v.byteLength); if (v instanceof ArrayBuffer) return new Uint8Array(v); if (Array.isArray(v)) return new Uint8Array(v); return null; };
-    const dataBytes = toBytes(responseData);
-    if (dataBytes && dataBytes.length>0){
-      const deviceResponse = await decryptSessionEstablishmentDataLocal(dataBytes);
-      handleDeviceResponseForVisitor(deviceResponse);
-    } else {
-      // In alternate flow, wallet may send DeviceResponse directly as the first message
-      try {
-        const deviceResponse = await decryptCoseEncrypt0ToObjectLocal(assembled);
-        handleDeviceResponseForVisitor(deviceResponse);
-      } catch(e) {
-        console.warn('Fallback decrypt failed:', e);
-      }
-    }
-  }
-
-  // ==== Extract and log visitor info ====
-  function textFromValue(elementValue){ try { if (elementValue && elementValue.constructor && elementValue.constructor.name==='Tagged'){ return String(elementValue.value); } if (elementValue instanceof Uint8Array) return ''; if (elementValue instanceof Date) return elementValue.toISOString(); if (typeof elementValue==='string') return elementValue; if (typeof elementValue==='number') return String(elementValue); if (typeof elementValue==='boolean') return elementValue ? 'true':'false'; return String(elementValue); } catch { return ''; } }
-  function _findNamesInNameSpaces(nameSpaces){
-    const getField=(o,k)=> (o instanceof Map) ? o.get(k) : o?.[k];
-    const nsEntries = nameSpaces instanceof Map ? Array.from(nameSpaces.entries()) : Object.entries(nameSpaces||{});
-    let foundLN=null, foundFN=null;
-    for (const [nsName, nsItems] of nsEntries){
-      if (!Array.isArray(nsItems)) continue;
-      for (let item of nsItems){
+      // ==== CBOR bootstrap ====
+      let CBORRef = self.CBOR || self.cbor;
+      if (!CBORRef) {
         try {
-          if (item && item.constructor && item.constructor.name==='Tagged' && item.tag===24){
-            const bytes = new Uint8Array(item.value);
-            item = CBOR.decode(bytes);
+          CBORRef =
+            await import("https://cdn.jsdelivr.net/npm/cbor-web@9.0.2/dist/cbor.mjs");
+        } catch (e) {
+          console.error("CBOR library load failed", e);
+        }
+      }
+      if (!CBORRef) throw new Error("CBOR library unavailable");
+      const CBOR = CBORRef;
+      window.CBOR = CBOR;
+
+      // ==== Globals / DOM ====
+      const logEl = null; // minimal log; use console only
+      const statusEl = document.getElementById("qrStatus");
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      const qrInput = document.getElementById("qrInput");
+      const btnParseQr = document.getElementById("btnParseQr");
+      const btnClearQr = document.getElementById("btnClearQr");
+      const btnScan = document.getElementById("btnScan");
+      const chunkInput = document.getElementById("chunk");
+      const todayLabel = document.getElementById("todayLabel");
+      const btnResetVisitor = document.getElementById("btnResetVisitor");
+
+      function todayISO() {
+        const d = new Date();
+        return d.toISOString().slice(0, 10);
+      }
+      function timeStr() {
+        const d = new Date();
+        return d.toLocaleTimeString();
+      }
+      todayLabel.textContent = new Date().toLocaleDateString();
+
+      // Auto mode: scanning determines check-in/out based on log state
+
+      // ==== Minimal logger ====
+      function log(msg) {
+        console.log(msg);
+        if (statusEl) {
+          statusEl.textContent = String(msg).slice(0, 140);
+        }
+      }
+
+      // ==== State ====
+      let scanRunning = false;
+      let svcUUID = null,
+        bleAddr = null;
+      let deBytes = null;
+      let mdocPubKey = null;
+      let readerKeyPair = null;
+      let skReader = null,
+        skDevice = null;
+      let transcriptAAD = null;
+      let sessionEstablished = false;
+      window.skDevice = skDevice;
+
+      function resetSessionState() {
+        try {
+          sessionEstablished = false;
+        } catch {}
+        try {
+          readerKeyPair = null;
+        } catch {}
+        try {
+          skReader = null;
+          skDevice = null;
+          window.skDevice = null;
+        } catch {}
+        try {
+          transcriptAAD = null;
+        } catch {}
+      }
+
+      function disconnectBLE() {
+        try {
+          if (window.BLE && typeof window.BLE.disconnect === "function") {
+            window.BLE.disconnect();
           }
-          const ei = getField(item,'elementIdentifier');
-          const ev = getField(item,'elementValue');
-          if (ei==='family_name' || ei==='family_name_birth') foundLN = foundLN || textFromValue(ev);
-          if (ei==='given_name' || ei==='given_name_birth') foundFN = foundFN || textFromValue(ev);
-          if (foundLN && foundFN) return { lastName: foundLN, firstName: foundFN };
-        } catch(_){}
-      }
-    }
-    return { lastName: foundLN||'', firstName: foundFN||'' };
-  }
-  function extractVisitorInfo(deviceResponse){
-    const getField=(o,k)=> (o instanceof Map) ? o.get(k) : o?.[k];
-    const documents = getField(deviceResponse,'documents');
-    if (!Array.isArray(documents)||documents.length===0) throw new Error('No documents');
-    let best=null;
-    for (const doc of documents){
-      const docType = getField(doc,'docType')||'Unknown';
-      const issuerSigned = getField(doc,'issuerSigned');
-      const deviceSigned = getField(doc,'deviceSigned');
-      let ln='', fn='';
-      if (issuerSigned){
-        const nameSpaces = getField(issuerSigned,'nameSpaces');
-        if (nameSpaces){ const res = _findNamesInNameSpaces(nameSpaces); ln=res.lastName||ln; fn=res.firstName||fn; }
-      }
-      if ((!ln && !fn) && deviceSigned){
-        const nameSpaces = getField(deviceSigned,'nameSpaces');
-        if (nameSpaces){ const res = _findNamesInNameSpaces(nameSpaces); ln=res.lastName||ln; fn=res.firstName||fn; }
-      }
-      if (ln || fn){
-        const label = (docType==='eu.europa.ec.eudi.pid.1') ? 'EUDI PID' : (docType.startsWith('org.iso.18013.5.1') ? 'mDL' : docType);
-        best = { lastName: ln||'', firstName: fn||'', docType: label };
-        break;
-      }
-    }
-    return best || { lastName:'', firstName:'', docType:'Unknown' };
-  }
-
-  function extractVisitorFromModel(model){
-    if (!model || !Array.isArray(model.documents)) return null;
-    for (const doc of model.documents){
-      const docType = doc.docType || 'Unknown';
-      const nsObj = doc.issuerSigned && doc.issuerSigned.nameSpaces ? doc.issuerSigned.nameSpaces : {};
-      let ln = '', fn = '';
-      for (const nsName of Object.keys(nsObj)){
-        const items = Array.isArray(nsObj[nsName]) ? nsObj[nsName] : [];
-        for (const it of items){
-          const id = (it && it.elementIdentifier) ? String(it.elementIdentifier) : '';
-          if (id === 'family_name' || id === 'family_name_birth') ln = ln || (it.text || '');
-          if (id === 'given_name' || id === 'given_name_birth') fn = fn || (it.text || '');
-          if (ln && fn) break;
+        } catch (e) {
+          console.warn("Error disconnecting BLE device:", e);
         }
-        if (ln && fn) break;
+        resetSessionState();
       }
-      if (ln || fn){
-        const label = (docType==='eu.europa.ec.eudi.pid.1') ? 'EUDI PID' : (docType.startsWith('org.iso.18013.5.1') ? 'mDL' : docType);
-        return { lastName: ln||'', firstName: fn||'', docType: label };
+
+      // ==== Utils (from SessionCrypto) ====
+      const hex = (...args) => window.SessionCrypto.hex(...args);
+      const concatUint8 = (...args) =>
+        window.SessionCrypto.concatUint8(...args);
+
+      // BLE UUIDs are managed by the BLE transport module
+
+      // ==== QR Camera ====
+      async function startCamera() {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+        });
+        video.srcObject = stream;
+        await video.play();
+        canvas.width = video.videoWidth || 1280;
+        canvas.height = video.videoHeight || 720;
+        scanRunning = true;
+        statusEl.textContent = "Scanning…";
+        requestAnimationFrame(tick);
       }
-    }
-    return null;
-  }
-
-  function handleDeviceResponseForVisitor(deviceResponse){
-    try{
-      console.log('Device Response:', deviceResponse);
-      const model = window.WalletResponse.buildResponseViewModel(deviceResponse);
-      const person = extractVisitorFromModel(model) || extractVisitorInfo(deviceResponse);
-      console.log('Extracted person:', person);
-      if (person && (person.lastName || person.firstName)) addVisitorEntryAuto(person);
-      // Auto-disconnect once we have processed the response to avoid stale GATT objects on next scan
-      disconnectBLE();
-      statusEl.textContent = 'Done — disconnected';
-    } catch(e){ console.warn('Visitor info parse failed:', e); }
-  }
-
-  function loadLog(){ try{ const s = localStorage.getItem('visitor_log'); return s ? JSON.parse(s) : []; }catch{return [];} }
-  function saveLog(arr){ try{ localStorage.setItem('visitor_log', JSON.stringify(arr)); }catch{} }
-  function renderTable(){ const tbody = document.querySelector('#visitorTable tbody'); const data = loadLog(); tbody.innerHTML = data.map(row=>`<tr><td>${row.date}</td><td>${row.lastName||''}</td><td>${row.firstName||''}</td><td>${row.docType||''}</td><td>${row.timeIn||''}</td><td>${row.timeOut||''}</td></tr>`).join(''); }
-  function addVisitorEntryAuto(person){
-    const date = todayISO();
-    const now = timeStr();
-    const data = loadLog();
-    const matches = data
-      .map((r, i) => ({ r, i }))
-      .filter(x => x.r.date===date && x.r.lastName===person.lastName && x.r.firstName===person.firstName)
-      .sort((a,b)=> a.i - b.i);
-    if (matches.length === 0) {
-      // New entry → Check In
-      data.push({ date, lastName: person.lastName, firstName: person.firstName, docType: person.docType, timeIn: now, timeOut: '' });
-    } else {
-      // Existing entry → prefer to set Time Out on the latest open row
-      let updated = false;
-      for (let k = matches.length - 1; k >= 0; k--) {
-        const idx = matches[k].i;
-        if (!data[idx].timeOut) {
-          data[idx].timeOut = now;
-          data[idx].docType = data[idx].docType || person.docType;
-          updated = true;
-          break;
+      function stopCamera() {
+        scanRunning = false;
+        try {
+          video.pause();
+        } catch {}
+        if (video.srcObject) {
+          for (const t of video.srcObject.getTracks()) {
+            t.stop();
+          }
+          video.srcObject = null;
         }
       }
-      if (!updated) {
-        // All previous entries are closed → start a new Check In
-        data.push({ date, lastName: person.lastName, firstName: person.firstName, docType: person.docType, timeIn: now, timeOut: '' });
+      function tick() {
+        if (!scanRunning) return;
+        const ctx2d = canvas.getContext("2d", { willReadFrequently: true });
+        ctx2d.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const img = ctx2d.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(img.data, img.width, img.height, {
+          inversionAttempts: "dontInvert",
+        });
+        if (code?.data) {
+          stopCamera();
+          statusEl.textContent = "QR detected";
+          handleQrPayload(code.data, "camera");
+          return;
+        }
+        requestAnimationFrame(tick);
       }
-    }
-    saveLog(data);
-    renderTable();
-  }
-  renderTable();
+      btnScan.addEventListener("click", () => {
+        disconnectBLE();
+        startCamera().catch((e) => log("Camera error: " + e.message));
+      });
+      btnParseQr.addEventListener("click", () => {
+        handleQrPayload(qrInput.value, "manual");
+      });
+      btnClearQr.addEventListener("click", () => {
+        qrInput.value = "";
+        statusEl.textContent = "Idle";
+      });
 
-  // Reset visitor log (local storage + table)
-  if (btnResetVisitor) {
-    btnResetVisitor.addEventListener('click', () => {
-      try { localStorage.removeItem('visitor_log'); } catch {}
+      // ==== DeviceEngagement helpers ====
+      function parseMdocUriAndDE(uri) {
+        const res = window.DeviceEngagement.parseMdocUriAndDE(uri);
+        deBytes = res.deBytes;
+        if (res.x && res.y) mdocPubKey = { x: res.x, y: res.y };
+        return { uuid: res.uuid, addr: res.addr };
+      }
+
+      // ==== Session key + transcript via modules ====
+      // Use SessionCrypto and SessionEstablishment provided by shared modules
+
+      // ==== Messages ====
+      async function buildLegacySessionEstablishmentWithData() {
+        const {
+          message,
+          keys,
+          transcriptAAD: aad,
+        } = await window.SessionEstablishment.buildLegacySessionEstablishmentWithData(
+          {
+            deBytes,
+            mdocPubKey,
+            readerKeyPair,
+            transcriptAAD,
+            skReader,
+            // Explicit request types for Visitor flow (avoid default 'full')
+            buildRequestByType: () =>
+              window.RequestBuilder.buildRequestByType([
+                "pid_minimal",
+                "mdl_minimal",
+              ]),
+            log,
+            CBOR,
+          },
+        );
+        if (keys) {
+          skReader = keys.readerKey;
+          skDevice = keys.deviceKey;
+          window.skDevice = skDevice;
+          sessionEstablished = true;
+          window.sessionEstablished = true;
+        }
+        if (aad) transcriptAAD = aad;
+        return message;
+      }
+
+      // ==== BLE transport via module ====
+
+      async function autoConnectFlow() {
+        // Connect
+        const connected = !!(
+          window.BLE &&
+          typeof window.BLE.isConnected === "function" &&
+          window.BLE.isConnected()
+        );
+        if (!connected) {
+          if (!svcUUID) throw new Error("Service UUID missing");
+          if (
+            !window.BLE ||
+            typeof window.BLE.connect !== "function" ||
+            typeof window.BLE.init !== "function"
+          ) {
+            throw new Error("BLE module not available");
+          }
+          window.BLE.init({
+            onAssembled: processS2CAssembled,
+            logger: log,
+            defaultChunk: parseInt(chunkInput.value, 10) || 185,
+          });
+          statusEl.textContent = `Connecting…`;
+          try {
+            await window.BLE.connect(svcUUID);
+          } catch (e) {
+            // If the underlying cached service/characteristics were invalidated, force a full reset and retry once
+            console.warn(
+              "First connect attempt failed, retrying after reset:",
+              e,
+            );
+            try {
+              window.BLE.disconnect();
+            } catch {}
+            await new Promise((r) => setTimeout(r, 300));
+            await window.BLE.connect(svcUUID);
+          }
+          await new Promise((r) => setTimeout(r, 300));
+        }
+        // Start session
+        await window.BLE.writeState(0x01);
+        await new Promise((r) => setTimeout(r, 300));
+        // Ephemeral key + transcript
+        readerKeyPair =
+          await window.SessionEstablishment.makeReaderEphemeralKeyPair();
+        await window.SessionEstablishment.exportReaderPublicToCoseKey(
+          readerKeyPair,
+        );
+        transcriptAAD =
+          await window.SessionEstablishment.buildTranscriptAAD(deBytes);
+        // Build + send request
+        const legacyMessage = await buildLegacySessionEstablishmentWithData();
+        statusEl.textContent = `Sending request… (${legacyMessage.length} bytes)`;
+        await window.BLE.sendFragmented(
+          legacyMessage,
+          parseInt(chunkInput.value, 10) || 185,
+        );
+        statusEl.textContent = "Request sent. Waiting for wallet…";
+      }
+
+      // ==== S->C assembly and processing ====
+      async function processS2CAssembled(assembled, reason = "final-flag") {
+        try {
+          const decoded = CBOR.decode(assembled);
+          // Treat as session response until keys are ready
+          let isSessionResponse = !skReader || !skDevice;
+          if (!isSessionResponse) {
+            // still allow by heuristic
+            if (decoded instanceof Map)
+              isSessionResponse =
+                decoded.has("eDeviceKey") ||
+                decoded.has("data") ||
+                decoded.has("status");
+            else if (decoded && typeof decoded === "object")
+              isSessionResponse =
+                "eDeviceKey" in decoded ||
+                "data" in decoded ||
+                "status" in decoded;
+          }
+          if (isSessionResponse) {
+            await processSessionResponse(assembled);
+          } else {
+            await decryptAndDisplayResponse(assembled);
+          }
+        } catch (e) {
+          console.warn("CBOR decode failed, treating as binary", e);
+        }
+      }
+
+      // BLE notifications assembly is handled in BLE transport module
+
+      // Bridges to WalletResponse helpers
+      // Avoid calling WalletResponse decryptors directly here because they render UI elements
+      // that don't exist on this page. We'll do local decrypt-to-object and then call the
+      // overridden display function.
+
+      async function decryptSessionEstablishmentDataLocal(encryptedData) {
+        // IV: mdoc identifier (8 bytes) || counter (4 bytes, big-endian 1)
+        const mdocIdentifier = new Uint8Array([0, 0, 0, 0, 0, 0, 0, 1]);
+        const iv = new Uint8Array(12);
+        iv.set(mdocIdentifier, 0);
+        new DataView(iv.buffer, 8, 4).setUint32(0, 1, false);
+        if (!window.skDevice) throw new Error("SKDevice key not set");
+        const key = await crypto.subtle.importKey(
+          "raw",
+          new Uint8Array(window.skDevice),
+          { name: "AES-GCM", length: 256 },
+          false,
+          ["decrypt"],
+        );
+        const plaintext = await crypto.subtle.decrypt(
+          {
+            name: "AES-GCM",
+            iv,
+            additionalData: new Uint8Array(0),
+            tagLength: 128,
+          },
+          key,
+          encryptedData,
+        );
+        return CBOR.decode(new Uint8Array(plaintext));
+      }
+
+      async function decryptCoseEncrypt0ToObjectLocal(encryptedCose) {
+        const cose = CBOR.decode(encryptedCose);
+        if (!Array.isArray(cose) || cose.length !== 3)
+          throw new Error("Invalid COSE_Encrypt0");
+        const [_prot, unprot, ciphertext] = cose;
+        const iv =
+          unprot instanceof Map ? unprot.get(5) : unprot ? unprot[5] : null;
+        if (!iv) throw new Error("No IV in COSE unprotected header");
+        if (!window.skDevice) throw new Error("SKDevice key not set");
+        const key = await crypto.subtle.importKey(
+          "raw",
+          new Uint8Array(window.skDevice),
+          { name: "AES-GCM", length: 256 },
+          false,
+          ["decrypt"],
+        );
+        const plaintext = await crypto.subtle.decrypt(
+          {
+            name: "AES-GCM",
+            iv: new Uint8Array(iv),
+            additionalData: new Uint8Array(0),
+            tagLength: 128,
+          },
+          key,
+          new Uint8Array(ciphertext),
+        );
+        return CBOR.decode(new Uint8Array(plaintext));
+      }
+
+      // ==== Session finalization (from index) simplified ====
+      async function processSessionResponse(assembled) {
+        if (!readerKeyPair)
+          throw new Error("Reader ephemeral key pair not initialized");
+        let decoded = null;
+        try {
+          decoded = CBOR.decode(assembled);
+        } catch {}
+        const toMap = (v) => {
+          if (!v) return null;
+          if (v instanceof Map) return v;
+          if (typeof v === "object") {
+            const m = new Map();
+            for (const k of Object.keys(v)) m.set(k, v[k]);
+            return m;
+          }
+          return null;
+        };
+        const decodedMap = toMap(decoded);
+        // Derive keys using DeviceEngagement key
+        const mdocPub = await window.SessionCrypto.importMdocPubKeyXY(
+          mdocPubKey.x,
+          mdocPubKey.y,
+        );
+        const sharedSecretBuffer =
+          await window.SessionCrypto.deriveSharedSecretBits(
+            readerKeyPair.privateKey,
+            mdocPub,
+          );
+        transcriptAAD =
+          await window.SessionEstablishment.buildTranscriptAAD(deBytes);
+        const keys = await window.SessionCrypto.deriveSessionKey(
+          new Uint8Array(sharedSecretBuffer),
+          transcriptAAD,
+        );
+        skReader = keys.readerKey;
+        skDevice = keys.deviceKey;
+        window.skDevice = skDevice;
+        sessionEstablished = true;
+        // Decrypt raw data if present
+        const responseData = decodedMap
+          ? decodedMap.get("data") || decodedMap.get(4)
+          : null;
+        const toBytes = (v) => {
+          try {
+            if (v && v.constructor && v.constructor.name === "Tagged")
+              v = v.value;
+          } catch {}
+          if (v instanceof Uint8Array) return v;
+          if (ArrayBuffer.isView(v))
+            return new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+          if (v instanceof ArrayBuffer) return new Uint8Array(v);
+          if (Array.isArray(v)) return new Uint8Array(v);
+          return null;
+        };
+        const dataBytes = toBytes(responseData);
+        if (dataBytes && dataBytes.length > 0) {
+          const deviceResponse =
+            await decryptSessionEstablishmentDataLocal(dataBytes);
+          await handleDeviceResponseForVisitor(deviceResponse);
+        } else {
+          // In alternate flow, wallet may send DeviceResponse directly as the first message
+          try {
+            const deviceResponse =
+              await decryptCoseEncrypt0ToObjectLocal(assembled);
+            await handleDeviceResponseForVisitor(deviceResponse);
+          } catch (e) {
+            console.warn("Fallback decrypt failed:", e);
+          }
+        }
+      }
+
+      // ==== Extract and log visitor info ====
+      function textFromValue(elementValue) {
+        try {
+          if (
+            elementValue &&
+            elementValue.constructor &&
+            elementValue.constructor.name === "Tagged"
+          ) {
+            return String(elementValue.value);
+          }
+          if (elementValue instanceof Uint8Array) return "";
+          if (elementValue instanceof Date) return elementValue.toISOString();
+          if (typeof elementValue === "string") return elementValue;
+          if (typeof elementValue === "number") return String(elementValue);
+          if (typeof elementValue === "boolean")
+            return elementValue ? "true" : "false";
+          return String(elementValue);
+        } catch {
+          return "";
+        }
+      }
+      function _findNamesInNameSpaces(nameSpaces) {
+        const getField = (o, k) => (o instanceof Map ? o.get(k) : o?.[k]);
+        const nsEntries =
+          nameSpaces instanceof Map
+            ? Array.from(nameSpaces.entries())
+            : Object.entries(nameSpaces || {});
+        let foundLN = null,
+          foundFN = null;
+        for (const [nsName, nsItems] of nsEntries) {
+          if (!Array.isArray(nsItems)) continue;
+          for (let item of nsItems) {
+            try {
+              if (
+                item &&
+                item.constructor &&
+                item.constructor.name === "Tagged" &&
+                item.tag === 24
+              ) {
+                const bytes = new Uint8Array(item.value);
+                item = CBOR.decode(bytes);
+              }
+              const ei = getField(item, "elementIdentifier");
+              const ev = getField(item, "elementValue");
+              if (ei === "family_name" || ei === "family_name_birth")
+                foundLN = foundLN || textFromValue(ev);
+              if (ei === "given_name" || ei === "given_name_birth")
+                foundFN = foundFN || textFromValue(ev);
+              if (foundLN && foundFN)
+                return { lastName: foundLN, firstName: foundFN };
+            } catch (_) {}
+          }
+        }
+        return { lastName: foundLN || "", firstName: foundFN || "" };
+      }
+      function extractVisitorInfo(deviceResponse) {
+        const getField = (o, k) => (o instanceof Map ? o.get(k) : o?.[k]);
+        const documents = getField(deviceResponse, "documents");
+        if (!Array.isArray(documents) || documents.length === 0)
+          throw new Error("No documents");
+        let best = null;
+        for (const doc of documents) {
+          const docType = getField(doc, "docType") || "Unknown";
+          const issuerSigned = getField(doc, "issuerSigned");
+          const deviceSigned = getField(doc, "deviceSigned");
+          let ln = "",
+            fn = "";
+          if (issuerSigned) {
+            const nameSpaces = getField(issuerSigned, "nameSpaces");
+            if (nameSpaces) {
+              const res = _findNamesInNameSpaces(nameSpaces);
+              ln = res.lastName || ln;
+              fn = res.firstName || fn;
+            }
+          }
+          if (!ln && !fn && deviceSigned) {
+            const nameSpaces = getField(deviceSigned, "nameSpaces");
+            if (nameSpaces) {
+              const res = _findNamesInNameSpaces(nameSpaces);
+              ln = res.lastName || ln;
+              fn = res.firstName || fn;
+            }
+          }
+          if (ln || fn) {
+            const label =
+              docType === "eu.europa.ec.eudi.pid.1"
+                ? "EUDI PID"
+                : docType.startsWith("org.iso.18013.5.1")
+                  ? "mDL"
+                  : docType;
+            best = { lastName: ln || "", firstName: fn || "", docType: label };
+            break;
+          }
+        }
+        return best || { lastName: "", firstName: "", docType: "Unknown" };
+      }
+
+      function extractVisitorFromModel(model) {
+        if (!model || !Array.isArray(model.documents)) return null;
+        for (const doc of model.documents) {
+          const docType = doc.docType || "Unknown";
+          const nsObj =
+            doc.issuerSigned && doc.issuerSigned.nameSpaces
+              ? doc.issuerSigned.nameSpaces
+              : {};
+          let ln = "",
+            fn = "";
+          for (const nsName of Object.keys(nsObj)) {
+            const items = Array.isArray(nsObj[nsName]) ? nsObj[nsName] : [];
+            for (const it of items) {
+              const id =
+                it && it.elementIdentifier ? String(it.elementIdentifier) : "";
+              if (id === "family_name" || id === "family_name_birth")
+                ln = ln || it.text || "";
+              if (id === "given_name" || id === "given_name_birth")
+                fn = fn || it.text || "";
+              if (ln && fn) break;
+            }
+            if (ln && fn) break;
+          }
+          if (ln || fn) {
+            const label =
+              docType === "eu.europa.ec.eudi.pid.1"
+                ? "EUDI PID"
+                : docType.startsWith("org.iso.18013.5.1")
+                  ? "mDL"
+                  : docType;
+            return { lastName: ln || "", firstName: fn || "", docType: label };
+          }
+        }
+        return null;
+      }
+
+      async function verifyDocumentModel(model) {
+        const docs = Array.isArray(model?.documents) ? model.documents : [];
+        if (!docs.length) return { allValid: true, results: [] };
+        if (
+          !window.Verification ||
+          typeof window.Verification.verifyCredentialSignature !== "function"
+        ) {
+          return {
+            allValid: false,
+            results: [],
+            error: "Verification module not loaded",
+          };
+        }
+        const results = [];
+        let allValid = true;
+        for (const doc of docs) {
+          try {
+            const res =
+              await window.Verification.verifyCredentialSignature(doc);
+            results.push(res);
+            const claimsOk = res?.claims?.allMatched !== false;
+            const holderOk = res?.holderAuthValid !== false;
+            const signatureOk = res?.signatureValid !== false;
+            if (!claimsOk || !holderOk || !signatureOk) allValid = false;
+          } catch (e) {
+            allValid = false;
+            results.push({
+              signatureValid: false,
+              errors: [String(e?.message || e)],
+            });
+          }
+        }
+        return { allValid, results };
+      }
+
+      async function handleDeviceResponseForVisitor(deviceResponse) {
+        try {
+          console.log("Device Response:", deviceResponse);
+          const model =
+            window.WalletResponse.buildResponseViewModel(deviceResponse);
+          const verification = await verifyDocumentModel(model);
+          if (!verification.allValid) {
+            console.warn(
+              "Verification failed for visitor response:",
+              verification,
+            );
+            statusEl.textContent = "Verification failed";
+            disconnectBLE();
+            return;
+          }
+          const person =
+            extractVisitorFromModel(model) ||
+            extractVisitorInfo(deviceResponse);
+          console.log("Extracted person:", person);
+          if (person && (person.lastName || person.firstName))
+            addVisitorEntryAuto(person);
+          // Auto-disconnect once we have processed the response to avoid stale GATT objects on next scan
+          disconnectBLE();
+          statusEl.textContent = "Done — disconnected";
+        } catch (e) {
+          console.warn("Visitor info parse failed:", e);
+        }
+      }
+
+      function loadLog() {
+        try {
+          const s = localStorage.getItem("visitor_log");
+          return s ? JSON.parse(s) : [];
+        } catch {
+          return [];
+        }
+      }
+      function saveLog(arr) {
+        try {
+          localStorage.setItem("visitor_log", JSON.stringify(arr));
+        } catch {}
+      }
+      function renderTable() {
+        const tbody = document.querySelector("#visitorTable tbody");
+        const data = loadLog();
+        tbody.innerHTML = data
+          .map(
+            (row) =>
+              `<tr><td>${row.date}</td><td>${row.lastName || ""}</td><td>${row.firstName || ""}</td><td>${row.docType || ""}</td><td>${row.timeIn || ""}</td><td>${row.timeOut || ""}</td></tr>`,
+          )
+          .join("");
+      }
+      function addVisitorEntryAuto(person) {
+        const date = todayISO();
+        const now = timeStr();
+        const data = loadLog();
+        const matches = data
+          .map((r, i) => ({ r, i }))
+          .filter(
+            (x) =>
+              x.r.date === date &&
+              x.r.lastName === person.lastName &&
+              x.r.firstName === person.firstName,
+          )
+          .sort((a, b) => a.i - b.i);
+        if (matches.length === 0) {
+          // New entry → Check In
+          data.push({
+            date,
+            lastName: person.lastName,
+            firstName: person.firstName,
+            docType: person.docType,
+            timeIn: now,
+            timeOut: "",
+          });
+        } else {
+          // Existing entry → prefer to set Time Out on the latest open row
+          let updated = false;
+          for (let k = matches.length - 1; k >= 0; k--) {
+            const idx = matches[k].i;
+            if (!data[idx].timeOut) {
+              data[idx].timeOut = now;
+              data[idx].docType = data[idx].docType || person.docType;
+              updated = true;
+              break;
+            }
+          }
+          if (!updated) {
+            // All previous entries are closed → start a new Check In
+            data.push({
+              date,
+              lastName: person.lastName,
+              firstName: person.firstName,
+              docType: person.docType,
+              timeIn: now,
+              timeOut: "",
+            });
+          }
+        }
+        saveLog(data);
+        renderTable();
+      }
       renderTable();
-    });
-  }
 
-  // ==== QR payload handler → connection ====
-  async function handleQrPayload(raw, sourceLabel){
-    const payload=(raw||'').trim();
-    if (!payload){ statusEl.textContent='No payload'; return; }
-    disconnectBLE();
-    await new Promise(r=>setTimeout(r,150));
+      // Reset visitor log (local storage + table)
+      if (btnResetVisitor) {
+        btnResetVisitor.addEventListener("click", () => {
+          try {
+            localStorage.removeItem("visitor_log");
+          } catch {}
+          renderTable();
+        });
+      }
 
-    let parsed;
-    try {
-      parsed = parseMdocUriAndDE(payload);
-    } catch (e) {
-      const reason = e?.message || e;
-      statusEl.textContent = `Parse failed${reason ? `: ${reason}` : ''}`;
-      console.error('QR parse error:', e, payload);
-      return;
-    }
+      // ==== QR payload handler → connection ====
+      async function handleQrPayload(raw, sourceLabel) {
+        const payload = (raw || "").trim();
+        if (!payload) {
+          statusEl.textContent = "No payload";
+          return;
+        }
+        disconnectBLE();
+        await new Promise((r) => setTimeout(r, 150));
 
-    svcUUID = parsed.uuid;
-    bleAddr = parsed.addr;
-    if (qrInput) qrInput.value = payload;
-    statusEl.textContent = `Parsed from ${sourceLabel || 'QR'}`;
+        let parsed;
+        try {
+          parsed = parseMdocUriAndDE(payload);
+        } catch (e) {
+          const reason = e?.message || e;
+          statusEl.textContent = `Parse failed${reason ? `: ${reason}` : ""}`;
+          console.error("QR parse error:", e, payload);
+          return;
+        }
 
-    try {
-      await autoConnectFlow();
-    } catch (e) {
-      statusEl.textContent = `BLE error: ${e.message || e}`;
-      console.error('Auto-connect failed:', e);
-    }
-  }
+        svcUUID = parsed.uuid;
+        bleAddr = parsed.addr;
+        if (qrInput) qrInput.value = payload;
+        statusEl.textContent = `Parsed from ${sourceLabel || "QR"}`;
 
-  </script>
-</body>
+        try {
+          await autoConnectFlow();
+        } catch (e) {
+          statusEl.textContent = `BLE error: ${e.message || e}`;
+          console.error("Auto-connect failed:", e);
+        }
+      }
+    </script>
+  </body>
 </html>
