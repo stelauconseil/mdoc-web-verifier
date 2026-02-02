@@ -398,6 +398,35 @@
         display: inline-block;
       }
 
+      .stelau-badge {
+        position: fixed;
+        left: 1rem;
+        bottom: 1rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.5rem 0.75rem;
+        border-radius: 999px;
+        background: #ffffff;
+        color: #0f172a;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-decoration: none;
+        border: 1px solid rgba(148, 163, 184, 0.7);
+        box-shadow: 0 12px 24px -20px rgba(15, 23, 42, 0.35);
+        transition: box-shadow 0.2s ease;
+        z-index: 50;
+      }
+
+      .stelau-badge:hover {
+        box-shadow: 0 16px 28px -22px rgba(15, 23, 42, 0.45);
+      }
+
+      .stelau-badge .stelau-badge__prefix {
+        font-weight: 400;
+        opacity: 0.8;
+      }
+
       .data-item {
         display: grid;
         grid-template-columns: 140px 1fr;
@@ -1420,8 +1449,16 @@
       </section>
     </main>
     <footer>
-      Built by <a href="https://stelau.com">Stelau</a> for ISO 18013-5
-      experimentation.
+      <a
+        href="https://www.stelau.com"
+        target="_blank"
+        rel="noreferrer"
+        class="stelau-badge"
+        aria-label="Powered by Stelau"
+      >
+        <span class="stelau-badge__prefix">Powered by</span>
+        <span>Stelau</span>
+      </a>
       <span
         id="appVersionFooter"
         style="
@@ -1431,7 +1468,6 @@
           font-size: 0.7rem;
         "
       ></span>
-      <br />
       <span style="font-size: 0.9em; color: #888"
         >&copy; 2026 Stelau. All rights reserved.</span
       >
