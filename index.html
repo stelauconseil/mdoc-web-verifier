@@ -37,7 +37,7 @@
       property="og:description"
       content="Free web-based mDL reader with Web Bluetooth support. Scan, connect, and verify digital driver's licenses (mDL) and mDoc compliant with ISO 18013-5 standard."
     />
-    <meta property="og:image" content="/assets/icon-512.png" />
+    <meta property="og:image" content="assets/icon-512.png" />
 
     <!-- Twitter -->
     <meta property="twitter:card" content="summary_large_image" />
@@ -53,7 +53,7 @@
       property="twitter:description"
       content="Free web-based mobile Driver's License reader with Web Bluetooth. Verify ISO 18013-5 digital credentials instantly."
     />
-    <meta property="twitter:image" content="/assets/icon-512.png" />
+    <meta property="twitter:image" content="assets/icon-512.png" />
 
     <!-- PWA Meta Tags -->
     <meta name="theme-color" content="#0f172a" />
@@ -69,12 +69,12 @@
     <link rel="canonical" href="https://mdoc-web-verifier.stelau.com//" />
 
     <!-- PWA Manifest -->
-    <link rel="manifest" href="/manifest.json" />
+    <link rel="manifest" href="manifest.json" />
 
     <!-- Icons -->
-    <link rel="icon" href="/assets/icon-192.png" />
-    <link rel="apple-touch-icon" href="/assets/icon-192.png" />
-    <link rel="mask-icon" href="/assets/icon-192.png" color="#0f172a" />
+    <link rel="icon" href="assets/icon-192.png" />
+    <link rel="apple-touch-icon" href="assets/icon-192.png" />
+    <link rel="mask-icon" href="assets/icon-192.png" color="#0f172a" />
     <style>
       :root {
         color-scheme: light dark;
@@ -5810,7 +5810,7 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
             // Skip SW registration if sw.js is not reachable (avoids addAll precache failures in dev)
             let canRegister = true;
             try {
-              const resp = await fetch("/sw.js", { cache: "no-store" });
+              const resp = await fetch("sw.js", { cache: "no-store" });
               if (!resp.ok) {
                 canRegister = false;
                 console.warn(
@@ -5830,7 +5830,7 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
             if (!canRegister) return;
 
             const registration = await navigator.serviceWorker.register(
-              "/sw.js",
+              "sw.js",
               {
                 scope: "/",
               },
