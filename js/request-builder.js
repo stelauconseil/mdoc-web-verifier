@@ -217,6 +217,8 @@
                     family_name: false,
                     given_name: false,
                     birth_date: false,
+                    birth_place: false,
+                    nationality: false,
                     portrait: false,
                 };
                 break;
@@ -234,6 +236,7 @@
                     birth_date: false,
                     birth_place: false,
                     nationality: false,
+                    portrait: false,
                     resident_address: false,
                     resident_country: false,
                     resident_state: false,
@@ -242,7 +245,6 @@
                     resident_street: false,
                     resident_house_number: false,
                     personal_administrative_number: false,
-                    portrait: false,
                     family_name_birth: false,
                     given_name_birth: false,
                     sex: false,
