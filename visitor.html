@@ -29,132 +29,285 @@
       content="Visitor check-in and check-out using mobile ID (EUDI PID or mDL) over Web Bluetooth. Scan QR codes in the browser—no app install required."
     />
     <meta name="theme-color" content="#0f172a" />
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <style>
+      /* ── Design tokens ─────────────────────────────── */
       :root {
-        color-scheme: light dark;
-        font-family:
-          "Inter",
-          system-ui,
-          -apple-system,
-          Segoe UI,
-          Roboto,
-          Arial,
-          sans-serif;
+        color-scheme: light;
+        --font-display: "Outfit", "DM Sans", system-ui, sans-serif;
+        --font-body: "DM Sans", system-ui, sans-serif;
+        --font-mono: "JetBrains Mono", "SFMono-Regular", ui-monospace, monospace;
+
+        --c-bg: #f0f2f5;
+        --c-surface: #ffffff;
+        --c-surface-alt: #f7f8fa;
+        --c-border: rgba(15, 23, 42, 0.08);
+        --c-border-strong: rgba(15, 23, 42, 0.14);
+
+        --c-text: #1a1d23;
+        --c-text-secondary: #5e6577;
+        --c-text-tertiary: #8b92a5;
+
+        --c-navy-900: #0b1120;
+        --c-navy-800: #0f172a;
+        --c-navy-700: #1a2640;
+
+        --c-accent: #2563eb;
+        --c-accent-hover: #1d4ed8;
+        --c-accent-subtle: rgba(37, 99, 235, 0.08);
+
+        --c-green: #059669;
+        --c-green-subtle: rgba(5, 150, 105, 0.08);
+
+        --radius-sm: 8px;
+        --radius-md: 12px;
+        --radius-lg: 16px;
+        --radius-xl: 20px;
+        --radius-pill: 999px;
+
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.03);
+        --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 8px 24px -8px rgba(15, 23, 42, 0.08);
+        --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.07), 0 2px 8px rgba(0, 0, 0, 0.04);
+
+        --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+        --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
       }
+
+      /* ── Reset & base ──────────────────────────────── */
+      *, *::before, *::after { box-sizing: border-box; }
+
       body {
         margin: 0;
-        background: #f2f4f8;
-        color: #111827;
+        background: var(--c-bg);
+        color: var(--c-text);
+        font-family: var(--font-body);
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
       }
+
+      /* ── Page header ───────────────────────────────── */
       .page-header {
-        background: linear-gradient(135deg, #0f172a, #1e293b);
+        background: var(--c-navy-900);
         color: #f8fafc;
-        padding: 1rem;
+        padding: 2rem 1.5rem 2.25rem;
         text-align: center;
         position: relative;
+        overflow: hidden;
+      }
+      .page-header::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(ellipse 80% 60% at 50% 0%, rgba(37, 99, 235, 0.12), transparent),
+          radial-gradient(ellipse 60% 50% at 80% 100%, rgba(5, 150, 105, 0.08), transparent);
+        pointer-events: none;
       }
       .page-header h1 {
+        position: relative;
         margin: 0;
-        font-size: clamp(1.4rem, 3vw, 2rem);
+        font-family: var(--font-display);
+        font-size: clamp(1.5rem, 3vw, 2rem);
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+      .page-header p {
+        position: relative;
       }
       .breadcrumb-nav {
         position: absolute;
-        left: 1rem;
-        top: 1rem;
-        font-size: 0.85rem;
+        left: 1.25rem;
+        top: 1.25rem;
+        font-size: 0.8rem;
+        z-index: 2;
       }
+      .breadcrumb-nav a {
+        color: rgba(248, 250, 252, 0.5);
+        text-decoration: none;
+        transition: color 0.2s ease;
+      }
+      .breadcrumb-nav a:hover {
+        color: rgba(248, 250, 252, 0.85);
+      }
+      .breadcrumb-nav span {
+        color: rgba(248, 250, 252, 0.35);
+      }
+      .breadcrumb-nav span:last-child {
+        color: rgba(248, 250, 252, 0.7);
+      }
+
+      /* ── Main ──────────────────────────────────────── */
       main {
-        max-width: 1100px;
+        max-width: 840px;
         margin: 0 auto;
         padding: 1rem 1.25rem 2rem;
       }
+
+      /* ── Cards ─────────────────────────────────────── */
       .card {
-        background: #ffffff;
-        border-radius: 16px;
-        padding: 1.25rem;
+        background: var(--c-surface);
+        border-radius: var(--radius-xl);
+        padding: 1.75rem;
         margin-top: 1rem;
-        box-shadow: 0 20px 45px -25px rgba(15, 23, 42, 0.35);
-        border: 1px solid rgba(148, 163, 184, 0.25);
+        box-shadow: var(--shadow-card);
+        border: 1px solid var(--c-border);
+        transition: box-shadow 0.3s var(--ease-out);
+        animation: fadeInUp 0.4s var(--ease-out) backwards;
       }
+      .card:nth-child(1) { animation-delay: 0.05s; }
+      .card:nth-child(2) { animation-delay: 0.1s; }
+      .card:hover { box-shadow: var(--shadow-lg); }
+
+      .card h2 {
+        font-family: var(--font-display);
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        color: var(--c-text);
+      }
+
+      /* ── Layout ────────────────────────────────────── */
       .row {
         display: flex;
         flex-wrap: wrap;
-        gap: 0.5rem;
+        gap: 0.65rem;
         align-items: center;
       }
+
+      /* ── Buttons ───────────────────────────────────── */
       button {
-        font: inherit;
+        font-family: var(--font-body);
         font-weight: 600;
-        padding: 0.55rem 1rem;
-        border-radius: 10px;
-        border: 1px solid rgba(15, 23, 42, 0.08);
-        background: #1d4ed8;
+        font-size: 0.875rem;
+        padding: 0.6rem 1.15rem;
+        border-radius: var(--radius-sm);
+        border: none;
+        background: var(--c-accent);
         color: #fff;
         cursor: pointer;
+        letter-spacing: 0.01em;
+        transition:
+          transform 0.15s var(--ease-spring),
+          box-shadow 0.2s ease,
+          background 0.15s ease;
       }
       button.secondary {
-        background: #0f172a;
+        background: var(--c-navy-800);
       }
       button:disabled {
-        opacity: 0.6;
+        background: var(--c-border-strong);
+        color: var(--c-text-tertiary);
         cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
       }
+      button:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 14px -4px rgba(37, 99, 235, 0.45);
+        background: var(--c-accent-hover);
+      }
+      button.secondary:hover:not(:disabled) {
+        background: var(--c-navy-700);
+        box-shadow: 0 4px 14px -4px rgba(15, 23, 42, 0.4);
+      }
+      button:active:not(:disabled) {
+        transform: translateY(0);
+      }
+
+      /* ── Form controls ─────────────────────────────── */
       label.inline {
         display: flex;
         align-items: center;
         gap: 0.5rem;
       }
-      input,
-      textarea {
-        font: inherit;
+      input, textarea {
+        font-family: var(--font-body);
       }
       textarea {
-        width: 97%;
+        width: 100%;
         min-height: 60px;
         padding: 0.75rem 0.9rem;
-        border-radius: 12px;
-        border: 1px solid rgba(148, 163, 184, 0.45);
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size: 0.9rem;
-        background: #f8fafc;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--c-border-strong);
+        font-family: var(--font-mono);
+        font-size: 0.82rem;
+        background: var(--c-surface-alt);
+        color: var(--c-text);
+        resize: vertical;
+        box-sizing: border-box;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
       }
+      textarea:focus {
+        outline: none;
+        border-color: var(--c-accent);
+        box-shadow: 0 0 0 3px var(--c-accent-subtle);
+      }
+
+      /* ── Typography helpers ────────────────────────── */
       .muted {
-        color: #64748b;
+        color: var(--c-text-secondary);
         font-size: 0.9rem;
       }
+
+      /* ── Status panel ──────────────────────────────── */
       .status {
-        background: #f1f5f9;
-        border-radius: 12px;
-        padding: 0.75rem 1rem;
+        background: var(--c-surface-alt);
+        border-radius: var(--radius-md);
+        padding: 0.85rem 1.1rem;
         font-size: 0.9rem;
+        border: 1px solid var(--c-border);
       }
+
+      /* ── Table ─────────────────────────────────────── */
       table {
         width: 100%;
         border-collapse: collapse;
-        font-size: 0.95rem;
+        font-size: 0.9rem;
       }
-      th,
-      td {
+      th, td {
         text-align: left;
-        padding: 0.5rem 0.6rem;
-        border-bottom: 1px solid rgba(148, 163, 184, 0.35);
+        padding: 0.6rem 0.75rem;
+        border-bottom: 1px solid var(--c-border);
       }
       th {
-        background: #e2e8f0;
-        color: #0f172a;
+        background: var(--c-surface-alt);
+        color: var(--c-text-secondary);
+        font-family: var(--font-display);
+        font-weight: 600;
+        font-size: 0.8rem;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
         position: sticky;
         top: 0;
         z-index: 1;
       }
+      td {
+        color: var(--c-text);
+      }
+      tbody tr {
+        transition: background 0.15s ease;
+      }
+      tbody tr:hover {
+        background: var(--c-accent-subtle);
+      }
+
+      /* ── Video / camera ────────────────────────────── */
       .video-frame {
         position: relative;
-        border-radius: 12px;
+        border-radius: var(--radius-md);
         overflow: hidden;
-        background: #020617;
+        background: var(--c-navy-900);
         height: 100px;
         min-height: 100px;
         width: 200px;
         max-width: 60vw;
+        border: 1px solid var(--c-border-strong);
       }
       video {
         width: 200px;
@@ -163,14 +316,14 @@
         object-fit: cover;
         display: block;
       }
-      canvas {
-        display: none;
-      }
+      canvas { display: none; }
+
+      /* ── Footer & badge ────────────────────────────── */
       footer {
         text-align: center;
         padding: 2rem 1rem 3rem;
-        color: #64748b;
-        font-size: 0.9rem;
+        color: var(--c-text-tertiary);
+        font-size: 0.85rem;
       }
       .stelau-badge {
         position: fixed;
@@ -178,37 +331,63 @@
         bottom: 1rem;
         display: inline-flex;
         align-items: center;
-        gap: 0.25rem;
-        padding: 0.5rem 0.75rem;
-        border-radius: 999px;
-        background: #ffffff;
-        color: #0f172a;
-        font-size: 0.75rem;
+        gap: 0.35rem;
+        padding: 0.45rem 0.85rem;
+        border-radius: var(--radius-pill);
+        background: var(--c-surface);
+        color: var(--c-text);
+        font-family: var(--font-display);
+        font-size: 0.7rem;
         font-weight: 600;
         text-decoration: none;
-        border: 1px solid rgba(148, 163, 184, 0.7);
-        box-shadow: 0 12px 24px -20px rgba(15, 23, 42, 0.35);
-        transition: box-shadow 0.2s ease;
+        border: 1px solid var(--c-border-strong);
+        box-shadow: var(--shadow-sm);
+        transition: all 0.2s ease;
         z-index: 50;
+        letter-spacing: 0.02em;
       }
       .stelau-badge:hover {
-        box-shadow: 0 16px 28px -22px rgba(15, 23, 42, 0.45);
+        box-shadow: var(--shadow-lg);
+        transform: translateY(-1px);
       }
       .stelau-badge .stelau-badge__prefix {
         font-weight: 400;
-        opacity: 0.8;
+        color: var(--c-text-tertiary);
       }
+
+      /* ── Animations ────────────────────────────────── */
+      @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(12px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+
+      /* ── Scrollbar ─────────────────────────────────── */
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 3px; }
+
+      /* ── Responsive ────────────────────────────────── */
       @media (max-width: 640px) {
+        .page-header {
+          padding: 1.5rem 1rem 1.75rem;
+        }
         .page-header h1 {
           font-size: clamp(1.2rem, 5.5vw, 1.5rem);
         }
-        .card {
-          padding: 1rem;
-          border-radius: 14px;
+        main {
+          padding: 0.75rem 0.75rem 2rem;
         }
-        th,
-        td {
-          font-size: 0.9rem;
+        .card {
+          padding: 1.15rem;
+          border-radius: var(--radius-lg);
+        }
+        button {
+          width: 100%;
+          justify-content: center;
+        }
+        th, td {
+          font-size: 0.82rem;
+          padding: 0.5rem 0.5rem;
         }
       }
     </style>
@@ -216,25 +395,21 @@
   <body>
     <header class="page-header" role="banner">
       <nav aria-label="Breadcrumb" class="breadcrumb-nav">
-        <a href="index.html" style="color: #cbd5e1; text-decoration: underline"
-          >Home</a
-        >
-        <span aria-hidden="true"> › </span>
+        <a href="index.html">Home</a>
+        <span aria-hidden="true"> / </span>
         <span>Visitor Log</span>
       </nav>
       <h1>Visitor Log</h1>
-      <p class="muted" style="margin: 0.5rem 0 0">
-        Offline-capable check-in and check-out via mDoc BLE (EUDI PID or mDL)
+      <p class="muted" style="margin: 0.75rem auto 0; max-width: 560px; color: rgba(248,250,252,0.55); font-size: 0.92rem; line-height: 1.55">
+        Check visitors in and out using their digital ID on their phone. Just scan the QR code &mdash; no app install needed.
       </p>
-      <p class="muted" style="margin: 0.25rem 0 0; font-size: 0.9rem">
-        About: This example demonstrates an offline visitor log using ISO
-        18013‑5 proximity mobile IDs (mDL / EUDI PID) over Web Bluetooth.
-        Entries are stored locally in your browser; no server is required.
+      <p class="muted" style="margin: 0.5rem auto 0; max-width: 560px; color: rgba(248,250,252,0.4); font-size: 0.82rem; line-height: 1.5">
+        All entries are stored locally in your browser. No data is sent to any server.
       </p>
     </header>
     <main>
       <section class="card" id="logSection">
-        <h2 style="margin: 0 0 0.5rem 0; font-size: 1.1rem">Entries</h2>
+        <h2 style="margin: 0 0 0.5rem 0; font-size: 1.15rem">Entries</h2>
         <div
           class="muted"
           style="
@@ -291,10 +466,14 @@
               max="511"
               value="244"
               style="
-                width: 92px;
-                padding: 0.35rem 0.5rem;
-                border-radius: 8px;
-                border: 1px solid rgba(148, 163, 184, 0.6);
+                width: 80px;
+                padding: 0.4rem 0.55rem;
+                border-radius: var(--radius-sm);
+                border: 1px solid var(--c-border-strong);
+                font-family: var(--font-body);
+                font-size: 0.85rem;
+                background: var(--c-surface-alt);
+                color: var(--c-text);
               "
             />
           </label>
@@ -338,12 +517,13 @@
         style="
           display: block;
           margin-top: 0.5rem;
-          color: #64748b;
+          color: var(--c-text-tertiary);
           font-size: 0.7rem;
+          font-family: var(--font-mono);
         "
       ></span>
       <br />
-      <span style="font-size: 0.9em; color: #888"
+      <span style="font-size: 0.82rem; color: var(--c-text-tertiary)"
         >&copy; 2026 Stelau. All rights reserved.</span
       >
     </footer>
