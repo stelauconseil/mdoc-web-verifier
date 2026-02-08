@@ -1819,16 +1819,10 @@
         <script type="module">
             // ==== CBOR bootstrap (works even if global isn't set) ====
             let CBORRef = self.CBOR || self.cbor;
-            if (!CBORRef) {
-                try {
-                    CBORRef =
-                        await import("https://cdn.jsdelivr.net/npm/cbor-web@9.0.2/dist/cbor.mjs");
-                } catch (e) {
-                    console.error("CBOR library load failed", e);
-                }
-            }
             if (!CBORRef)
-                throw new Error("CBOR library unavailable. Check network/CSP.");
+                throw new Error(
+                    "CBOR library unavailable. Ensure js/cbor.min.js is loaded.",
+                );
             const CBOR = CBORRef;
             // Expose CBOR globally for external modules
             window.CBOR = CBOR;
