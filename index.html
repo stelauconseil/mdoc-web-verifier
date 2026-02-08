@@ -14,11 +14,11 @@
         <!-- SEO Meta Tags -->
         <meta
             name="description"
-            content="Free web-based ISO 18013-5 mobile Driver's License (mDL) and mDoc reader and verifier. Scan QR codes, connect via Web Bluetooth, verify digital credentials, and validate IACA certificates. Works offline as a Progressive Web App."
+            content="Free web-based ISO 18013-5 mobile Driver's License (mDL) and mDoc reader and verifier. Scan QR codes, connect via Web Bluetooth, verify digital credentials, and validate IACA certificates."
         />
         <meta
             name="keywords"
-            content="ISO 18013-5, mobile driver's license, mDL, mdoc, digital identity, digital credentials, Web Bluetooth, QR code scanner, IACA, certificate validation, PWA, progressive web app, CBOR, COSE, AES-GCM encryption, eIDAS, EUDIW, EUDI Wallet, EU Digital Identity Wallet"
+            content="ISO 18013-5, mobile driver's license, mDL, mdoc, digital identity, digital credentials, Web Bluetooth, QR code scanner, IACA, certificate validation, CBOR, COSE, AES-GCM encryption, eIDAS, EUDIW, EUDI Wallet, EU Digital Identity Wallet"
         />
         <meta name="author" content="Nicolas Chalanset" />
         <meta name="robots" content="index, follow" />
@@ -58,21 +58,11 @@
         />
         <meta property="twitter:image" content="assets/icon-512.png" />
 
-        <!-- PWA Meta Tags -->
+        <!-- Theme Color -->
         <meta name="theme-color" content="#0f172a" />
-        <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta
-            name="apple-mobile-web-app-status-bar-style"
-            content="black-translucent"
-        />
-        <meta name="apple-mobile-web-app-title" content="mDL mDoc Reader" />
 
         <!-- Canonical URL -->
         <link rel="canonical" href="https://mdoc-web-verifier.stelau.com//" />
-
-        <!-- PWA Manifest -->
-        <link rel="manifest" href="manifest.json" />
 
         <!-- Icons -->
         <link rel="icon" href="assets/icon-192.png" />
@@ -731,17 +721,6 @@
             }
 
             /* ── Animations ────────────────────────────────── */
-            @keyframes slideInRight {
-                from {
-                    opacity: 0;
-                    transform: translateX(40px);
-                }
-                to {
-                    opacity: 1;
-                    transform: translateX(0);
-                }
-            }
-
             @keyframes pulse {
                 0%,
                 100% {
@@ -901,17 +880,6 @@
                     padding: 0.75rem;
                 }
 
-                #pwaStatus {
-                    top: 10px !important;
-                    right: 10px !important;
-                    padding: 0.4rem 0.75rem !important;
-                    font-size: 0.78rem !important;
-                    border-radius: var(--radius-pill) !important;
-                }
-
-                #pwaStatusText span {
-                    font-size: 0.9rem !important;
-                }
             }
         </style>
 
@@ -939,7 +907,6 @@
                     "AES-256-GCM Encryption",
                     "X.509 Certificate Validation",
                     "IACA Trust Anchor Support",
-                    "Offline PWA Functionality",
                     "Mobile Driver's License Verification",
                     "Device Engagement Processing"
                 ],
@@ -1012,38 +979,6 @@
                 external servers.
             </p>
         </header>
-
-        <!-- PWA Status Badge - Fixed position top-right -->
-        <div
-            id="pwaStatus"
-            style="
-                display: none;
-                position: fixed;
-                top: 16px;
-                right: 16px;
-                background: rgba(5, 150, 105, 0.92);
-                backdrop-filter: blur(12px);
-                -webkit-backdrop-filter: blur(12px);
-                color: white;
-                padding: 0.45rem 0.9rem;
-                border-radius: var(--radius-pill);
-                font-family: var(--font-body);
-                font-size: 0.8rem;
-                font-weight: 500;
-                box-shadow: 0 4px 16px rgba(5, 150, 105, 0.2);
-                z-index: 1000;
-                animation: slideInRight 0.35s var(--ease-out);
-                border: 1px solid rgba(255, 255, 255, 0.15);
-            "
-        >
-            <span
-                id="pwaStatusText"
-                style="display: flex; align-items: center; gap: 0.5rem"
-            >
-                <span style="font-size: 1.1rem">✨</span>
-                <span>Installed App</span>
-            </span>
-        </div>
 
         <div style="max-width: 960px; margin: 0 auto; padding: 0 1.25rem">
             <!-- Compatibility Warning Banner -->
@@ -1835,16 +1770,6 @@
                 <span class="stelau-badge__prefix">Powered by</span>
                 <span>Stelau</span>
             </a>
-            <span
-                id="appVersionFooter"
-                style="
-                    display: block;
-                    margin-top: 0.5rem;
-                    color: var(--c-text-tertiary);
-                    font-size: 0.7rem;
-                    font-family: var(--font-mono);
-                "
-            ></span>
             <span style="font-size: 0.82rem; color: var(--c-text-tertiary)"
                 >&copy; 2026 Stelau. All rights reserved.</span
             >
@@ -1892,11 +1817,6 @@
         <script src="js/session-establishment.js"></script>
 
         <script type="module">
-            // ==== App Version (must match CACHE_VERSION in sw.js) ====
-            const APP_VERSION = 50; // IMPORTANT: Keep in sync with CACHE_VERSION in sw.js
-            // Expose globally for auxiliary modules
-            window.APP_VERSION = APP_VERSION;
-
             // ==== CBOR bootstrap (works even if global isn't set) ====
             let CBORRef = self.CBOR || self.cbor;
             if (!CBORRef) {
@@ -2011,49 +1931,6 @@
                 console.log("✓ Browser compatibility check passed");
                 return true;
             }
-
-            // ==== PWA Status Indicator ====
-            function updatePWAStatus() {
-                const pwaStatus = document.getElementById("pwaStatus");
-                const pwaStatusText = document.getElementById("pwaStatusText");
-
-                if (!pwaStatus || !pwaStatusText) return;
-
-                // Check if running as installed PWA
-                const isStandalone =
-                    window.matchMedia("(display-mode: standalone)").matches ||
-                    window.navigator.standalone === true ||
-                    document.referrer.includes("android-app://");
-
-                // Check if service worker is active
-                const hasServiceWorker =
-                    "serviceWorker" in navigator &&
-                    navigator.serviceWorker.controller;
-
-                if (isStandalone) {
-                    pwaStatusText.innerHTML =
-                        '<span style="font-size: 1.1rem;">✨</span><span>Installed App</span>';
-                    pwaStatus.style.display = "block";
-                    pwaStatus.style.background = "rgba(5, 150, 105, 0.95)";
-                    console.log("✓ Running as PWA (standalone mode)");
-                } else if (hasServiceWorker) {
-                    pwaStatusText.innerHTML =
-                        '<span style="font-size: 1.1rem;">🔄</span><span>Offline Ready</span>';
-                    pwaStatus.style.display = "block";
-                    pwaStatus.style.background = "rgba(99, 102, 241, 0.95)";
-                    console.log(
-                        "✓ Service Worker active (offline support enabled)",
-                    );
-                } else {
-                    pwaStatus.style.display = "none";
-                }
-            }
-
-            // Update PWA status on load and when display mode changes
-            window.addEventListener("load", updatePWAStatus);
-            window
-                .matchMedia("(display-mode: standalone)")
-                .addEventListener("change", updatePWAStatus);
 
             // Run compatibility check on page load
             checkBrowserCompatibility();
@@ -7010,121 +6887,7 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
             updateBleRoleUI();
 
             // ==== UI actions ====
-
-            // ========================================
-            // PWA Service Worker Registration
-            // ========================================
-            if ("serviceWorker" in navigator) {
-                window.addEventListener("load", async () => {
-                    try {
-                        // Skip SW registration if sw.js is not reachable (avoids addAll precache failures in dev)
-                        let canRegister = true;
-                        try {
-                            const resp = await fetch("sw.js", {
-                                cache: "no-store",
-                            });
-                            if (!resp.ok) {
-                                canRegister = false;
-                                console.warn(
-                                    "⚠️ Skipping Service Worker: /sw.js not reachable (status",
-                                    resp.status,
-                                    ")",
-                                );
-                            }
-                        } catch (e) {
-                            canRegister = false;
-                            console.warn(
-                                "⚠️ Skipping Service Worker: fetch(/sw.js) failed:",
-                                e?.message || e,
-                            );
-                        }
-
-                        if (!canRegister) return;
-
-                        const registration =
-                            await navigator.serviceWorker.register("sw.js", {
-                                scope: "/",
-                            });
-
-                        console.log(
-                            "✅ Service Worker registered successfully:",
-                            registration.scope,
-                        );
-
-                        // Check for updates
-                        registration.addEventListener("updatefound", () => {
-                            const newWorker = registration.installing;
-                            console.log("🔄 Service Worker update found");
-
-                            newWorker.addEventListener("statechange", () => {
-                                if (
-                                    newWorker.state === "installed" &&
-                                    navigator.serviceWorker.controller
-                                ) {
-                                    console.log(
-                                        "✨ New content available, please refresh",
-                                    );
-                                    // Optionally show a toast notification to user
-                                    showUpdateNotification();
-                                }
-                            });
-                        });
-
-                        // Handle controller change (after update)
-                        navigator.serviceWorker.addEventListener(
-                            "controllerchange",
-                            () => {
-                                console.log(
-                                    "♻️ Service Worker controller changed, reloading...",
-                                );
-                                window.location.reload();
-                            },
-                        );
-
-                        // Check for updates periodically (every 60 seconds)
-                        setInterval(() => {
-                            registration
-                                .update()
-                                .then(() => {
-                                    console.log(
-                                        "🔍 Checked for Service Worker updates",
-                                    );
-                                })
-                                .catch((err) => {
-                                    console.warn("Update check failed:", err);
-                                });
-                        }, 60000); // Check every minute
-
-                        // Also check for updates when page becomes visible
-                        document.addEventListener("visibilitychange", () => {
-                            if (!document.hidden && registration) {
-                                registration.update();
-                                console.log(
-                                    "🔍 Checking for updates (page visible)",
-                                );
-                            }
-                        });
-                    } catch (error) {
-                        console.error(
-                            "❌ Service Worker registration failed:",
-                            error,
-                        );
-                    }
-                });
-            }
-
-            // PWA Install Prompt
-            let deferredPrompt;
-            const pwaInstallBanner = document.createElement("div");
-
-            // Footer: show APP_VERSION
             window.addEventListener("DOMContentLoaded", () => {
-                const footerVersion =
-                    document.getElementById("appVersionFooter");
-                if (footerVersion) {
-                    footerVersion.innerText = `v${APP_VERSION}`;
-                }
-
                 // Simple page navigation dropdown in header
                 const navSelect = document.getElementById("pageNavSelect");
                 if (navSelect) {
@@ -7136,180 +6899,6 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                     });
                 }
             });
-
-            window.addEventListener("beforeinstallprompt", (e) => {
-                // Prevent the mini-infobar from appearing on mobile
-                e.preventDefault();
-                // Stash the event so it can be triggered later
-                deferredPrompt = e;
-
-                // Show custom install banner
-                showInstallBanner();
-            });
-
-            function showInstallBanner() {
-                pwaInstallBanner.style.cssText = `
-    position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: linear-gradient(135deg, #1d4ed8, #2563eb);
-    color: white;
-    padding: 1rem 1.5rem;
-    border-radius: 12px;
-    box-shadow: 0 10px 40px -15px rgba(29, 78, 216, 0.6);
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    z-index: 10000;
-    max-width: 90%;
-    animation: slideUp 0.3s ease-out;
-  `;
-
-                pwaInstallBanner.innerHTML = `
-    <div style="flex: 1;">
-      <div style="font-weight: 600; margin-bottom: 0.25rem;">Install mDoc Reader</div>
-      <div style="font-size: 0.875rem; opacity: 0.9;">Access offline and faster</div>
-    </div>
-    <button id="installBtn" style="
-      background: white;
-      color: #1d4ed8;
-      border: none;
-      padding: 0.5rem 1rem;
-      border-radius: 8px;
-      font-weight: 600;
-      cursor: pointer;
-      font-size: 0.875rem;
-    ">Install</button>
-    <button id="dismissInstall" style="
-      background: transparent;
-      border: 1px solid rgba(255,255,255,0.3);
-      color: white;
-      padding: 0.5rem 0.75rem;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 0.875rem;
-    ">✕</button>
-  `;
-
-                document.body.appendChild(pwaInstallBanner);
-
-                // Install button handler
-                document
-                    .getElementById("installBtn")
-                    .addEventListener("click", async () => {
-                        if (!deferredPrompt) return;
-
-                        // Show the install prompt
-                        deferredPrompt.prompt();
-
-                        // Wait for the user to respond to the prompt
-                        const { outcome } = await deferredPrompt.userChoice;
-                        console.log(
-                            `User response to install prompt: ${outcome}`,
-                        );
-
-                        // Clear the deferred prompt
-                        deferredPrompt = null;
-
-                        // Hide the banner
-                        pwaInstallBanner.remove();
-                    });
-
-                // Dismiss button handler
-                document
-                    .getElementById("dismissInstall")
-                    .addEventListener("click", () => {
-                        pwaInstallBanner.remove();
-                        // Remember dismissal for 7 days
-                        localStorage.setItem(
-                            "pwa-install-dismissed",
-                            Date.now().toString(),
-                        );
-                    });
-
-                // Check if dismissed recently
-                const dismissed = localStorage.getItem("pwa-install-dismissed");
-                if (
-                    dismissed &&
-                    Date.now() - parseInt(dismissed) < 7 * 24 * 60 * 60 * 1000
-                ) {
-                    pwaInstallBanner.remove();
-                }
-            }
-
-            // Add slideUp animation
-            const style = document.createElement("style");
-            style.textContent = `
-  @keyframes slideUp {
-    from {
-      transform: translateX(-50%) translateY(100px);
-      opacity: 0;
-    }
-    to {
-      transform: translateX(-50%) translateY(0);
-      opacity: 1;
-    }
-  }
-`;
-            document.head.appendChild(style);
-
-            // Track successful installation
-            window.addEventListener("appinstalled", () => {
-                console.log("✅ PWA installed successfully");
-                pwaInstallBanner.remove();
-                deferredPrompt = null;
-            });
-
-            // Show update notification
-            function showUpdateNotification() {
-                const updateBanner = document.createElement("div");
-                updateBanner.style.cssText = `
-    position: fixed;
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: #059669;
-    color: white;
-    padding: 0.75rem 1.25rem;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    z-index: 10001;
-    animation: slideDown 0.3s ease-out;
-  `;
-
-                updateBanner.innerHTML = `
-    <span>✨ Update available!</span>
-    <button id="updateBtn" style="
-      background: white;
-      color: #059669;
-      border: none;
-      padding: 0.35rem 0.75rem;
-      border-radius: 6px;
-      font-weight: 600;
-      cursor: pointer;
-      font-size: 0.875rem;
-    ">Refresh</button>
-  `;
-
-                document.body.appendChild(updateBanner);
-
-                document
-                    .getElementById("updateBtn")
-                    .addEventListener("click", () => {
-                        window.location.reload();
-                    });
-
-                // Auto-dismiss after 10 seconds
-                setTimeout(() => {
-                    updateBanner.style.animation =
-                        "slideUp 0.3s ease-out reverse";
-                    setTimeout(() => updateBanner.remove(), 300);
-                }, 10000);
-            }
 
             // Manual verification helper - call from console: window.manualVerifyDeviceAuth()
             window.manualVerifyDeviceAuth = async function (

@@ -564,17 +564,6 @@
         <span class="stelau-badge__prefix">Powered by</span>
         <span>Stelau</span>
       </a>
-      <span
-        id="appVersionFooter"
-        style="
-          display: block;
-          margin-top: 0.5rem;
-          color: var(--c-text-tertiary);
-          font-size: 0.7rem;
-          font-family: var(--font-mono);
-        "
-      ></span>
-      <br />
       <span style="font-size: 0.82rem; color: var(--c-text-tertiary)"
         >&copy; 2026 Stelau. All rights reserved.</span
       >
@@ -631,16 +620,6 @@
         });
         document.head.appendChild(ld);
       } catch {}
-
-      // Footer: show APP_VERSION if available
-      window.addEventListener("DOMContentLoaded", () => {
-        const footerVersion = document.getElementById("appVersionFooter");
-        const ver =
-          typeof window.APP_VERSION !== "undefined" ? window.APP_VERSION : null;
-        if (footerVersion && ver != null) {
-          footerVersion.innerText = `v${ver}`;
-        }
-      });
 
       // ==== CBOR bootstrap ====
       let CBORRef = self.CBOR || self.cbor;

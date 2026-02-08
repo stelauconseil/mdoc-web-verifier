@@ -13,15 +13,17 @@
   // Storage keys
   const IACA_STORAGE_KEY = "mdoc_iaca_certificates";
   const IACA_VERSION_KEY = "mdoc_iaca_version";
+  // Version used only for default IACA bundle migrations (independent from PWA/app version)
+  const IACA_DATA_VERSION = 50;
 
   // Initialize IACA storage with defaults
   function initializeIACAs() {
     const storedVersion = parseInt(localStorage.getItem(IACA_VERSION_KEY)) || 0;
     let stored = localStorage.getItem(IACA_STORAGE_KEY);
 
-    if (storedVersion < (window.APP_VERSION || 0)) {
+    if (storedVersion < IACA_DATA_VERSION) {
       console.log(
-        `Updating IACA certificates from version ${storedVersion} to ${window.APP_VERSION}`
+        `Updating IACA certificates from version ${storedVersion} to ${IACA_DATA_VERSION}`
       );
       let userAddedCerts = [];
       if (stored) {
@@ -47,7 +49,7 @@
         ...userAddedCerts,
       ];
       localStorage.setItem(IACA_STORAGE_KEY, JSON.stringify(updatedIacas));
-      localStorage.setItem(IACA_VERSION_KEY, String(window.APP_VERSION || 0));
+      localStorage.setItem(IACA_VERSION_KEY, String(IACA_DATA_VERSION));
       console.log(
         `IACA certificates updated: ${
           (window.DEFAULT_IACA_CERTIFICATES || []).length
@@ -61,7 +63,7 @@
         IACA_STORAGE_KEY,
         JSON.stringify(window.DEFAULT_IACA_CERTIFICATES || [])
       );
-      localStorage.setItem(IACA_VERSION_KEY, String(window.APP_VERSION || 0));
+      localStorage.setItem(IACA_VERSION_KEY, String(IACA_DATA_VERSION));
       return window.DEFAULT_IACA_CERTIFICATES || [];
     }
 
@@ -77,7 +79,7 @@
         IACA_STORAGE_KEY,
         JSON.stringify(window.DEFAULT_IACA_CERTIFICATES || [])
       );
-      localStorage.setItem(IACA_VERSION_KEY, String(window.APP_VERSION || 0));
+      localStorage.setItem(IACA_VERSION_KEY, String(IACA_DATA_VERSION));
       return window.DEFAULT_IACA_CERTIFICATES || [];
     }
   }
@@ -1035,7 +1037,7 @@
         ? window.DEFAULT_IACA_CERTIFICATES
         : [];
       localStorage.setItem(IACA_STORAGE_KEY, JSON.stringify(defaults));
-      localStorage.setItem(IACA_VERSION_KEY, String(window.APP_VERSION || 0));
+      localStorage.setItem(IACA_VERSION_KEY, String(IACA_DATA_VERSION));
       (window.log || console.log)(
         `♻️ IACA list reset to defaults (${defaults.length} certificate(s))`
       );
