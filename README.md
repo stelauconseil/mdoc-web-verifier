@@ -73,15 +73,15 @@ How to use it:
 
 1. Open `unlikability_test.html` (or use the **Go to → Unlinkability test** menu on the home page).
 2. Choose what to request:
-   - **EU PID : nationality**
-   - **AV : age_over_18**
-   - **mDL : age_over_18**
+    - **EU PID : nationality**
+    - **AV : age_over_18**
+    - **mDL : age_over_18**
 3. Click **Scan QR Code** and scan your wallet’s Device Engagement QR.
 4. Approve the request in the wallet.
 5. The page shows:
-   - A **Holder status** message (new holder vs same holder)
-   - The **Last device key** fingerprint
-   - A local history of all device keys seen in this browser
+    - A **Holder status** message (new holder vs same holder)
+    - The **Last device key** fingerprint
+    - A local history of all device keys seen in this browser
 
 No personal data or keys are sent anywhere; everything is kept in local storage and can be cleared by your browser.
 
@@ -159,3 +159,10 @@ You can import issuer CA lists either from a file or from a URI. When importing 
 - **No prompt on the wallet**: ensure the requested document type and fields are supported by your wallet.
 - **BLE disconnects often**: some wallets intentionally disconnect between operations; simply scan and reconnect.
 - **Import of issuer lists fails**: download the file and use import‑from‑file on the main page instead of URI import.
+
+---
+
+### License
+
+This project is licensed under the Apache License 2.0.
+See the LICENSE and NOTICE files for details.
