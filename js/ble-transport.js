@@ -31,19 +31,6 @@
     // Negotiated/effective chunk size discovered during the session
     let negotiatedChunkSize = null;
     let notificationsActive = false;
-    let logger = (m) => {
-        try {
-            console.log(m);
-        } catch {}
-    };
-
-    function log(m) {
-        try {
-            logger(m);
-        } catch {
-            console.log(m);
-        }
-    }
 
     function calcRxTimeout(len) {
         // Be more generous to avoid premature flush on slower links/devices
@@ -68,7 +55,7 @@
             if (typeof onAssembled === "function")
                 await onAssembled(assembled, reason);
             else
-                log(
+                console.log(
                     `S→C complete (${reason || "unknown"}): ${assembled.length} bytes`,
                 );
         } catch (e) {
@@ -82,7 +69,9 @@
         const flag = data[0];
         const chunk = data.slice(1);
         rxBuffer.push(chunk);
-        log(`S→C notify: flag=0x${flag.toString(16)} len=${chunk.length}`);
+        console.log(
+            `S→C notify: flag=0x${flag.toString(16)} len=${chunk.length}`,
+        );
 
         try {
             if (rxTimer) clearTimeout(rxTimer);
@@ -114,7 +103,7 @@
                                 rxStalledCount = 0;
                                 rxLastLen = pendingLen;
                             }
-                            log(
+                            console.log(
                                 `⏳ Timeout but CBOR incomplete; waiting (len=${pendingLen}, stalled=${rxStalledCount})`,
                             );
                             try {
@@ -155,7 +144,7 @@
                                                 rxStalledCount < 5
                                             ) {
                                                 rxStalledCount++;
-                                                log(
+                                                console.log(
                                                     `⏳ Still incomplete; continuing (stalled=${rxStalledCount})`,
                                                 );
                                                 return;
@@ -225,21 +214,23 @@
         if (!navigator.bluetooth)
             throw new Error("Web Bluetooth not supported");
 
-        log(`🔎 Requesting device for service ${serviceUUID}…`);
+        console.log(`🔎 Requesting device for service ${serviceUUID}…`);
         device = await navigator.bluetooth.requestDevice({
             filters: [{ services: [serviceUUID] }],
             optionalServices: [serviceUUID],
         });
-        log(`Device selected: ${device.name || "(unnamed)"} (${device.id})`);
+        console.log(
+            `Device selected: ${device.name || "(unnamed)"} (${device.id})`,
+        );
 
         device.addEventListener("gattserverdisconnected", () => {
-            log("📱 Wallet disconnected from reader.");
+            console.log("📱 Wallet disconnected from reader.");
             server = service = chState = chC2S = chS2C = null;
         });
 
         try {
             if (device?.gatt?.connected) {
-                log("🔌 Closing previous GATT connection");
+                console.log("🔌 Closing previous GATT connection");
                 device.gatt.disconnect();
                 await sleep(200);
             }
@@ -248,23 +239,23 @@
         const tryGatt = async (tries) => {
             for (let i = 0; i <= tries; i++) {
                 try {
-                    log(`Connecting to ${device.name || "(unnamed)"}…`);
+                    console.log(`Connecting to ${device.name || "(unnamed)"}…`);
                     server = await withTimeout(
                         device.gatt.connect(),
                         10000,
                         "connecting to GATT",
                     );
-                    log("✓ GATT connected");
+                    console.log("✓ GATT connected");
                     // Reset negotiated chunk for a fresh session
                     negotiatedChunkSize = null;
                     return;
                 } catch (e) {
-                    log(
+                    console.log(
                         `❌ ${e.message || e}${i < tries ? " — retrying…" : ""}`,
                     );
                     if (typeof device.watchAdvertisements === "function") {
                         try {
-                            log("📡 Watching advertisements for 2s…");
+                            console.log("📡 Watching advertisements for 2s…");
                             await withTimeout(
                                 device.watchAdvertisements(),
                                 2000,
@@ -280,15 +271,15 @@
 
         await tryGatt(2);
 
-        log("🔧 Getting primary service…");
+        console.log("🔧 Getting primary service…");
         service = await withTimeout(
             server.getPrimaryService(serviceUUID),
             7000,
             "getting primary service",
         );
-        log("✓ Primary service acquired");
+        console.log("✓ Primary service acquired");
 
-        log("🔩 Getting characteristics (state, c2s, s2c)…");
+        console.log("🔩 Getting characteristics (state, c2s, s2c)…");
         chState = await withTimeout(
             service.getCharacteristic(UUIDS.state),
             5000,
@@ -304,10 +295,10 @@
             5000,
             "getting s2c characteristic",
         );
-        log("✓ Characteristics ready");
+        console.log("✓ Characteristics ready");
 
         if (!notificationsActive) {
-            log("🔔 Enabling notifications on s2c…");
+            console.log("🔔 Enabling notifications on s2c…");
             await withTimeout(
                 chS2C.startNotifications(),
                 5000,
@@ -318,17 +309,17 @@
                 handleServer2Client,
             );
             notificationsActive = true;
-            log("GATT ready. Notifications enabled.");
+            console.log("GATT ready. Notifications enabled.");
         } else {
             // Avoid duplicate log spam if connect() was invoked twice rapidly
-            log("GATT ready. Notifications enabled.");
+            console.log("GATT ready. Notifications enabled.");
         }
     }
 
     async function writeState(byte) {
         if (!chState) throw new Error("State characteristic not available");
         await chState.writeValueWithoutResponse(Uint8Array.of(byte));
-        log(`State set to 0x${byte.toString(16)}`);
+        console.log(`State set to 0x${byte.toString(16)}`);
     }
 
     async function sendFragmented(payload, chunkSize) {
@@ -362,7 +353,7 @@
                     await chC2S.writeValueWithoutResponse(frag);
                     // Success: advance and cache negotiated size if we discovered smaller-than-default
                     negotiatedChunkSize = Math.min(currentChunk, defaultChunk);
-                    log(
+                    console.log(
                         `C→S write: flag=0x${frag[0].toString(
                             16,
                         )} len=${take} (chunk=${currentChunk})`,
@@ -381,7 +372,7 @@
                         throw e;
                     }
                     take = Math.min(rem, currentChunk);
-                    log(
+                    console.log(
                         `⚠️ write failed (${
                             e && e.message ? e.message : e
                         }); reducing chunk to ${currentChunk} and retrying`,
@@ -416,7 +407,7 @@
         try {
             _removeNotificationsListener();
             if (device?.gatt?.connected) {
-                log("🔌 Disconnecting BLE…");
+                console.log("🔌 Disconnecting BLE…");
                 device.gatt.disconnect();
             }
         } catch {}
