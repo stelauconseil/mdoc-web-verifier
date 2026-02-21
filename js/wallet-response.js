@@ -1741,13 +1741,6 @@
             // Previously decrypted and displayed; now returns the decoded object
             return await decryptCoseEncrypt0ToObject(encryptedData);
         },
-        // Back-compat shim: deprecated name returns the view model
-        displayDeviceResponse: function (deviceResponse) {
-            console.warn(
-                "[WalletResponse] displayDeviceResponse is deprecated; use buildResponseViewModel instead.",
-            );
-            return buildResponseViewModel(deviceResponse);
-        },
     };
 
     // All DOM/HTML helpers removed from this module
