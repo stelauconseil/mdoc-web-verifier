@@ -4,8 +4,6 @@
     // page-provided dependencies and return computed artifacts instead of
     // mutating page state.
 
-    const enc = new TextEncoder();
-
     function hex(buf) {
         return [...new Uint8Array(buf)]
             .map((b) => b.toString(16).padStart(2, "0"))
@@ -105,7 +103,6 @@
             transcriptAAD, // optional
             skReader, // optional
             buildRequestByType, // function returning Uint8Array
-            log,
             CBOR: CBORRef,
         } = opts || {};
 

@@ -294,7 +294,6 @@
                 return null;
             }
             function findCN(bytes, start, end) {
-                const cnOid = new Uint8Array([0x06, 0x03, 0x55, 0x04, 0x03]);
                 for (let i = start; i < end - 10; i++) {
                     if (
                         bytes[i] === 0x06 &&
@@ -382,7 +381,6 @@
             offset++;
             const tbsLenInfo = parseDerLength(cert, offset);
             const tbsStart = offset + tbsLenInfo.bytesUsed;
-            const tbsEnd = tbsStart + tbsLenInfo.length;
             offset = tbsStart;
             if (cert[offset] === 0xa0) {
                 offset++;
@@ -540,8 +538,7 @@
             if (!Array.isArray(coseSign1) || coseSign1.length < 4) {
                 throw new Error("Invalid COSE_Sign1 structure");
             }
-            const [protectedHeader, unprotectedHeader, payload, signature] =
-                coseSign1;
+            const [protectedHeader, , payload, signature] = coseSign1;
             const protectedHeaderBytes =
                 protectedHeader instanceof Uint8Array
                     ? protectedHeader
@@ -557,7 +554,6 @@
             let algName = "ES256";
             let hashAlg = "SHA-256";
             let expectedSigLength = 64;
-            let curve = "P-256";
 
             function specAlgFromCurve(nobleCurveName) {
                 const name = (nobleCurveName || "").toLowerCase();
@@ -632,12 +628,10 @@
                     algName = "ES384";
                     hashAlg = "SHA-384";
                     expectedSigLength = 96;
-                    curve = "P-384";
                 } else if (alg === -7) {
                     algName = "ES256";
                     hashAlg = "SHA-256";
                     expectedSigLength = 64;
-                    curve = "P-256";
                 }
                 const pkCurve = publicKey?.nobleCurveName || "";
                 const mapped = specAlgFromCurve(pkCurve);
@@ -648,7 +642,6 @@
                     algName = mapped.algName;
                     hashAlg = mapped.hash;
                     expectedSigLength = mapped.sigLen;
-                    curve = mapped.curveLabel;
                 }
             } catch (e) {
                 // Use defaults
@@ -871,7 +864,6 @@
             } else {
                 certLength = certBytes[pos++];
             }
-            const certStart = pos;
             const tbsStart = pos;
             if (certBytes[pos++] !== 0x30) {
                 throw new Error(
@@ -879,7 +871,6 @@
                 );
             }
             let tbsLength;
-            const tbsLengthStart = pos;
             if (certBytes[pos] & 0x80) {
                 const numLengthBytes = certBytes[pos++] & 0x7f;
                 tbsLength = 0;
@@ -1469,9 +1460,6 @@
                                 typeof curveLib.ProjectivePoint.fromHex ===
                                     "function"
                             ) {
-                                const _ = curveLib.ProjectivePoint.fromHex(
-                                    iacaPublicKey.key,
-                                );
                                 if (DEBUG_VERBOSE)
                                     console.log(
                                         `     ✓ Public key is a valid point on ${iacaPublicKey.nobleCurveName}`,
@@ -1569,7 +1557,6 @@
                                         parsedCert.signature.slice(halfLen);
                                     const sVal = bytesToBigIntBE(sBytes);
                                     if (sVal > half) {
-                                        lowSUsed = true;
                                         const sNorm = bigIntToBytesBE(
                                             curveOrder - sVal,
                                             sBytes.length,
@@ -1656,7 +1643,6 @@
                                         parsedCert.signature.slice(halfLen);
                                     const sVal = bytesToBigIntBE(sBytes);
                                     if (sVal > half) {
-                                        lowSUsed = true;
                                         const sNorm = bigIntToBytesBE(
                                             curveOrder - sVal,
                                             sBytes.length,

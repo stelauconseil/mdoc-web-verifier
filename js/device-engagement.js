@@ -10,13 +10,6 @@
     function getCBOR() {
         return window.CBOR || self.CBOR || self.cbor;
     }
-    const log = window.log || console.log;
-    const enc = new TextEncoder();
-    function hex(buf) {
-        return [...new Uint8Array(buf)]
-            .map((b) => b.toString(16).padStart(2, "0"))
-            .join(" ");
-    }
 
     function b64ToBytesBrowserSafe(b64) {
         b64 = b64.replace(/\s+/g, "").replace(/[^A-Za-z0-9+/=]/g, "");
@@ -113,17 +106,7 @@
             /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
                 s,
             );
-        const asUuidString = (bytes) => {
-            if (!(bytes instanceof Uint8Array) || bytes.length !== 16)
-                return null;
-            const h = [...bytes]
-                .map((b) => b.toString(16).padStart(2, "0"))
-                .join("");
-            return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(
-                16,
-                20,
-            )}-${h.slice(20)}`;
-        };
+
         const takeFirst = (found) => {
             if (found.uuidStr)
                 return {
@@ -248,7 +231,7 @@
                 return;
             }
             if (node instanceof Map) {
-                for (const [k, v] of node.entries()) dfs(v);
+                for (const [, v] of node.entries()) dfs(v);
                 return;
             }
             if (typeof node === "object") {
@@ -370,13 +353,13 @@
                 if (o instanceof Map) {
                     if (o.get(1) === 2 && o.get(-1) && o.get(-2) && o.get(-3))
                         return o;
-                    for (const [k, v] of o.entries()) {
+                    for (const [, v] of o.entries()) {
                         const r = scan(v);
                         if (r) return r;
                     }
                 } else if (typeof o === "object" && !Array.isArray(o)) {
                     if (o[1] === 2 && o[-1] && o[-2] && o[-3]) return o;
-                    for (const [k, v] of Object.entries(o)) {
+                    for (const [, v] of Object.entries(o)) {
                         const r = scan(v);
                         if (r) return r;
                     }
