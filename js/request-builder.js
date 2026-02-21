@@ -11,6 +11,18 @@
     function getCBOR() {
         return window.CBOR || self.CBOR || self.cbor;
     }
+
+    function getSelectedItemsRequestDocFormat() {
+        try {
+            const selected = document.querySelector(
+                'input[name="itemsDocFormat"]:checked',
+            );
+            const value = selected?.value;
+            return value === "sd-jwt+kb" ? value : null;
+        } catch (_) {
+            return null;
+        }
+    }
     const log = window.log || console.log;
 
     async function buildRequestByType(requestTypes) {
@@ -440,6 +452,14 @@
             nameSpaces: nameSpacesObj,
             requestInfo: {},
         };
+
+        const docFormat = getSelectedItemsRequestDocFormat();
+        if (docFormat) {
+            itemsRequest.docFormat = docFormat;
+            if (docFormat === "sd-jwt+kb" && requestType.startsWith("pid_")) {
+                itemsRequest.requestInfo.vct = "urn:eudi:pid:1";
+            }
+        }
 
         // Capture the requested display order so the renderer can mirror it
         try {

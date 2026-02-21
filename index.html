@@ -1163,6 +1163,34 @@
                         Student Card Full
                     </label>
                 </div>
+
+                <div style="margin: 1.25rem 0 10px 0">
+                    <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em"
+                        >Request Document Format</strong
+                    >
+                </div>
+                <div class="radio-group request-type">
+                    <label class="radio-chip small">
+                        <input
+                            type="radio"
+                            name="itemsDocFormat"
+                            value=""
+                            checked
+                        />
+                        mDoc (default)
+                    </label>
+                    <label class="radio-chip small">
+                        <input
+                            type="radio"
+                            name="itemsDocFormat"
+                            value="sd-jwt+kb"
+                        />
+                        SD-JWT + KB
+                    </label>
+                </div>
+                <p class="muted" style="margin-top: 0.35rem">
+                    Selecting SD-JWT adds <code>ItemsRequest.docFormat = "sd-jwt+kb"</code>. Default mDoc omits <code>docFormat</code>.
+                </p>
             </section>
 
             <section class="card" id="qrSection">
@@ -1240,6 +1268,29 @@
             <section class="card" id="responseSection" style="display: none">
                 <h2>3. Wallet Response</h2>
                 <div id="responseDisplay"></div>
+            </section>
+
+            <section class="card" id="offlineParserSection">
+                <h2>4. Offline DeviceResponse Parser</h2>
+                <p class="muted">
+                    Paste base64url(CBOR DeviceResponse) to inspect parsed keys and render the same response view offline.
+                </p>
+                <textarea
+                    id="offlineDeviceResponseInput"
+                    placeholder="Paste base64url(CBOR DeviceResponse)"
+                ></textarea>
+                <div class="row" style="margin-top: 0.5rem">
+                    <button id="btnParseDeviceResponse" class="secondary">
+                        Parse DeviceResponse
+                    </button>
+                    <button id="btnClearDeviceResponse">Clear</button>
+                </div>
+                <p id="offlineDeviceResponseStatus" class="muted" style="margin-top: 0.5rem">
+                    Idle
+                </p>
+                <p class="muted" style="margin-top: 0.25rem">
+                    Parsed keys: <span id="offlineDeviceResponseKeys">—</span>
+                </p>
             </section>
 
             <section class="card" id="logsSection">
@@ -1935,6 +1986,21 @@
                 document.getElementById("responseDisplay");
             const responseSectionEl =
                 document.getElementById("responseSection");
+            const offlineDeviceResponseInput = document.getElementById(
+                "offlineDeviceResponseInput",
+            );
+            const btnParseDeviceResponse = document.getElementById(
+                "btnParseDeviceResponse",
+            );
+            const btnClearDeviceResponse = document.getElementById(
+                "btnClearDeviceResponse",
+            );
+            const offlineDeviceResponseStatus = document.getElementById(
+                "offlineDeviceResponseStatus",
+            );
+            const offlineDeviceResponseKeys = document.getElementById(
+                "offlineDeviceResponseKeys",
+            );
             const statusEl = document.getElementById("qrStatus");
             const mdocUriEl = document.getElementById("mdocUri");
             const svcUuidEl = document.getElementById("svcUuid");
@@ -2105,6 +2171,19 @@
             function b64ToU8(b64) {
                 if (!b64) return null;
                 const raw = atob(b64);
+                const out = new Uint8Array(raw.length);
+                for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+                return out;
+            }
+            function b64uToU8(s) {
+                if (!s || typeof s !== "string") return null;
+                const input = s.trim();
+                if (!input) return null;
+                const padLen = (4 - (input.length % 4)) % 4;
+                const padded =
+                    input.replace(/-/g, "+").replace(/_/g, "/") +
+                    "=".repeat(padLen);
+                const raw = atob(padded);
                 const out = new Uint8Array(raw.length);
                 for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
                 return out;
@@ -2442,7 +2521,13 @@
                     const documents = Array.isArray(model?.documents)
                         ? model.documents
                         : [];
-                    if (!documents || documents.length === 0) {
+                    const sdjwtDocuments = Array.isArray(model?.sdjwtDocuments)
+                        ? model.sdjwtDocuments
+                        : [];
+                    if (
+                        (!documents || documents.length === 0) &&
+                        sdjwtDocuments.length === 0
+                    ) {
                         responseDisplayEl.innerHTML = `
         <div class="response-header">
           <h3>🎉 Response Received</h3>
@@ -2458,7 +2543,7 @@
                     let html = `
       <div class="response-header">
         <h3>🎉 Response Received</h3>
-        <div class="response-meta">Version: ${escapeHtml(String(version))} • ${documents.length} document(s)</div>
+                <div class="response-meta">Version: ${escapeHtml(String(version))} • ${documents.length} document(s) • ${sdjwtDocuments.length} SD-JWT document(s)</div>
         <button id="btnCopyResponse" class="copy-btn" style="margin-top: 10px; padding: 8px 16px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
           📋 Copy as JSON
         </button>
@@ -3413,6 +3498,53 @@
 
                         html += `</div>`;
                     });
+
+                    if (sdjwtDocuments.length > 0) {
+                        html += `
+        <div class="document-card">
+          <div class="document-type">🪪 SD-JWT Documents</div>
+          <div class="namespace-section">
+            <div class="namespace-title">sdjwtDocuments</div>
+      `;
+
+                        sdjwtDocuments.forEach((item, idx) => {
+                            const length = Number(item?.length || 0);
+                            const text =
+                                typeof item?.utf8 === "string"
+                                    ? item.utf8
+                                    : null;
+                            const decodeError = item?.decodeError
+                                ? String(item.decodeError)
+                                : null;
+                            const decompressError = item?.decompressError
+                                ? String(item.decompressError)
+                                : null;
+                            const decompressed = item?.decompressed === true;
+
+                            let body = `<div class="data-value binary">${length} byte(s)${decompressed ? " • decompression hook used" : ""}</div>`;
+                            if (text != null) {
+                                body += `<div class="data-value"><pre style="margin:0;font-size:0.85em; white-space:pre-wrap; word-break:break-word;">${esc(text)}</pre></div>`;
+                            }
+                            if (decodeError) {
+                                body += `<div class="data-value binary">UTF-8 decode failed: ${esc(decodeError)}</div>`;
+                            }
+                            if (decompressError) {
+                                body += `<div class="data-value binary">Decompression hook failed: ${esc(decompressError)}</div>`;
+                            }
+
+                            html += `
+            <div class="data-item">
+              <div class="data-label">Document ${idx + 1}</div>
+              ${body}
+            </div>
+          `;
+                        });
+
+                        html += `
+          </div>
+        </div>
+      `;
+                    }
 
                     // Inject the assembled HTML
                     responseDisplayEl.innerHTML = html;
@@ -6359,6 +6491,68 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                     handleQrPayload(qrInput.value, "manual input");
                 }
             });
+
+            const parseOfflineDeviceResponse = () => {
+                try {
+                    const raw = offlineDeviceResponseInput?.value?.trim() || "";
+                    if (!raw) {
+                        if (offlineDeviceResponseStatus)
+                            offlineDeviceResponseStatus.textContent =
+                                "Please paste base64url(CBOR DeviceResponse).";
+                        if (offlineDeviceResponseKeys)
+                            offlineDeviceResponseKeys.textContent = "—";
+                        return;
+                    }
+                    const bytes = b64uToU8(raw);
+                    if (!bytes || !bytes.length) {
+                        throw new Error("Invalid base64url input");
+                    }
+                    const decoded = CBOR.decode(bytes);
+                    const topKeys =
+                        decoded instanceof Map
+                            ? Array.from(decoded.keys()).map((k) => String(k))
+                            : decoded && typeof decoded === "object"
+                              ? Object.keys(decoded)
+                              : [];
+
+                    if (offlineDeviceResponseKeys) {
+                        offlineDeviceResponseKeys.textContent = topKeys.length
+                            ? topKeys.join(", ")
+                            : "(no top-level object keys)";
+                    }
+
+                    const model = buildResponseViewModel(decoded);
+                    renderResponseViewModel(model);
+
+                    if (offlineDeviceResponseStatus) {
+                        offlineDeviceResponseStatus.textContent =
+                            "Parsed successfully.";
+                    }
+                } catch (e) {
+                    if (offlineDeviceResponseStatus) {
+                        offlineDeviceResponseStatus.textContent = `Parse failed: ${e?.message || e}`;
+                    }
+                    if (offlineDeviceResponseKeys)
+                        offlineDeviceResponseKeys.textContent = "—";
+                }
+            };
+
+            if (btnParseDeviceResponse) {
+                btnParseDeviceResponse.addEventListener(
+                    "click",
+                    parseOfflineDeviceResponse,
+                );
+            }
+            if (btnClearDeviceResponse) {
+                btnClearDeviceResponse.addEventListener("click", () => {
+                    if (offlineDeviceResponseInput)
+                        offlineDeviceResponseInput.value = "";
+                    if (offlineDeviceResponseStatus)
+                        offlineDeviceResponseStatus.textContent = "Idle";
+                    if (offlineDeviceResponseKeys)
+                        offlineDeviceResponseKeys.textContent = "—";
+                });
+            }
 
             // ==== IACA Management Event Listeners ====
             btnAddIaca.addEventListener("click", () => {

@@ -300,6 +300,7 @@
         const model = {
             version: getField(deviceResponse, "version") || "1.0",
             documents: [],
+            sdjwtDocuments: [],
             rawJSON: null,
         };
 
@@ -307,6 +308,90 @@
             model.rawJSON = convertToJSON(deviceResponse);
         } catch (_) {
             model.rawJSON = null;
+        }
+
+        const sdjwtDocumentsRaw = getField(deviceResponse, "sdjwtDocuments");
+        if (Array.isArray(sdjwtDocumentsRaw)) {
+            const cfg =
+                typeof window !== "undefined" &&
+                window.SDJWT_OPTIONS &&
+                typeof window.SDJWT_OPTIONS === "object"
+                    ? window.SDJWT_OPTIONS
+                    : {};
+            const useDecompressionHook = cfg.enableDecompression === true;
+            const decompressionHook =
+                typeof cfg.decompressHook === "function"
+                    ? cfg.decompressHook
+                    : null;
+            const utf8Decoder = new TextDecoder("utf-8", { fatal: true });
+
+            for (let index = 0; index < sdjwtDocumentsRaw.length; index++) {
+                const item = sdjwtDocumentsRaw[index];
+                const originalBytes = toUint8(item) || fromJsonBytes(item);
+                if (!originalBytes) {
+                    model.sdjwtDocuments.push({
+                        index,
+                        length: 0,
+                        utf8: null,
+                        decodeError: "Document entry is not a byte string",
+                        decompressed: false,
+                        decompressError: null,
+                    });
+                    continue;
+                }
+
+                let material = originalBytes;
+                let decompressed = false;
+                let decompressError = null;
+
+                if (useDecompressionHook && decompressionHook) {
+                    try {
+                        const hookOutput = decompressionHook(originalBytes, {
+                            index,
+                        });
+                        if (typeof hookOutput === "string") {
+                            model.sdjwtDocuments.push({
+                                index,
+                                length: originalBytes.length,
+                                utf8: hookOutput,
+                                decodeError: null,
+                                decompressed: true,
+                                decompressError: null,
+                            });
+                            continue;
+                        }
+                        const hookBytes =
+                            toUint8(hookOutput) || fromJsonBytes(hookOutput);
+                        if (hookBytes) {
+                            material = hookBytes;
+                            decompressed = true;
+                        }
+                    } catch (e) {
+                        decompressError = e?.message || String(e);
+                    }
+                }
+
+                try {
+                    const utf8 = utf8Decoder.decode(material);
+                    model.sdjwtDocuments.push({
+                        index,
+                        length: originalBytes.length,
+                        utf8,
+                        decodeError: null,
+                        decompressed,
+                        decompressError,
+                    });
+                } catch (e) {
+                    model.sdjwtDocuments.push({
+                        index,
+                        length: originalBytes.length,
+                        utf8: null,
+                        decodeError: e?.message || "UTF-8 decode failed",
+                        decompressed,
+                        decompressError,
+                    });
+                }
+            }
         }
 
         const documents = getField(deviceResponse, "documents");
