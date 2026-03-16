@@ -458,6 +458,7 @@
             itemsRequest.docFormat = docFormat;
             if (docFormat === "sd-jwt+kb" && requestType.startsWith("pid_")) {
                 itemsRequest.requestInfo.vct = "urn:eudi:pid:1";
+                itemsRequest.docType = "urn:eudi:pid:1";
             }
         }
 
