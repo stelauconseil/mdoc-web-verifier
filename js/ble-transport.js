@@ -1,13 +1,18 @@
-(function () {
-    // ISO 18013-5 BLE transport
-    // Exposes window.BLE with:
-    //  init({ onAssembled, logger, defaultChunk })
-    //  connect(serviceUUID)
-    //  writeState(byte)
-    //  sendFragmented(payload, chunkSize)
-    //  disconnect()
-    //  isConnected()
+/*
+  Copyright (c) 2026 Stelau
+  Author: Nicolas Chalanset
 
+  ISO 18013-5 BLE transport
+     Exposes window.BLE with:
+      init({ onAssembled, logger, defaultChunk })
+      connect(serviceUUID)
+      writeState(byte)
+      sendFragmented(payload, chunkSize)
+      disconnect()
+      isConnected()
+*/
+
+(function () {
     const UUIDS = {
         state: "00000001-a123-48ce-896b-4c76973373e6",
         c2s: "00000002-a123-48ce-896b-4c76973373e6",
