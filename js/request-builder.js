@@ -23,11 +23,177 @@
             return null;
         }
     }
+
+    function getSdJwtRequestConfig(requestType) {
+        const cfg =
+            typeof window !== "undefined" &&
+            window.SDJWT_REQUEST_OPTIONS &&
+            typeof window.SDJWT_REQUEST_OPTIONS === "object"
+                ? window.SDJWT_REQUEST_OPTIONS
+                : {};
+        const byType =
+            cfg.byRequestType && typeof cfg.byRequestType === "object"
+                ? cfg.byRequestType[requestType] || {}
+                : {};
+        return {
+            ...cfg,
+            ...byType,
+        };
+    }
+
+    function normalizePathArray(pathValue) {
+        if (Array.isArray(pathValue)) {
+            return pathValue
+                .map((p) => String(p || "").trim())
+                .filter((p) => p.length > 0);
+        }
+        if (typeof pathValue === "string") {
+            return pathValue
+                .split(".")
+                .map((p) => p.trim())
+                .filter((p) => p.length > 0);
+        }
+        return [];
+    }
+
+    const PID_SDJWT_PATH_MAP = {
+        family_name: ["family_name"],
+        given_name: ["given_name"],
+        birth_date: ["birthdate"],
+        birth_place: ["place_of_birth"],
+        nationality: ["nationalities"],
+        resident_address: ["address", "formatted"],
+        resident_country: ["address", "country"],
+        resident_state: ["address", "region"],
+        resident_city: ["address", "locality"],
+        resident_postal_code: ["address", "postal_code"],
+        resident_street: ["address", "street_address"],
+        resident_house_number: ["address", "house_number"],
+        family_name_birth: ["birth_family_name"],
+        given_name_birth: ["birth_given_name"],
+        email_address: ["email"],
+        mobile_phone_number: ["phone_number"],
+        portrait: ["picture"],
+        expiry_date: ["date_of_expiry"],
+        issuance_date: ["date_of_issuance"],
+        age_over_15: ["age_equal_or_over", "15"],
+        age_over_18: ["age_equal_or_over", "18"],
+        age_over_21: ["age_equal_or_over", "21"],
+    };
+
+    function mapFieldToSdJwtPath(requestType, fieldName) {
+        if (requestType.startsWith("pid_")) {
+            return PID_SDJWT_PATH_MAP[fieldName] || [String(fieldName)];
+        }
+        return [String(fieldName)];
+    }
+
+    function pathToFallbackClaimKey(path) {
+        const p = normalizePathArray(path);
+        if (p.length === 0) return "";
+        if (p[0] === "age_equal_or_over" && p.length === 2) {
+            return `age_equal_or_over.${p[1]}`;
+        }
+        return p.join(".");
+    }
+
+    function mapNameSpacesForSdJwtFallback(requestType, nameSpacesObj) {
+        if (!requestType.startsWith("pid_")) return nameSpacesObj;
+        const mapped = {};
+        for (const [ns, fieldsObj] of Object.entries(nameSpacesObj || {})) {
+            if (!fieldsObj || typeof fieldsObj !== "object") {
+                mapped[ns] = fieldsObj;
+                continue;
+            }
+            const outFields = {};
+            for (const [fieldName, intentToRetain] of Object.entries(
+                fieldsObj,
+            )) {
+                const claimKey = pathToFallbackClaimKey(
+                    mapFieldToSdJwtPath(requestType, fieldName),
+                );
+                if (!claimKey) continue;
+                outFields[claimKey] = !!intentToRetain;
+            }
+            mapped[ns] = outFields;
+        }
+        return mapped;
+    }
+
+    function deriveSdJwtClaimsFromNameSpaces(requestType, nameSpacesObj) {
+        const claims = [];
+        for (const fieldsObj of Object.values(nameSpacesObj || {})) {
+            if (!fieldsObj || typeof fieldsObj !== "object") continue;
+            for (const [fieldName, intentToRetain] of Object.entries(
+                fieldsObj,
+            )) {
+                claims.push({
+                    path: mapFieldToSdJwtPath(requestType, String(fieldName)),
+                    intentToRetain: !!intentToRetain,
+                });
+            }
+        }
+        return claims;
+    }
+
+    function buildAlternativeSdJwtClaimsSet(config) {
+        const raw = config?.alternativeSDJwtClaimsSet;
+        if (!Array.isArray(raw)) return [];
+        const out = [];
+        for (const entry of raw) {
+            const requestedClaim = normalizePathArray(entry?.requestedClaim);
+            const alternatives = Array.isArray(entry?.alternativeClaimSets)
+                ? entry.alternativeClaimSets
+                      .map((set) => normalizePathArray(set))
+                      .filter((set) => set.length > 0)
+                : [];
+            if (requestedClaim.length === 0 || alternatives.length === 0) {
+                continue;
+            }
+            out.push({
+                requestedClaim,
+                alternativeClaimSets: alternatives,
+            });
+        }
+        return out;
+    }
+
+    function buildSdJwtRequestInfo(requestType, nameSpacesObj) {
+        const config = getSdJwtRequestConfig(requestType);
+        const explicitClaims = Array.isArray(config?.claims)
+            ? config.claims
+                  .map((claim) => ({
+                      path: normalizePathArray(claim?.path),
+                      intentToRetain: !!claim?.intentToRetain,
+                  }))
+                  .filter((claim) => claim.path.length > 0)
+            : [];
+        const claims =
+            explicitClaims.length > 0
+                ? explicitClaims
+                : deriveSdJwtClaimsFromNameSpaces(requestType, nameSpacesObj);
+
+        const defaultVct = requestType.startsWith("pid_")
+            ? "https://credentials.example.com/identity_credential" //"urn:eudi:pid:1"
+            : "urn:iso:mdoc";
+        const sdjwtRequest = {
+            vct:
+                typeof config?.vct === "string" && config.vct.trim().length > 0
+                    ? config.vct.trim()
+                    : defaultVct,
+            claims,
+        };
+        const alternativeSDJwtClaimsSet =
+            buildAlternativeSdJwtClaimsSet(config);
+        return { sdjwtRequest, alternativeSDJwtClaimsSet, config };
+    }
+
     const log = window.log || console.log;
 
     async function buildRequestByType(requestTypes) {
         const CBOR = getCBOR();
         if (!CBOR) throw new Error("CBOR library not available");
+        const selectedDocFormat = getSelectedItemsRequestDocFormat();
         if (!requestTypes) {
             requestTypes = Array.from(
                 document.querySelectorAll('input[name="requestType"]:checked'),
@@ -38,7 +204,10 @@
 
         log("Building request for types: " + JSON.stringify(requestTypes));
 
-        const deviceRequest = { version: "1.0", docRequests: [] };
+        const deviceRequest = {
+            version: selectedDocFormat === "sd-jwt+kb" ? "1.1" : "1.0",
+            docRequests: [],
+        };
         for (const requestType of requestTypes) {
             const docRequest = buildSingleDocRequest(requestType);
             if (docRequest) deviceRequest.docRequests.push(docRequest);
@@ -450,16 +619,42 @@
         const itemsRequest = {
             docType: docType,
             nameSpaces: nameSpacesObj,
-            requestInfo: {},
         };
+
+        const requestInfo = {};
 
         const docFormat = getSelectedItemsRequestDocFormat();
         if (docFormat) {
-            itemsRequest.docFormat = docFormat;
-            if (docFormat === "sd-jwt+kb" && requestType.startsWith("pid_")) {
-                itemsRequest.requestInfo.vct = "urn:eudi:pid:1";
-                itemsRequest.docType = "urn:eudi:pid:1";
+            requestInfo.docFormat = docFormat;
+            if (docFormat === "sd-jwt+kb") {
+                const { sdjwtRequest, alternativeSDJwtClaimsSet, config } =
+                    buildSdJwtRequestInfo(requestType, nameSpacesObj);
+                requestInfo.sdjwtRequest = sdjwtRequest;
+                if (alternativeSDJwtClaimsSet.length > 0) {
+                    requestInfo.alternativeSDJwtClaimsSet =
+                        alternativeSDJwtClaimsSet;
+                }
+
+                const useCompatDocType = config?.forceCompatDocType === true;
+                if (useCompatDocType) {
+                    const compatDocType =
+                        typeof config?.reservedDocType === "string" &&
+                        config.reservedDocType.trim().length > 0
+                            ? config.reservedDocType.trim()
+                            : "sdjwt";
+                    itemsRequest.docType = compatDocType;
+                }
+
+                // Some wallets still derive SD-JWT filtering from nameSpaces entries.
+                itemsRequest.nameSpaces = mapNameSpacesForSdJwtFallback(
+                    requestType,
+                    nameSpacesObj,
+                );
             }
+        }
+
+        if (Object.keys(requestInfo).length > 0) {
+            itemsRequest.requestInfo = requestInfo;
         }
 
         // Capture the requested display order so the renderer can mirror it
@@ -474,7 +669,11 @@
                     fieldsOrder[ns] = [];
                 }
             }
-            const orderSnapshot = { docType, namespaceOrder, fieldsOrder };
+            const orderSnapshot = {
+                docType: itemsRequest.docType,
+                namespaceOrder,
+                fieldsOrder,
+            };
             // Expose for downstream renderers
             if (!window.RequestBuilder) window.RequestBuilder = {};
             window.RequestBuilder.lastOrder = orderSnapshot;
@@ -483,7 +682,8 @@
             try {
                 if (!window.REQUEST_ORDERS_BY_DOCTYPE)
                     window.REQUEST_ORDERS_BY_DOCTYPE = {};
-                window.REQUEST_ORDERS_BY_DOCTYPE[docType] = orderSnapshot;
+                window.REQUEST_ORDERS_BY_DOCTYPE[itemsRequest.docType] =
+                    orderSnapshot;
             } catch {}
         } catch (_) {}
         const itemsRequestCbor = CBOR.encode(itemsRequest);

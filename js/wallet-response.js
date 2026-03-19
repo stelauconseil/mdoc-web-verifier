@@ -251,6 +251,237 @@
             }
             return null;
         };
+
+        const getSdJwtProcessingConfig = () => {
+            const cfg =
+                typeof window !== "undefined" &&
+                window.SDJWT_OPTIONS &&
+                typeof window.SDJWT_OPTIONS === "object"
+                    ? window.SDJWT_OPTIONS
+                    : {};
+            return {
+                enableDecompression: cfg.enableDecompression !== false,
+                preferHook: cfg.preferHook === true,
+                maxCompressedBytes:
+                    Number.isFinite(cfg.maxCompressedBytes) &&
+                    cfg.maxCompressedBytes > 0
+                        ? Number(cfg.maxCompressedBytes)
+                        : 256 * 1024,
+                maxDecompressedBytes:
+                    Number.isFinite(cfg.maxDecompressedBytes) &&
+                    cfg.maxDecompressedBytes > 0
+                        ? Number(cfg.maxDecompressedBytes)
+                        : 1024 * 1024,
+                maxDecompressionRatio:
+                    Number.isFinite(cfg.maxDecompressionRatio) &&
+                    cfg.maxDecompressionRatio > 0
+                        ? Number(cfg.maxDecompressionRatio)
+                        : 40,
+                inflateSync:
+                    typeof cfg.inflateSync === "function"
+                        ? cfg.inflateSync
+                        : typeof window !== "undefined" &&
+                            window.pako &&
+                            typeof window.pako.inflate === "function"
+                          ? window.pako.inflate
+                          : null,
+                decompressHook:
+                    typeof cfg.decompressHook === "function"
+                        ? cfg.decompressHook
+                        : null,
+            };
+        };
+
+        const tryBuiltinInflate = (compressedBytes, cfg) => {
+            if (!(compressedBytes instanceof Uint8Array)) {
+                return {
+                    bytes: null,
+                    error: "Compressed SD-JWT payload is not bytes",
+                    method: null,
+                };
+            }
+            if (compressedBytes.length > cfg.maxCompressedBytes) {
+                return {
+                    bytes: null,
+                    error: `Compressed payload exceeds limit (${compressedBytes.length} > ${cfg.maxCompressedBytes})`,
+                    method: null,
+                };
+            }
+            if (typeof cfg.inflateSync !== "function") {
+                return {
+                    bytes: null,
+                    error: "No synchronous inflater available (set SDJWT_OPTIONS.inflateSync or load pako)",
+                    method: null,
+                };
+            }
+            try {
+                const inflated = cfg.inflateSync(compressedBytes);
+                const inflatedBytes =
+                    toUint8(inflated) || fromJsonBytes(inflated);
+                if (!inflatedBytes) {
+                    return {
+                        bytes: null,
+                        error: "Inflater returned non-bytes output",
+                        method: null,
+                    };
+                }
+                if (inflatedBytes.length > cfg.maxDecompressedBytes) {
+                    return {
+                        bytes: null,
+                        error: `Decompressed payload exceeds limit (${inflatedBytes.length} > ${cfg.maxDecompressedBytes})`,
+                        method: null,
+                    };
+                }
+                const ratio =
+                    compressedBytes.length > 0
+                        ? inflatedBytes.length / compressedBytes.length
+                        : Number.POSITIVE_INFINITY;
+                if (ratio > cfg.maxDecompressionRatio) {
+                    return {
+                        bytes: null,
+                        error: `Decompression ratio exceeds limit (${ratio.toFixed(2)} > ${cfg.maxDecompressionRatio})`,
+                        method: null,
+                    };
+                }
+                return {
+                    bytes: inflatedBytes,
+                    error: null,
+                    method: "zlib-deflate",
+                };
+            } catch (e) {
+                return {
+                    bytes: null,
+                    error: e?.message || String(e),
+                    method: null,
+                };
+            }
+        };
+
+        const tryHookDecompress = (compressedBytes, cfg, index) => {
+            if (typeof cfg.decompressHook !== "function") {
+                return { bytes: null, text: null, error: null, method: null };
+            }
+            try {
+                const hookOutput = cfg.decompressHook(compressedBytes, {
+                    index,
+                    format: "zlib-deflate",
+                });
+                if (typeof hookOutput === "string") {
+                    return {
+                        bytes: null,
+                        text: hookOutput,
+                        error: null,
+                        method: "hook:string",
+                    };
+                }
+                const hookBytes =
+                    toUint8(hookOutput) || fromJsonBytes(hookOutput);
+                if (hookBytes) {
+                    return {
+                        bytes: hookBytes,
+                        text: null,
+                        error: null,
+                        method: "hook:bytes",
+                    };
+                }
+                return {
+                    bytes: null,
+                    text: null,
+                    error: "Hook returned unsupported output type",
+                    method: null,
+                };
+            } catch (e) {
+                return {
+                    bytes: null,
+                    text: null,
+                    error: e?.message || String(e),
+                    method: null,
+                };
+            }
+        };
+
+        const decodeBase64UrlBytes = (input) => {
+            if (typeof input !== "string" || input.length === 0) return null;
+            try {
+                const padLength = (4 - (input.length % 4)) % 4;
+                const padded =
+                    input.replace(/-/g, "+").replace(/_/g, "/") +
+                    "=".repeat(padLength);
+                const raw = atob(padded);
+                const out = new Uint8Array(raw.length);
+                for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+                return out;
+            } catch (_) {
+                return null;
+            }
+        };
+
+        const decodeBase64UrlJson = (input) => {
+            try {
+                const bytes = decodeBase64UrlBytes(input);
+                if (!bytes) return null;
+                const txt = new TextDecoder("utf-8", { fatal: true }).decode(
+                    bytes,
+                );
+                return JSON.parse(txt);
+            } catch (_) {
+                return null;
+            }
+        };
+
+        const parseCompactJwt = (jwt) => {
+            if (typeof jwt !== "string") return null;
+            const parts = jwt.split(".");
+            if (parts.length < 3) return null;
+            return {
+                header: decodeBase64UrlJson(parts[0]),
+                payload: decodeBase64UrlJson(parts[1]),
+                signatureB64u: parts[2],
+            };
+        };
+
+        const parseSdJwtCompactPresentment = (text) => {
+            if (typeof text !== "string" || text.indexOf("~") === -1)
+                return null;
+            const segments = text.split("~");
+            if (segments.length < 2) return null;
+
+            const issuerJwt = segments[0];
+            const trailing = segments[segments.length - 1];
+            const hasKbJwt = trailing.includes(".");
+            const disclosuresB64u = hasKbJwt
+                ? segments.slice(1, -1).filter((s) => s.length > 0)
+                : segments.slice(1).filter((s) => s.length > 0);
+            const kbJwt = hasKbJwt ? trailing : null;
+
+            const parsedDisclosures = disclosuresB64u.map((encoded, i) => {
+                const decoded = decodeBase64UrlJson(encoded);
+                if (Array.isArray(decoded) && decoded.length >= 3) {
+                    return {
+                        index: i,
+                        encoded,
+                        salt: decoded[0],
+                        claimName: decoded[1],
+                        claimValue: decoded[2],
+                    };
+                }
+                return {
+                    index: i,
+                    encoded,
+                    decoded,
+                };
+            });
+
+            const parsed = {
+                format: hasKbJwt ? "sd-jwt+kb" : "sd-jwt",
+                issuerJwt: parseCompactJwt(issuerJwt),
+                disclosures: parsedDisclosures,
+                kbJwt: kbJwt ? parseCompactJwt(kbJwt) : null,
+                disclosureCount: parsedDisclosures.length,
+            };
+            return parsed;
+        };
+
         const unwrapTaggedOrCbor = (v) => {
             let cur = v;
             let changed = true;
@@ -312,17 +543,7 @@
 
         const sdjwtDocumentsRaw = getField(deviceResponse, "sdjwtDocuments");
         if (Array.isArray(sdjwtDocumentsRaw)) {
-            const cfg =
-                typeof window !== "undefined" &&
-                window.SDJWT_OPTIONS &&
-                typeof window.SDJWT_OPTIONS === "object"
-                    ? window.SDJWT_OPTIONS
-                    : {};
-            const useDecompressionHook = cfg.enableDecompression === true;
-            const decompressionHook =
-                typeof cfg.decompressHook === "function"
-                    ? cfg.decompressHook
-                    : null;
+            const cfg = getSdJwtProcessingConfig();
             const utf8Decoder = new TextDecoder("utf-8", { fatal: true });
 
             for (let index = 0; index < sdjwtDocumentsRaw.length; index++) {
@@ -343,43 +564,130 @@
                 let material = originalBytes;
                 let decompressed = false;
                 let decompressError = null;
+                let decompressionMethod = null;
 
-                if (useDecompressionHook && decompressionHook) {
-                    try {
-                        const hookOutput = decompressionHook(originalBytes, {
+                if (cfg.enableDecompression) {
+                    const errs = [];
+                    let decodedFromHook = null;
+                    const tryHookFirst = cfg.preferHook === true;
+
+                    if (tryHookFirst) {
+                        const hookResult = tryHookDecompress(
+                            originalBytes,
+                            cfg,
                             index,
-                        });
-                        if (typeof hookOutput === "string") {
+                        );
+                        if (hookResult.text != null) {
+                            const parsedSdJwt = parseSdJwtCompactPresentment(
+                                hookResult.text,
+                            );
                             model.sdjwtDocuments.push({
                                 index,
                                 length: originalBytes.length,
-                                utf8: hookOutput,
+                                utf8: hookResult.text,
+                                prettyText: parsedSdJwt
+                                    ? JSON.stringify(parsedSdJwt, null, 2)
+                                    : null,
+                                parsedSdJwt,
                                 decodeError: null,
                                 decompressed: true,
                                 decompressError: null,
+                                decompressionMethod: hookResult.method,
                             });
                             continue;
                         }
-                        const hookBytes =
-                            toUint8(hookOutput) || fromJsonBytes(hookOutput);
-                        if (hookBytes) {
-                            material = hookBytes;
-                            decompressed = true;
+                        if (hookResult.bytes) {
+                            decodedFromHook = hookResult;
+                        } else if (hookResult.error) {
+                            errs.push(`hook: ${hookResult.error}`);
                         }
-                    } catch (e) {
-                        decompressError = e?.message || String(e);
                     }
+
+                    if (decodedFromHook?.bytes) {
+                        material = decodedFromHook.bytes;
+                        decompressed = true;
+                        decompressionMethod = decodedFromHook.method;
+                    } else {
+                        const builtinResult = tryBuiltinInflate(
+                            originalBytes,
+                            cfg,
+                        );
+                        if (builtinResult.bytes) {
+                            material = builtinResult.bytes;
+                            decompressed = true;
+                            decompressionMethod = builtinResult.method;
+                        } else if (builtinResult.error) {
+                            errs.push(`builtin: ${builtinResult.error}`);
+                        }
+                    }
+
+                    if (!tryHookFirst && !decompressed && cfg.decompressHook) {
+                        const hookResult = tryHookDecompress(
+                            originalBytes,
+                            cfg,
+                            index,
+                        );
+                        if (hookResult.text != null) {
+                            const parsedSdJwt = parseSdJwtCompactPresentment(
+                                hookResult.text,
+                            );
+                            model.sdjwtDocuments.push({
+                                index,
+                                length: originalBytes.length,
+                                utf8: hookResult.text,
+                                prettyText: parsedSdJwt
+                                    ? JSON.stringify(parsedSdJwt, null, 2)
+                                    : null,
+                                parsedSdJwt,
+                                decodeError: null,
+                                decompressed: true,
+                                decompressError: null,
+                                decompressionMethod: hookResult.method,
+                            });
+                            continue;
+                        }
+                        if (hookResult.bytes) {
+                            material = hookResult.bytes;
+                            decompressed = true;
+                            decompressionMethod = hookResult.method;
+                        } else if (hookResult.error) {
+                            errs.push(`hook: ${hookResult.error}`);
+                        }
+                    }
+
+                    if (!decompressed && errs.length > 0) {
+                        decompressError = errs.join("; ");
+                    }
+                }
+
+                if (!decompressed && decompressError) {
+                    model.sdjwtDocuments.push({
+                        index,
+                        length: originalBytes.length,
+                        utf8: null,
+                        decodeError: null,
+                        decompressed,
+                        decompressError,
+                        decompressionMethod,
+                    });
+                    continue;
                 }
 
                 try {
                     const utf8 = utf8Decoder.decode(material);
+                    const parsedSdJwt = parseSdJwtCompactPresentment(utf8);
                     model.sdjwtDocuments.push({
                         index,
                         length: originalBytes.length,
                         utf8,
+                        prettyText: parsedSdJwt
+                            ? JSON.stringify(parsedSdJwt, null, 2)
+                            : null,
+                        parsedSdJwt,
                         decodeError: null,
                         decompressed,
                         decompressError,
+                        decompressionMethod,
                     });
                 } catch (e) {
                     model.sdjwtDocuments.push({
@@ -389,6 +697,7 @@
                         decodeError: e?.message || "UTF-8 decode failed",
                         decompressed,
                         decompressError,
+                        decompressionMethod,
                     });
                 }
             }

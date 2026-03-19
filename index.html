@@ -1005,6 +1005,14 @@
                         <input
                             type="checkbox"
                             name="requestType"
+                            value="pid_minimal"
+                        />
+                        EU PID Minimal
+                    </label>
+                    <label class="radio-chip small">
+                        <input
+                            type="checkbox"
+                            name="requestType"
                             value="pid_basic"
                         />
                         EU PID Basic
@@ -1829,6 +1837,7 @@
         <!-- Load libs BEFORE the module -->
         <script src="js/jsQR.js"></script>
         <script src="js/cbor.min.js"></script>
+        <script src="js/pako_inflate.min.js"></script>
         <script src="js/noble-curves.min.js"></script>
         <!-- JPEG 2000 decoder (OpenJPEG) for converting JP2/J2K portraits to JPEG -->
         <script src="js/openjpeg.js"></script>
@@ -1853,6 +1862,13 @@
                 console.log(
                     "✅ JPEG2000 decoder (openjpeg) loaded successfully",
                 );
+            }
+            if (typeof pako === "undefined") {
+                console.warn(
+                    "⚠️ pako inflater not loaded - SD-JWT compressed payloads may fail to decode",
+                );
+            } else {
+                console.log("✅ pako inflater loaded successfully");
             }
         </script>
         <!-- Feature modules (globals) -->
@@ -3500,19 +3516,47 @@
                     });
 
                     if (sdjwtDocuments.length > 0) {
-                        html += `
-        <div class="document-card">
-          <div class="document-type">🪪 SD-JWT Documents</div>
+                        const formatValue = (v) => {
+                            if (v == null) return "—";
+                            if (
+                                typeof v === "string" ||
+                                typeof v === "number" ||
+                                typeof v === "boolean"
+                            ) {
+                                return esc(v);
+                            }
+                            try {
+                                return `<pre style="margin:0;font-size:0.85em; white-space:pre-wrap; word-break:break-word;">${esc(JSON.stringify(v, null, 2))}</pre>`;
+                            } catch {
+                                return esc(String(v));
+                            }
+                        };
+
+                        const addKvItem = (label, value) => {
+                            html += `
+            <div class="data-item">
+              <div class="data-label">${esc(label)}</div>
+              <div class="data-value">${formatValue(value)}</div>
+            </div>
+          `;
+                        };
+
+                        const addNamespaceSection = (title, entries) => {
+                            html += `
           <div class="namespace-section">
-            <div class="namespace-title">sdjwtDocuments</div>
-      `;
+            <div class="namespace-title">📦 ${esc(title)}</div>
+        `;
+                            if (!entries || entries.length === 0) {
+                                html += `<div class="data-item"><div class="data-label">No data</div><div class="data-value">—</div></div>`;
+                            } else {
+                                entries.forEach(([k, v]) => addKvItem(k, v));
+                            }
+                            html += `</div>`;
+                        };
 
                         sdjwtDocuments.forEach((item, idx) => {
+                            const parsed = item?.parsedSdJwt || null;
                             const length = Number(item?.length || 0);
-                            const text =
-                                typeof item?.utf8 === "string"
-                                    ? item.utf8
-                                    : null;
                             const decodeError = item?.decodeError
                                 ? String(item.decodeError)
                                 : null;
@@ -3520,30 +3564,64 @@
                                 ? String(item.decompressError)
                                 : null;
                             const decompressed = item?.decompressed === true;
-
-                            let body = `<div class="data-value binary">${length} byte(s)${decompressed ? " • decompression hook used" : ""}</div>`;
-                            if (text != null) {
-                                body += `<div class="data-value"><pre style="margin:0;font-size:0.85em; white-space:pre-wrap; word-break:break-word;">${esc(text)}</pre></div>`;
-                            }
-                            if (decodeError) {
-                                body += `<div class="data-value binary">UTF-8 decode failed: ${esc(decodeError)}</div>`;
-                            }
-                            if (decompressError) {
-                                body += `<div class="data-value binary">Decompression hook failed: ${esc(decompressError)}</div>`;
-                            }
+                            const decompressionMethod = item?.decompressionMethod
+                                ? String(item.decompressionMethod)
+                                : null;
 
                             html += `
-            <div class="data-item">
-              <div class="data-label">Document ${idx + 1}</div>
-              ${body}
-            </div>
-          `;
-                        });
-
-                        html += `
-          </div>
-        </div>
+        <div class="document-card">
+          <div class="document-type">🪪 SD-JWT Document ${idx + 1}</div>
       `;
+
+                            addNamespaceSection("Document Info", [
+                                ["format", parsed?.format || "sd-jwt"],
+                                [
+                                    "payload bytes",
+                                    `${length}${decompressed ? ` (${decompressionMethod || "decompressed"})` : ""}`,
+                                ],
+                                ["disclosures", parsed?.disclosureCount ?? 0],
+                            ]);
+
+                            const disclosedEntries = Array.isArray(
+                                parsed?.disclosures,
+                            )
+                                ? parsed.disclosures.map((d, i) => [
+                                      d?.claimName || `disclosure_${i + 1}`,
+                                      d?.claimValue,
+                                  ])
+                                : [];
+                            addNamespaceSection("Disclosed Claims", disclosedEntries);
+
+                            const issuerPayload = parsed?.issuerJwt?.payload;
+                            const issuerEntries =
+                                issuerPayload && typeof issuerPayload === "object"
+                                    ? Object.entries(issuerPayload)
+                                    : [];
+                            addNamespaceSection("Issuer JWT Payload", issuerEntries);
+
+                            const kbPayload = parsed?.kbJwt?.payload;
+                            const kbEntries =
+                                kbPayload && typeof kbPayload === "object"
+                                    ? Object.entries(kbPayload)
+                                    : [];
+                            if (kbEntries.length > 0) {
+                                addNamespaceSection("Key Binding JWT Payload", kbEntries);
+                            }
+
+                            if (decodeError || decompressError) {
+                                const errEntries = [];
+                                if (decodeError)
+                                    errEntries.push(["decode error", decodeError]);
+                                if (decompressError)
+                                    errEntries.push([
+                                        "decompression error",
+                                        decompressError,
+                                    ]);
+                                addNamespaceSection("Errors", errEntries);
+                            }
+
+                            html += `</div>`;
+                        });
                     }
 
                     // Inject the assembled HTML
