@@ -434,6 +434,9 @@
             const parts = jwt.split(".");
             if (parts.length < 3) return null;
             return {
+                compact: jwt,
+                headerB64u: parts[0],
+                payloadB64u: parts[1],
                 header: decodeBase64UrlJson(parts[0]),
                 payload: decodeBase64UrlJson(parts[1]),
                 signatureB64u: parts[2],
