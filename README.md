@@ -114,6 +114,14 @@ If your browser does not support Web Bluetooth or you are not on HTTPS, connecti
 
 ---
 
+## Example
+
+France Identité Wallet
+
+https://mdoc-web-verifier.stelau.com/assets/france%20identite%20iOS%20proximity%20reading%20with%20mdoc%20web%20verifier.mp4
+
+---
+
 ## Security & privacy
 
 This verifier implements comprehensive security controls per ISO 18013-5:
