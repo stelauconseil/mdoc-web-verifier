@@ -118,7 +118,7 @@ If your browser does not support Web Bluetooth or you are not on HTTPS, connecti
 
 Multipaz mDL :
 
-https://github.com/user-attachments/assets/fbd5a018-842b-4a4c-a959-278af4261c7e
+https://github.com/user-attachments/assets/e40e20b5-aea3-47df-94b1-f9c9221bb874
 
 France Identité Wallet:
 
