@@ -116,6 +116,10 @@ If your browser does not support Web Bluetooth or you are not on HTTPS, connecti
 
 ## Example
 
+Multipaz mDL :
+
+https://github.com/user-attachments/assets/b59afd26-78be-44b4-821c-488ba19abe54
+
 France Identité Wallet:
 
 https://github.com/user-attachments/assets/3bd11229-92c4-4c2f-8e30-16d502d7fb51
