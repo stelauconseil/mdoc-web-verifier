@@ -815,13 +815,7 @@
         };
 
         // First try direct fetch
-        let fetched;
-        try {
-            fetched = await doFetch(uri);
-        } catch (err) {
-            // Surface the original error; no proxy fallback
-            throw err;
-        }
+        let fetched = await doFetch(uri);
 
         // Decode based on fetched.kind
         if (fetched.kind === "bytes") {
@@ -945,9 +939,9 @@
             try {
                 const certInfo = parsePEMCertificate(iaca.pem);
                 if (certInfo) {
-                    const parsed = window.parseX509Certificate
-                        ? window.parseX509Certificate(certInfo.bytes)
-                        : null;
+                    // const parsed = window.parseX509Certificate
+                    //     ? window.parseX509Certificate(certInfo.bytes)
+                    //     : null;
                     const validity = window.extractCertValidity
                         ? window.extractCertValidity(certInfo.bytes)
                         : {};

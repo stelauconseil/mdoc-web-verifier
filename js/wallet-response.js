@@ -6,16 +6,9 @@
 */
 
 (function () {
-    const enc = new TextEncoder();
-    function hex(buf) {
-        return [...new Uint8Array(buf)]
-            .map((b) => b.toString(16).padStart(2, "0"))
-            .join(" ");
-    }
     function getCBOR() {
         return window.CBOR || self.CBOR || self.cbor;
     }
-    const log = window.log || console.log;
 
     // --- Safe Base64 for large Uint8Array (avoids spread argument limits) ---
     function bytesToBase64(u8) {
@@ -2099,7 +2092,7 @@
             throw new Error(
                 "Invalid COSE_Encrypt0 structure - expected 3-element array",
             );
-        const [protectedHeaderBytes, unprotectedHeader, ciphertext] = coseEnc0;
+        const [, unprotectedHeader, ciphertext] = coseEnc0;
         // Read IV from unprotected header (header key 5)
         const iv =
             unprotectedHeader instanceof Map
@@ -2144,13 +2137,6 @@
         decryptAndDisplayResponse: async function (encryptedData) {
             // Previously decrypted and displayed; now returns the decoded object
             return await decryptCoseEncrypt0ToObject(encryptedData);
-        },
-        // Back-compat shim: deprecated name returns the view model
-        displayDeviceResponse: function (deviceResponse) {
-            console.warn(
-                "[WalletResponse] displayDeviceResponse is deprecated; use buildResponseViewModel instead.",
-            );
-            return buildResponseViewModel(deviceResponse);
         },
     };
 

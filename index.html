@@ -14,7 +14,7 @@
         <!-- SEO Meta Tags -->
         <meta
             name="description"
-            content="Free web-based ISO 18013-5 mobile Driver's License (mDL) and mDoc reader and verifier. Scan QR codes, connect via Web Bluetooth, verify digital credentials, and validate IACA certificates."
+            content="Free web-based ISO 18013-5 mobile Driver's License (mDL) and mDoc reader & verifier. Scan QR codes, connect via Web Bluetooth, verify digital credentials, and validate IACA certificates."
         />
         <meta
             name="keywords"
@@ -32,37 +32,55 @@
             property="og:url"
             content="https://mdoc-web-verifier.stelau.com/"
         />
+        <meta property="og:logo" content="https://mdoc-web-verifier.stelau.com/assets/icon-192.png" />
+        <meta property="og:site_name" content="Stelau mDoc Web Verifier" />
+        <meta property="og:locale" content="en_US" />
         <meta
             property="og:title"
-            content="ISO 18013-5 Mobile Driver's License (mDL) mDoc Reader & Verifier"
+            content="ISO 18013-5 Mobile Driver's License (mDL) and mDoc Reader"
         />
         <meta
             property="og:description"
-            content="Free web-based mDL and mDoc reader with Web Bluetooth support. Scan, connect, and verify digital driver's licenses (mDL) and mDoc compliant with ISO 18013-5 standard."
+            content="Free web-based mDL and mDoc reader. Scan, connect, and verify digital driver's licenses (mDL) and mDoc ISO 18013-5 digital credentials."
         />
-        <meta property="og:image" content="assets/icon-512.png" />
+        <meta
+            property="og:image"
+            content="https://mdoc-web-verifier.stelau.com/assets/mdoc-web-verifier.jpg"
+        />
+        <meta
+            property="og:image:secure_url"
+            content="https://mdoc-web-verifier.stelau.com/assets/mdoc-web-verifier.jpg"
+        />
+        <meta property="og:image:type" content="image/png" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta
+            property="og:image:alt"
+            content="ISO 18013-5 mDL / mDoc Web Reader & Verifier"
+        />
 
         <!-- Twitter -->
-        <meta property="twitter:card" content="summary_large_image" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:url" content="https://mdoc-web-verifier.stelau.com/" />
+        <meta name="twitter:title" content="ISO 18013-5 mDL Reader & Verifier" />
         <meta
-            property="twitter:url"
-            content="https://mdoc-web-verifier.stelau.com/"
-        />
-        <meta
-            property="twitter:title"
-            content="ISO 18013-5 mDL Reader & Verifier"
-        />
-        <meta
-            property="twitter:description"
+            name="twitter:description"
             content="Free web-based mobile Driver's License mDoc reader with Web Bluetooth. Verify ISO 18013-5 digital credentials instantly."
         />
-        <meta property="twitter:image" content="assets/icon-512.png" />
+        <meta
+            name="twitter:image"
+            content="https://mdoc-web-verifier.stelau.com/assets/mdoc-web-verifier.jpg"
+        />
+        <meta
+            name="twitter:image:alt"
+            content="ISO 18013-5 mDL / mDoc Web Reader & Verifier"
+        />
 
         <!-- Theme Color -->
         <meta name="theme-color" content="#0f172a" />
 
         <!-- Canonical URL -->
-        <link rel="canonical" href="https://mdoc-web-verifier.stelau.com//" />
+        <link rel="canonical" href="https://mdoc-web-verifier.stelau.com/" />
 
         <!-- Icons -->
         <link rel="icon" href="assets/icon-192.png" />
@@ -6334,10 +6352,6 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
             // Bridge: JSON conversion helper
             const convertToJSON = (...args) =>
                 window.WalletResponse.convertToJSON(...args);
-
-            // Bridge: Display DeviceResponse
-            const displayDeviceResponse = (...args) =>
-                window.WalletResponse.displayDeviceResponse(...args);
 
             // Helper: Escape HTML
             function escapeHtml(text) {

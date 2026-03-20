@@ -114,6 +114,18 @@ If your browser does not support Web Bluetooth or you are not on HTTPS, connecti
 
 ---
 
+## Example
+
+Multipaz mDL :
+
+https://github.com/user-attachments/assets/fbd5a018-842b-4a4c-a959-278af4261c7e
+
+France Identité Wallet:
+
+https://github.com/user-attachments/assets/3bd11229-92c4-4c2f-8e30-16d502d7fb51
+
+---
+
 ## Security & privacy
 
 This verifier implements comprehensive security controls per ISO 18013-5:
