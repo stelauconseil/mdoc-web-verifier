@@ -116,9 +116,9 @@ If your browser does not support Web Bluetooth or you are not on HTTPS, connecti
 
 ## Example
 
-France Identité Wallet
+France Identité Wallet:
 
-https://mdoc-web-verifier.stelau.com/assets/france%20identite%20iOS%20proximity%20reading%20with%20mdoc%20web%20verifier.mp4
+https://github.com/user-attachments/assets/3bd11229-92c4-4c2f-8e30-16d502d7fb51
 
 ---
 
