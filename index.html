@@ -4316,16 +4316,23 @@
                 }
             }
 
-            // New: Decrypt COSE_Encrypt0 response and render
-            async function decryptAndRenderResponse(encryptedBytes) {
-                const deviceResponse =
-                    await window.WalletResponse.decryptCoseEncrypt0ToObject(
-                        encryptedBytes,
-                    );
-                const model = buildResponseViewModel(deviceResponse);
-                console.log("Decrypted DeviceResponse view model:", model);
-                renderResponseViewModel(model);
-                // Auto-disconnect to release BLE icon (simplified)
+            async function endBleSessionAndDisconnect(contextLabel = "") {
+                const prefix = contextLabel ? `[${contextLabel}] ` : "";
+                try {
+                    if (
+                        window.BLE &&
+                        typeof window.BLE.writeState === "function" &&
+                        typeof window.BLE.isConnected === "function" &&
+                        window.BLE.isConnected()
+                    ) {
+                        log(`${prefix}🛑 Ending session (state 0x02)...`);
+                        await window.BLE.writeState(0x02);
+                        await new Promise((resolve) => setTimeout(resolve, 120));
+                    }
+                } catch (e) {
+                    console.warn("Failed to send state 0x02 before disconnect:", e);
+                }
+
                 try {
                     if (
                         window.BLE &&
@@ -4336,6 +4343,19 @@
                 } catch (e) {
                     console.warn("Auto-disconnect failed:", e);
                 }
+            }
+
+            // New: Decrypt COSE_Encrypt0 response and render
+            async function decryptAndRenderResponse(encryptedBytes) {
+                const deviceResponse =
+                    await window.WalletResponse.decryptCoseEncrypt0ToObject(
+                        encryptedBytes,
+                    );
+                const model = buildResponseViewModel(deviceResponse);
+                console.log("Decrypted DeviceResponse view model:", model);
+                renderResponseViewModel(model);
+                // Graceful end: signal state 0x02, then disconnect.
+                await endBleSessionAndDisconnect("DeviceResponse");
             }
 
             // Bridge: AES-GCM decryption
@@ -5940,17 +5960,8 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                             await decryptSessionEstablishmentData(dataBytes);
                         const model = buildResponseViewModel(deviceResponse);
                         renderResponseViewModel(model);
-                        // Auto-disconnect to release BLE icon (simplified)
-                        try {
-                            if (
-                                window.BLE &&
-                                typeof window.BLE.disconnect === "function"
-                            ) {
-                                window.BLE.disconnect();
-                            }
-                        } catch (e) {
-                            console.warn("Auto-disconnect failed:", e);
-                        }
+                        // Graceful end: signal state 0x02, then disconnect.
+                        await endBleSessionAndDisconnect("DeviceResponse");
                     } catch (decryptError) {
                         console.warn(
                             "RAW AES-GCM decrypt failed, attempting COSE_Encrypt0 fallback:",
