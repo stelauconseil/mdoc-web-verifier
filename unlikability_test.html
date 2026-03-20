@@ -689,7 +689,20 @@
         } catch {}
       }
 
-      function disconnectBLE() {
+      async function disconnectBLE() {
+        try {
+          if (
+            window.BLE &&
+            typeof window.BLE.writeState === "function" &&
+            typeof window.BLE.isConnected === "function" &&
+            window.BLE.isConnected()
+          ) {
+            await window.BLE.writeState(0x02);
+            await new Promise((r) => setTimeout(r, 120));
+          }
+        } catch (e) {
+          console.warn("Error ending BLE session with state 0x02:", e);
+        }
         try {
           if (window.BLE && typeof window.BLE.disconnect === "function") {
             window.BLE.disconnect();
@@ -744,7 +757,7 @@
         requestAnimationFrame(tick);
       }
       btnScan.addEventListener("click", () => {
-        disconnectBLE();
+        void disconnectBLE();
         startCamera().catch((e) => log("Camera error: " + e.message));
       });
       btnParseQr.addEventListener("click", () => {
@@ -863,7 +876,7 @@
               e,
             );
             try {
-              window.BLE.disconnect();
+              await disconnectBLE();
             } catch {}
             await new Promise((r) => setTimeout(r, 300));
             await window.BLE.connect(svcUUID);
@@ -1414,7 +1427,7 @@
             if (holderStatusEl)
               holderStatusEl.textContent =
                 "Verification failed — cannot evaluate linkability.";
-            disconnectBLE();
+            await disconnectBLE();
             statusEl.textContent = "Verification failed";
             return;
           }
@@ -1462,7 +1475,7 @@
           }
 
           // Auto-disconnect once we have processed the response to avoid stale GATT objects on next scan
-          disconnectBLE();
+          await disconnectBLE();
           statusEl.textContent = "Done — disconnected";
         } catch (e) {
           console.warn("Unlinkability processing failed:", e);
@@ -1495,7 +1508,7 @@
           statusEl.textContent = "No payload";
           return;
         }
-        disconnectBLE();
+        await disconnectBLE();
         await new Promise((r) => setTimeout(r, 150));
 
         let parsed;
