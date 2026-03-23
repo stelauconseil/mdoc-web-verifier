@@ -126,7 +126,7 @@ https://github.com/user-attachments/assets/3bd11229-92c4-4c2f-8e30-16d502d7fb51
 
 SD-JWT over 18013-5 with forked Multipaz
 
-https://github.com/user-attachments/assets/f44c0596-71ff-4bfb-a617-96aa2a97adb9
+https://github.com/user-attachments/assets/1f1f61c9-6059-4392-9157-13db474151a4
 
 ---
 
