@@ -14,7 +14,7 @@
     const IACA_STORAGE_KEY = "mdoc_iaca_certificates";
     const IACA_VERSION_KEY = "mdoc_iaca_version";
     // Version used only for default IACA bundle migrations (independent from PWA/app version)
-    const IACA_DATA_VERSION = 50;
+    const IACA_DATA_VERSION = 51;
 
     // Initialize IACA storage with defaults
     function initializeIACAs() {
