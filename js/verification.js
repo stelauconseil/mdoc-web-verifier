@@ -3096,6 +3096,90 @@
         return result;
     }
 
+    async function tryVerifyCredentialSignatureWithIsoLibraries(doc) {
+        if (
+            !window.Iso18013Bridge ||
+            typeof window.Iso18013Bridge.verifyPresentedDocument !== "function"
+        ) {
+            return null;
+        }
+
+        const codecDocument =
+            doc?.codecDocument &&
+            typeof doc.codecDocument === "object" &&
+            typeof doc.codecDocument.encodeToCborValue === "function" &&
+            typeof doc.codecDocument.docType === "string" &&
+            doc.codecDocument.issuerSigned &&
+            doc.codecDocument.deviceSigned
+                ? doc.codecDocument
+                : null;
+        const rawDocument = doc?.rawDocument;
+        if (!codecDocument && !rawDocument) {
+            throw new Error(
+                "rawDocument/codecDocument missing from document view model",
+            );
+        }
+
+        const sessionTranscriptBytes = toUint8Shared(
+            window.sessionDebug?.sessionTranscript,
+        );
+        if (!sessionTranscriptBytes) {
+            throw new Error("SessionTranscript bytes are not available");
+        }
+
+        const trustAnchors = getActiveIACAs()
+            .map((iaca) => iaca?.pem)
+            .filter((pem) => typeof pem === "string" && pem.trim().length > 0);
+        if (!trustAnchors.length) {
+            throw new Error("No active IACA certificates available");
+        }
+
+        const sessionTranscript =
+            window.Iso18013Bridge.decodeCbor(sessionTranscriptBytes);
+        const document = rawDocument
+            ? window.Iso18013Bridge.decodeMdocDocumentFromCborValue(rawDocument)
+            : window.Iso18013Bridge.decodeMdocDocumentFromCborValue(
+                  codecDocument.encodeToCborValue(),
+              );
+        const verified = await window.Iso18013Bridge.verifyPresentedDocument({
+            document,
+            sessionTranscript,
+            trustAnchors,
+        });
+
+        const chainSubjects = Array.isArray(verified?.issuerAuth?.chain)
+            ? verified.issuerAuth.chain
+                  .map((certificate) =>
+                      certificate?.subject ||
+                      certificate?.subjectName ||
+                      String(certificate || ""),
+                  )
+                  .filter(Boolean)
+            : [];
+
+        return {
+            signatureValid: verified?.issuerAuth?.ok === true,
+            chainValid: verified?.issuerAuth?.ok === true,
+            chainInfo: {
+                valid: verified?.issuerAuth?.ok === true,
+                chain: chainSubjects,
+                errors: [],
+            },
+            mdocAuthValid: verified?.deviceAuth?.ok === true,
+            holderAuthValid: verified?.deviceAuth?.ok === true,
+            claims: {
+                checked: 0,
+                matched: 0,
+                mismatched: 0,
+                skipped: 0,
+                allMatched: verified?.issuerAuth?.ok === true,
+                errors: [],
+            },
+            errors: [],
+            sharedVerification: verified,
+        };
+    }
+
     async function verifyCredentialSignature(doc) {
         if (!doc || !doc.signature || !doc.signature.coseSign1) {
             return {
@@ -3114,39 +3198,67 @@
             };
         }
 
-        log("🔏 Checking issuer signature…");
-        const res = await verifyCOSESign1SignatureWithChain(
-            doc.signature.coseSign1,
-        );
-        if (res.signatureValid) log("✅ Issuer signature valid");
-        else log("❌ Issuer signature invalid");
+        if (
+            !window.Iso18013Bridge ||
+            typeof window.Iso18013Bridge.verifyPresentedDocument !== "function"
+        ) {
+            return {
+                signatureValid: false,
+                chainValid: null,
+                chainInfo: null,
+                errors: [
+                    "iso18013 browser verification libraries are not available",
+                ],
+                claims: {
+                    checked: 0,
+                    matched: 0,
+                    mismatched: 0,
+                    skipped: 0,
+                    allMatched: null,
+                    errors: [
+                        "iso18013 browser verification libraries are not available",
+                    ],
+                },
+            };
+        }
 
-        log("🧾 Checking document integrity…");
-        const claims = await verifyIssuerSignedValueDigests(
-            doc,
-            doc.signature.coseSign1,
-        );
-        if (claims.allMatched) log("✅ Document integrity OK");
-        else if (claims.checked > 0) log("❌ Document integrity failed");
-
-        log("🔐 Checking device authentication…");
-        const holder = await verifyHolderAuthentication(doc);
-        if (holder.valid) log("✅ Device authentication OK");
-        else log("❌ Device authentication failed");
-        res.mdocAuthValid = holder.valid;
-        res.mdocAuth = holder;
-        res.claims = claims;
-        if (claims.checked > 0 && !claims.allMatched) {
-            res.errors.push("MSO valueDigests mismatch");
+        try {
+            log("🧩 Checking credential with iso18013 browser libraries…");
+            const bridged = await tryVerifyCredentialSignatureWithIsoLibraries(
+                doc,
+            );
+            if (bridged?.signatureValid) log("✅ Shared issuer verification OK");
+            else log("❌ Shared issuer verification failed");
+            if (bridged?.mdocAuthValid) log("✅ Shared device authentication OK");
+            else log("❌ Shared device authentication failed");
+            return bridged;
+        } catch (err) {
+            const message =
+                err instanceof Error ? err.message : String(err || "Unknown error");
+            console.error(
+                "[Verification] Shared-library verification failed:",
+                err,
+            );
+            return {
+                signatureValid: false,
+                chainValid: null,
+                chainInfo: null,
+                errors: [message],
+                claims: {
+                    checked: 0,
+                    matched: 0,
+                    mismatched: 0,
+                    skipped: 0,
+                    allMatched: null,
+                    errors: [message],
+                },
+                mdocAuthValid: false,
+                mdocAuth: {
+                    valid: false,
+                    errors: [message],
+                },
+            };
         }
-        if (Array.isArray(claims.errors) && claims.errors.length) {
-            res.errors.push(...claims.errors);
-        }
-        if (!holder.valid) {
-            res.errors.push(...holder.errors);
-            res.signatureValid = false;
-        }
-        return res;
     }
 
     // Expose

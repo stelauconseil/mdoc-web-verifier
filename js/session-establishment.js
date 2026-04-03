@@ -1,8 +1,36 @@
 (function () {
-    // High-level Session Establishment utilities built on top of SessionCrypto
-    // Exposes window.SessionEstablishment with orchestration helpers that accept
-    // page-provided dependencies and return computed artifacts instead of
-    // mutating page state.
+    let _activeReaderSession = null;
+
+    function getNamedCurveFromCoseKey(coseKey) {
+        const crv = typeof coseKey?.crv === "bigint" ? Number(coseKey.crv) : coseKey?.crv;
+        switch (crv) {
+            case 1:
+                return "P-256";
+            case 2:
+                return "P-384";
+            case 3:
+                return "P-521";
+            case 4:
+                return "X25519";
+            case 5:
+                return "X448";
+            default:
+                return "P-256";
+        }
+    }
+
+    function requireLibraries() {
+        if (!window.Iso18013Session) {
+            throw new Error("Iso18013Session browser bundle is not available");
+        }
+        if (!window.Iso18013Bridge) {
+            throw new Error("Iso18013Bridge is not available");
+        }
+        return {
+            session: window.Iso18013Session,
+            bridge: window.Iso18013Bridge,
+        };
+    }
 
     function hex(buf) {
         return [...new Uint8Array(buf)]
@@ -10,178 +38,168 @@
             .join(" ");
     }
 
-    let _readerCoseKeyCached = null; // Map with integer labels {-2:x,-3:y}
-
-    async function makeReaderEphemeralKeyPair() {
-        return crypto.subtle.generateKey(
-            { name: "ECDH", namedCurve: "P-256" },
-            true,
-            ["deriveBits"],
-        );
+    function getActiveReaderSession() {
+        return _activeReaderSession;
     }
 
-    function buildReaderCoseKey() {
-        if (!_readerCoseKeyCached) throw new Error("reader COSE_Key not ready");
-        return _readerCoseKeyCached;
+    function setActiveReaderSession(readerSession) {
+        _activeReaderSession = readerSession || null;
     }
 
     function resetReaderCoseKeyCache() {
-        _readerCoseKeyCached = null;
+        _activeReaderSession = null;
     }
 
-    async function exportReaderPublicToCoseKey(readerKeyPair) {
-        const raw = new Uint8Array(
-            await crypto.subtle.exportKey("raw", readerKeyPair.publicKey),
-        ); // 0x04||X||Y
-        const x = raw.slice(1, 33);
-        const y = raw.slice(33, 65);
-        const fingerprint = hex(x.slice(0, 4));
-
-        // Store as Map - encoding handled via SessionCrypto helpers
-        _readerCoseKeyCached = new Map([
-            [1, 2], // kty: EC2
-            [-1, 1], // crv: P-256
-            [-2, x], // x coordinate (Uint8Array)
-            [-3, y], // y coordinate (Uint8Array)
-        ]);
-
-        return { fingerprint, x, y };
+    async function makeReaderEphemeralKeyPair(deviceEngagementBytes) {
+        const { session, bridge } = requireLibraries();
+        let namedCurve = "P-256";
+        if (deviceEngagementBytes) {
+            try {
+                const deviceEngagement =
+                    bridge.decodeDeviceEngagement(deviceEngagementBytes);
+                const deviceKey = bridge.decodeCoseKey(
+                    deviceEngagement.security.eKey,
+                );
+                namedCurve = getNamedCurveFromCoseKey(deviceKey);
+            } catch (error) {
+                console.warn(
+                    "Failed to determine device curve, defaulting to P-256:",
+                    error,
+                );
+            }
+        }
+        const readerSession =
+            await session.Iso180135SessionEncryption.create({ namedCurve });
+        _activeReaderSession = readerSession;
+        return readerSession;
     }
 
-    // Build transcript AAD (SHA-256(tag(24, bstr(SessionTranscript))))
-    async function buildTranscriptAAD(deBytes) {
-        if (!deBytes) throw new Error("DeviceEngagement bytes required");
-        if (!window.SessionCrypto)
-            throw new Error("SessionCrypto not available");
+    function buildReaderCoseKey() {
+        const { bridge } = requireLibraries();
+        if (!_activeReaderSession) {
+            throw new Error("reader session not ready");
+        }
+        return bridge.decodeCoseKey(_activeReaderSession.getReaderKeyCose());
+    }
 
-        const readerCoseKey = buildReaderCoseKey();
-        const coseKeyEncoded =
-            window.SessionCrypto.encodeCoseKeyManually(readerCoseKey);
-        const eReaderKeyBytes =
-            window.SessionCrypto.encodeTag24ByteString(coseKeyEncoded);
+    async function exportReaderPublicToCoseKey(readerSession) {
+        const { bridge } = requireLibraries();
+        const sessionInstance = readerSession || _activeReaderSession;
+        if (!sessionInstance) {
+            throw new Error("reader session not ready");
+        }
+        _activeReaderSession = sessionInstance;
+        const coseKey = bridge.decodeCoseKey(sessionInstance.getReaderKeyCose());
+        const x = coseKey.x instanceof Uint8Array ? coseKey.x : null;
+        const fingerprint = x ? hex(x.slice(0, 4)) : "unknown";
+        return {
+            fingerprint,
+            x: coseKey.x,
+            y: coseKey.y,
+            coseKey,
+            coseKeyBytes: sessionInstance.getReaderKeyCose(),
+        };
+    }
 
-        // SessionTranscript = [ tag(24, DeviceEngagement), EReaderKeyBytes, null ]
-        const result = [];
-        // array(3)
-        result.push(0x83);
-        // tag(24), bstr(DeviceEngagement)
-        result.push(0xd8, 0x18);
-        if (deBytes.length < 24) result.push(0x40 + deBytes.length);
-        else if (deBytes.length < 256) result.push(0x58, deBytes.length);
-        else result.push(0x59, deBytes.length >> 8, deBytes.length & 0xff);
-        result.push(...deBytes);
-        // EReaderKeyBytes (already tag(24,bstr(.cbor COSE_Key)))
-        result.push(...eReaderKeyBytes);
-        // Handover (BLE via QR) = null
-        result.push(0xf6);
+    async function buildTranscriptArtifacts(deBytes, readerSession) {
+        const { bridge } = requireLibraries();
+        const sessionInstance = readerSession || _activeReaderSession;
+        if (!deBytes) {
+            throw new Error("DeviceEngagement bytes required");
+        }
+        if (!sessionInstance) {
+            throw new Error("reader session not ready");
+        }
 
-        const trCbor = new Uint8Array(result);
+        const artifacts = bridge.createAnnexATranscriptArtifacts({
+            deviceEngagementBytes: deBytes,
+            eReaderKeyBytes: sessionInstance.getReaderKeyCose(),
+            qrHandover: null,
+        });
 
-        // Multipaz expects tag(24, bstr(SessionTranscript)) before hashing
-        const wrappedTranscript =
-            window.SessionCrypto.encodeTag24ByteString(trCbor);
-        const aad = await window.SessionCrypto.sha256(wrappedTranscript);
-
-        // Minimal debug exposure
         try {
             window.sessionDebug = window.sessionDebug || {};
-            window.sessionDebug.sessionTranscript = trCbor;
-            window.sessionDebug.sessionTranscriptWrapped = wrappedTranscript;
-            window.sessionDebug.eReaderKey = eReaderKeyBytes;
+            window.sessionDebug.sessionTranscript = artifacts.transcriptBytes;
+            window.sessionDebug.sessionTranscriptWrapped =
+                artifacts.wrappedTranscriptBytes;
+            window.sessionDebug.eReaderKey = sessionInstance.getReaderKeyCose();
         } catch {}
 
-        return aad;
+        return artifacts;
     }
 
-    // Build ISO 18013-5 compliant SessionEstablishment payload
-    // Returns { message, keys?: {readerKey, deviceKey}, transcriptAAD }
+    async function buildTranscriptAAD(deBytes, readerSession) {
+        const artifacts = await buildTranscriptArtifacts(deBytes, readerSession);
+        const digest = await crypto.subtle.digest(
+            "SHA-256",
+            artifacts.wrappedTranscriptBytes,
+        );
+        return new Uint8Array(digest);
+    }
+
     async function buildLegacySessionEstablishmentWithData(opts) {
         const {
             deBytes,
-            mdocPubKey, // {x,y}
             readerKeyPair,
-            transcriptAAD, // optional
-            skReader, // optional
-            buildRequestByType, // function returning Uint8Array
-            CBOR: CBORRef,
+            buildRequestByType,
         } = opts || {};
 
-        if (!deBytes || !mdocPubKey || !readerKeyPair || !buildRequestByType)
-            throw new Error("Missing inputs for SessionEstablishment build");
-        if (!window.SessionCrypto)
-            throw new Error("SessionCrypto not available");
-
-        const readerCoseKey = buildReaderCoseKey();
-        const coseKeyEncoded =
-            window.SessionCrypto.encodeCoseKeyManually(readerCoseKey);
-        const publicKeyBytes =
-            window.SessionCrypto.encodeTag24ByteString(coseKeyEncoded);
-
-        // Build request
-        const mdlRequest = await buildRequestByType();
-
-        // Derive keys if not provided
-        let aad = transcriptAAD;
-        let keys;
-        if (!skReader || !aad) {
-            const mdocPub = await window.SessionCrypto.importMdocPubKeyXY(
-                mdocPubKey.x,
-                mdocPubKey.y,
-            );
-            const shared = await window.SessionCrypto.deriveSharedSecretBits(
-                readerKeyPair.privateKey,
-                mdocPub,
-            );
-            aad = await buildTranscriptAAD(deBytes);
-            keys = await window.SessionCrypto.deriveSessionKey(
-                new Uint8Array(shared),
-                aad,
+        if (!deBytes || !readerKeyPair || !buildRequestByType) {
+            throw new Error(
+                `Missing inputs for SessionEstablishment build: ${
+                    [
+                        !deBytes ? "deBytes" : null,
+                        !readerKeyPair ? "readerKeyPair" : null,
+                        !buildRequestByType ? "buildRequestByType" : null,
+                    ]
+                        .filter(Boolean)
+                        .join(", ")
+                }`,
             );
         }
 
-        const useReaderKey = skReader || keys?.readerKey;
-        const readerIdentifier = new Uint8Array(8); // 0x00 x8
-        const encryptedRequest = await window.SessionCrypto.aesGcmEncryptRaw(
-            mdlRequest,
-            useReaderKey,
-            readerIdentifier,
-            1,
-        );
+        const { bridge } = requireLibraries();
+        const readerSession = readerKeyPair;
+        _activeReaderSession = readerSession;
 
-        // Build map {"eReaderKey": tag24(bstr .cbor COSE_Key), "data": <raw>}
-        const result = [];
-        result.push(0xa2); // map(2)
-        // key: "eReaderKey"
-        result.push(
-            0x6a,
-            ...Array.from("eReaderKey").map((c) => c.charCodeAt(0)),
-        );
-        result.push(...publicKeyBytes);
-        // key: "data"
-        result.push(0x64, ...Array.from("data").map((c) => c.charCodeAt(0)));
-        if (encryptedRequest.length < 24)
-            result.push(0x40 + encryptedRequest.length);
-        else if (encryptedRequest.length < 256)
-            result.push(0x58, encryptedRequest.length);
-        else
-            result.push(
-                0x59,
-                (encryptedRequest.length >> 8) & 0xff,
-                encryptedRequest.length & 0xff,
+        const deviceEngagement = bridge.decodeDeviceEngagement(deBytes);
+        const {
+            transcriptBytes,
+            wrappedTranscriptBytes,
+        } = await buildTranscriptArtifacts(deBytes, readerSession);
+
+        if (!readerSession.isInitialized()) {
+            await readerSession.deriveSessionKeys(
+                deviceEngagement.security.eKey,
+                wrappedTranscriptBytes,
             );
-        result.push(...encryptedRequest);
+        }
 
-        const final = new Uint8Array(result);
+        const mdlRequest = await buildRequestByType();
+        const encryptedRequest = await readerSession.encryptFromReader(
+            mdlRequest,
+        );
+        const final = bridge.createSessionEstablishmentBytes({
+            eReaderKeyBytes: readerSession.getReaderKeyCose(),
+            data: encryptedRequest,
+        });
 
-        // Optional diagnostic decode
+        let transcriptAAD = null;
         try {
-            if (CBORRef && CBORRef.decode) {
-                const d = CBORRef.decode(final);
-                void d; // no-op, just verify
-            }
+            const digest = await crypto.subtle.digest(
+                "SHA-256",
+                wrappedTranscriptBytes,
+            );
+            transcriptAAD = new Uint8Array(digest);
         } catch {}
 
-        return { message: final, keys, transcriptAAD: aad };
+        return {
+            message: final,
+            keys: readerSession.getDerivedKeysForDebug(),
+            transcriptAAD,
+            transcriptBytes,
+            wrappedTranscriptBytes,
+        };
     }
 
     window.SessionEstablishment = {
@@ -191,5 +209,7 @@
         resetReaderCoseKeyCache,
         buildTranscriptAAD,
         buildLegacySessionEstablishmentWithData,
+        getActiveReaderSession,
+        setActiveReaderSession,
     };
 })();

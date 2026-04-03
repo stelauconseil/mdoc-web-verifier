@@ -521,13 +521,17 @@
     <script src="js/jsQR.js"></script>
     <script src="js/cbor.min.js"></script>
     <script src="js/noble-curves.min.js"></script>
+    <script src="js/vendor/iso18013-codec.min.js?v=20260403c"></script>
+    <script src="js/vendor/iso18013-session.min.js?v=20260403c"></script>
+    <script src="js/vendor/iso18013-security.min.js?v=20260403c"></script>
+    <script src="js/iso18013-bridge.js?v=20260403b"></script>
     <script src="js/session-crypto.js"></script>
     <script src="js/ble-transport.js"></script>
-    <script src="js/session-establishment.js"></script>
-    <script src="js/verification.js"></script>
+    <script src="js/session-establishment.js?v=20260403a"></script>
+    <script src="js/verification.js?v=20260403a"></script>
     <!-- Feature modules used by visitor page -->
     <script src="js/device-engagement.js"></script>
-    <script src="js/wallet-response.js"></script>
+    <script src="js/wallet-response.js?v=20260403a"></script>
     <script src="js/request-builder.js"></script>
 
     <script type="module">
@@ -625,6 +629,15 @@
       function resetSessionState() {
         try {
           sessionEstablished = false;
+        } catch {}
+        try {
+          if (
+            window.SessionEstablishment &&
+            typeof window.SessionEstablishment.resetReaderCoseKeyCache ===
+              "function"
+          ) {
+            window.SessionEstablishment.resetReaderCoseKeyCache();
+          }
         } catch {}
         try {
           readerKeyPair = null;
@@ -738,18 +751,13 @@
         } = await window.SessionEstablishment.buildLegacySessionEstablishmentWithData(
           {
             deBytes,
-            mdocPubKey,
             readerKeyPair,
-            transcriptAAD,
-            skReader,
             // Explicit request types for Visitor flow (avoid default 'full')
             buildRequestByType: () =>
               window.RequestBuilder.buildRequestByType([
                 "pid_minimal",
                 "mdl_minimal",
               ]),
-            log,
-            CBOR,
           },
         );
         if (keys) {
@@ -808,7 +816,9 @@
         await new Promise((r) => setTimeout(r, 300));
         // Ephemeral key + transcript
         readerKeyPair =
-          await window.SessionEstablishment.makeReaderEphemeralKeyPair();
+          await window.SessionEstablishment.makeReaderEphemeralKeyPair(
+            deBytes,
+          );
         await window.SessionEstablishment.exportReaderPublicToCoseKey(
           readerKeyPair,
         );
@@ -827,12 +837,19 @@
       // ==== S->C assembly and processing ====
       async function processS2CAssembled(assembled, reason = "final-flag") {
         try {
-          const decoded = CBOR.decode(assembled);
+          let sessionMessage = null;
+          try {
+            sessionMessage = window.Iso18013Bridge.decodeSessionMessage(
+              assembled,
+            );
+          } catch {}
+          const decoded = sessionMessage ?? CBOR.decode(assembled);
           // Treat as session response until keys are ready
           let isSessionResponse = !skReader || !skDevice;
           if (!isSessionResponse) {
             // still allow by heuristic
-            if (decoded instanceof Map)
+            if (sessionMessage) isSessionResponse = true;
+            else if (decoded instanceof Map)
               isSessionResponse =
                 decoded.has("eDeviceKey") ||
                 decoded.has("data") ||
@@ -855,74 +872,16 @@
 
       // BLE notifications assembly is handled in BLE transport module
 
-      // Bridges to WalletResponse helpers
-      // Avoid calling WalletResponse decryptors directly here because they render UI elements
-      // that don't exist on this page. We'll do local decrypt-to-object and then call the
-      // overridden display function.
-
-      async function decryptSessionEstablishmentDataLocal(encryptedData) {
-        // IV: mdoc identifier (8 bytes) || counter (4 bytes, big-endian 1)
-        const mdocIdentifier = new Uint8Array([0, 0, 0, 0, 0, 0, 0, 1]);
-        const iv = new Uint8Array(12);
-        iv.set(mdocIdentifier, 0);
-        new DataView(iv.buffer, 8, 4).setUint32(0, 1, false);
-        if (!window.skDevice) throw new Error("SKDevice key not set");
-        const key = await crypto.subtle.importKey(
-          "raw",
-          new Uint8Array(window.skDevice),
-          { name: "AES-GCM", length: 256 },
-          false,
-          ["decrypt"],
-        );
-        const plaintext = await crypto.subtle.decrypt(
-          {
-            name: "AES-GCM",
-            iv,
-            additionalData: new Uint8Array(0),
-            tagLength: 128,
-          },
-          key,
-          encryptedData,
-        );
-        return CBOR.decode(new Uint8Array(plaintext));
-      }
-
-      async function decryptCoseEncrypt0ToObjectLocal(encryptedCose) {
-        const cose = CBOR.decode(encryptedCose);
-        if (!Array.isArray(cose) || cose.length !== 3)
-          throw new Error("Invalid COSE_Encrypt0");
-        const [_prot, unprot, ciphertext] = cose;
-        const iv =
-          unprot instanceof Map ? unprot.get(5) : unprot ? unprot[5] : null;
-        if (!iv) throw new Error("No IV in COSE unprotected header");
-        if (!window.skDevice) throw new Error("SKDevice key not set");
-        const key = await crypto.subtle.importKey(
-          "raw",
-          new Uint8Array(window.skDevice),
-          { name: "AES-GCM", length: 256 },
-          false,
-          ["decrypt"],
-        );
-        const plaintext = await crypto.subtle.decrypt(
-          {
-            name: "AES-GCM",
-            iv: new Uint8Array(iv),
-            additionalData: new Uint8Array(0),
-            tagLength: 128,
-          },
-          key,
-          new Uint8Array(ciphertext),
-        );
-        return CBOR.decode(new Uint8Array(plaintext));
-      }
+      // Reuse the shared WalletResponse decrypt helpers so the visitor flow
+      // stays aligned with the main verifier flow.
 
       // ==== Session finalization (from index) simplified ====
       async function processSessionResponse(assembled) {
         if (!readerKeyPair)
-          throw new Error("Reader ephemeral key pair not initialized");
+          throw new Error("Reader session is not initialized");
         let decoded = null;
         try {
-          decoded = CBOR.decode(assembled);
+          decoded = window.Iso18013Bridge.decodeSessionMessage(assembled);
         } catch {}
         const toMap = (v) => {
           if (!v) return null;
@@ -935,30 +894,20 @@
           return null;
         };
         const decodedMap = toMap(decoded);
-        // Derive keys using DeviceEngagement key
-        const mdocPub = await window.SessionCrypto.importMdocPubKeyXY(
-          mdocPubKey.x,
-          mdocPubKey.y,
-        );
-        const sharedSecretBuffer =
-          await window.SessionCrypto.deriveSharedSecretBits(
-            readerKeyPair.privateKey,
-            mdocPub,
-          );
-        transcriptAAD =
-          await window.SessionEstablishment.buildTranscriptAAD(deBytes);
-        const keys = await window.SessionCrypto.deriveSessionKey(
-          new Uint8Array(sharedSecretBuffer),
-          transcriptAAD,
-        );
-        skReader = keys.readerKey;
-        skDevice = keys.deviceKey;
-        window.skDevice = skDevice;
+        const keys =
+          typeof readerKeyPair.getDerivedKeysForDebug === "function"
+            ? readerKeyPair.getDerivedKeysForDebug()
+            : null;
+        if (keys) {
+          skReader = keys.skReader;
+          skDevice = keys.skDevice;
+          window.skDevice = skDevice;
+        }
         sessionEstablished = true;
         // Decrypt raw data if present
         const responseData = decodedMap
           ? decodedMap.get("data") || decodedMap.get(4)
-          : null;
+          : decoded?.data;
         const toBytes = (v) => {
           try {
             if (v && v.constructor && v.constructor.name === "Tagged")
@@ -974,13 +923,17 @@
         const dataBytes = toBytes(responseData);
         if (dataBytes && dataBytes.length > 0) {
           const deviceResponse =
-            await decryptSessionEstablishmentDataLocal(dataBytes);
+            await window.WalletResponse.decryptSessionEstablishmentDataToObject(
+              dataBytes,
+            );
           await handleDeviceResponseForVisitor(deviceResponse);
         } else {
           // In alternate flow, wallet may send DeviceResponse directly as the first message
           try {
             const deviceResponse =
-              await decryptCoseEncrypt0ToObjectLocal(assembled);
+              await window.WalletResponse.decryptCoseEncrypt0ToObject(
+                assembled,
+              );
             await handleDeviceResponseForVisitor(deviceResponse);
           } catch (e) {
             console.warn("Fallback decrypt failed:", e);

@@ -180,6 +180,32 @@
     // Build a pure JSON view-model for rendering in index.html (no DOM/HTML here)
     function buildResponseViewModel(deviceResponse) {
         const CBOR = getCBOR();
+        const normalizeDeviceResponse = (value) => {
+            if (
+                window.Iso18013Bridge &&
+                typeof window.Iso18013Bridge.decodeDeviceResponse ===
+                    "function" &&
+                value instanceof Uint8Array
+            ) {
+                try {
+                    return window.Iso18013Bridge.decodeDeviceResponse(value);
+                } catch {}
+            }
+
+            if (
+                window.Iso18013Bridge &&
+                typeof window.Iso18013Bridge.decodeDeviceResponseFromCborValue ===
+                    "function"
+            ) {
+                try {
+                    return window.Iso18013Bridge.decodeDeviceResponseFromCborValue(
+                        value,
+                    );
+                } catch {}
+            }
+
+            return value;
+        };
         const getField = (obj, key) =>
             obj instanceof Map ? obj.get(key) : obj?.[key];
         const getFieldAny = (obj, keys) => {
@@ -228,6 +254,12 @@
                 return null;
             }
         };
+        const getTagContents = (obj) => {
+            if (!obj || typeof obj !== "object") return null;
+            if (obj.contents !== undefined) return obj.contents;
+            if (obj.value !== undefined) return obj.value;
+            return null;
+        };
         // Helper: decode a JSON-bytes object (from convertToJSON) back to Uint8Array
         const fromJsonBytes = (obj) => {
             if (!obj || typeof obj !== "object") return null;
@@ -255,7 +287,7 @@
                     cur.constructor &&
                     cur.constructor.name === "Tagged"
                 ) {
-                    cur = cur.value;
+                    cur = getTagContents(cur);
                     changed = true;
                     continue;
                 }
@@ -264,10 +296,11 @@
                     cur &&
                     typeof cur === "object" &&
                     cur.tag === 24 &&
-                    cur.value !== undefined
+                    getTagContents(cur) !== null
                 ) {
-                    let bytes = toUint8(cur.value);
-                    if (!bytes) bytes = fromJsonBytes(cur.value);
+                    const tagContents = getTagContents(cur);
+                    let bytes = toUint8(tagContents);
+                    if (!bytes) bytes = fromJsonBytes(tagContents);
                     if (bytes) {
                         const dec = tryDecodeCBOR(bytes);
                         if (dec != null) {
@@ -290,19 +323,22 @@
             return cur;
         };
 
+        const normalizedResponse = normalizeDeviceResponse(deviceResponse);
+
         const model = {
-            version: getField(deviceResponse, "version") || "1.0",
+            version: getField(normalizedResponse, "version") || "1.0",
             documents: [],
             rawJSON: null,
         };
 
         try {
-            model.rawJSON = convertToJSON(deviceResponse);
+            model.rawJSON = convertToJSON(normalizedResponse);
         } catch (_) {
             model.rawJSON = null;
         }
 
-        const documents = getField(deviceResponse, "documents");
+        const sourceDocuments = getField(deviceResponse, "documents");
+        const documents = getField(normalizedResponse, "documents");
         if (!Array.isArray(documents)) return model;
 
         // Helper to normalize a possibly CBOR.Tagged issuerSignedItem
@@ -943,9 +979,10 @@
                 elementValue.constructor &&
                 elementValue.constructor.name === "Tagged"
             ) {
+                const taggedValue = getTagContents(elementValue);
                 if (elementValue.tag === 1004) {
                     // RFC3339 full-date string (YYYY-MM-DD)
-                    const dateStr = elementValue.value;
+                    const dateStr = taggedValue;
                     let txt = String(dateStr);
                     try {
                         // Use locale short date (e.g., 10/30/2025) without time
@@ -956,22 +993,20 @@
                     return entry;
                 } else if (elementValue.tag === 0) {
                     entry.valueKind = "time-rfc3339";
-                    entry.text = String(elementValue.value);
+                    entry.text = String(taggedValue);
                     return entry;
                 } else if (elementValue.tag === 1) {
                     entry.valueKind = "time-epoch";
                     try {
-                        entry.text = new Date(
-                            elementValue.value * 1000,
-                        ).toLocaleString();
+                        entry.text = new Date(taggedValue * 1000).toLocaleString();
                     } catch {
-                        entry.text = String(elementValue.value);
+                        entry.text = String(taggedValue);
                     }
                     return entry;
                 }
                 // Fallback
                 entry.valueKind = "tagged";
-                entry.text = String(elementValue.value);
+                entry.text = String(taggedValue);
                 return entry;
             }
 
@@ -980,12 +1015,13 @@
                 elementValue &&
                 typeof elementValue === "object" &&
                 typeof elementValue.tag === "number" &&
-                elementValue.value !== undefined
+                getTagContents(elementValue) !== null
             ) {
+                const taggedValue = getTagContents(elementValue);
                 if (elementValue.tag === 1004) {
-                    let txt = String(elementValue.value);
+                    let txt = String(taggedValue);
                     try {
-                        txt = new Date(elementValue.value).toLocaleDateString();
+                        txt = new Date(taggedValue).toLocaleDateString();
                     } catch {}
                     entry.valueKind = "date";
                     entry.text = txt;
@@ -993,17 +1029,15 @@
                 }
                 if (elementValue.tag === 0) {
                     entry.valueKind = "time-rfc3339";
-                    entry.text = String(elementValue.value);
+                    entry.text = String(taggedValue);
                     return entry;
                 }
                 if (elementValue.tag === 1) {
                     entry.valueKind = "time-epoch";
                     try {
-                        entry.text = new Date(
-                            elementValue.value * 1000,
-                        ).toLocaleString();
+                        entry.text = new Date(taggedValue * 1000).toLocaleString();
                     } catch {
-                        entry.text = String(elementValue.value);
+                        entry.text = String(taggedValue);
                     }
                     return entry;
                 }
@@ -1222,9 +1256,21 @@
             return entry;
         };
 
-        for (const doc of documents) {
+        for (const [index, doc] of documents.entries()) {
+            const codecDocument =
+                doc &&
+                typeof doc === "object" &&
+                typeof doc.encodeToCborValue === "function" &&
+                doc.issuerSigned &&
+                doc.deviceSigned
+                    ? doc
+                    : null;
             const docModel = {
                 docType: getField(doc, "docType") || "Unknown",
+                rawDocument: Array.isArray(sourceDocuments)
+                    ? sourceDocuments[index]
+                    : doc,
+                codecDocument,
                 issuerSigned: {
                     nameSpaces: {},
                     _rawNameSpaces: {}, // for debugging/renderer fallback
@@ -1233,13 +1279,38 @@
                 signature: null, // summary of issuerAuth
             };
 
-            const issuerSigned = getField(doc, "issuerSigned");
-            let nameSpaces = issuerSigned
-                ? getFieldAny(issuerSigned, ["nameSpaces", 1])
-                : null;
-            // Unwrap CBOR-wrapped namespaces if needed
-            nameSpaces = unwrapTaggedOrCbor(nameSpaces);
-            if (nameSpaces) {
+            const issuerSigned = codecDocument
+                ? codecDocument.issuerSigned
+                : getField(doc, "issuerSigned");
+            const typedNameSpaces = codecDocument?.issuerSigned?.nameSpaces;
+            if (
+                typedNameSpaces &&
+                typeof typedNameSpaces === "object" &&
+                Object.keys(typedNameSpaces).length > 0
+            ) {
+                for (const [nsName, nsItems] of Object.entries(typedNameSpaces)) {
+                    try {
+                        docModel.issuerSigned._rawNameSpaces[nsName] =
+                            convertToJSON(nsItems);
+                    } catch (_) {}
+                    docModel.issuerSigned.nameSpaces[nsName] = nsItems.map(
+                        (item) =>
+                            valueToEntry(item.elementIdentifier, item.elementValue, {
+                                digestId: item.digestID,
+                                issuerSignedItemBytes:
+                                    item.encodedBytes instanceof Uint8Array
+                                        ? item.encodedBytes
+                                        : null,
+                            }),
+                    );
+                }
+            } else {
+                let nameSpaces = issuerSigned
+                    ? getFieldAny(issuerSigned, ["nameSpaces", 1])
+                    : null;
+                // Unwrap CBOR-wrapped namespaces if needed
+                nameSpaces = unwrapTaggedOrCbor(nameSpaces);
+                if (nameSpaces) {
                 const nsEntries =
                     nameSpaces instanceof Map
                         ? Array.from(nameSpaces.entries())
@@ -1378,11 +1449,14 @@
                     docModel.issuerSigned.nameSpaces[nsName] = items;
                 }
             }
+            }
 
             // Signature summary (issuerAuth → COSE_Sign1)
-            const issuerAuth = issuerSigned
-                ? getField(issuerSigned, "issuerAuth")
-                : null;
+            const issuerAuth = codecDocument
+                ? codecDocument.issuerSigned.issuerAuth
+                : issuerSigned
+                  ? getField(issuerSigned, "issuerAuth")
+                  : null;
             if (issuerAuth) {
                 try {
                     let cose = issuerAuth;
@@ -1392,7 +1466,10 @@
                         cose.constructor.name === "Tagged" &&
                         cose.tag === 24
                     ) {
-                        cose = CBOR.decode(new Uint8Array(cose.value));
+                        const taggedBytes = toUint8(getTagContents(cose));
+                        if (taggedBytes) {
+                            cose = CBOR.decode(taggedBytes);
+                        }
                     }
                     if (Array.isArray(cose) && cose.length >= 4) {
                         const [prot, unprot, payload /*, sig*/] = cose;
@@ -1478,9 +1555,9 @@
                                     mso.constructor &&
                                     mso.constructor.name === "Tagged" &&
                                     mso.tag === 24 &&
-                                    mso.value
+                                    getTagContents(mso) !== null
                                 ) {
-                                    const inner = toUint8(mso.value);
+                                    const inner = toUint8(getTagContents(mso));
                                     if (inner) {
                                         mso = CBOR.decode(inner);
                                         continue;
@@ -1490,11 +1567,12 @@
                                     mso &&
                                     typeof mso === "object" &&
                                     mso.tag === 24 &&
-                                    mso.value !== undefined
+                                    getTagContents(mso) !== null
                                 ) {
+                                    const tagContents = getTagContents(mso);
                                     const inner2 =
-                                        toUint8(mso.value) ||
-                                        fromJsonBytes(mso.value);
+                                        toUint8(tagContents) ||
+                                        fromJsonBytes(tagContents);
                                     if (inner2) {
                                         mso = CBOR.decode(inner2);
                                         continue;
@@ -1526,46 +1604,38 @@
                                         v.constructor &&
                                         v.constructor.name === "Tagged"
                                     ) {
+                                        const taggedValue =
+                                            getTagContents(v);
                                         if (v.tag === 0) {
                                             // RFC3339 text already
-                                            return new Date(
-                                                v.value,
-                                            ).toISOString();
+                                            return new Date(taggedValue).toISOString();
                                         }
                                         if (v.tag === 1) {
                                             // Epoch seconds
-                                            return new Date(
-                                                v.value * 1000,
-                                            ).toISOString();
+                                            return new Date(taggedValue * 1000).toISOString();
                                         }
                                         if (v.tag === 1004) {
                                             // full-date YYYY-MM-DD
-                                            return new Date(
-                                                v.value,
-                                            ).toISOString();
+                                            return new Date(taggedValue).toISOString();
                                         }
                                         // Other tags: try value recursively
-                                        return toISO(v.value);
+                                        return toISO(taggedValue);
                                     }
                                     // Handle plain-object tag shapes
                                     if (
                                         typeof v === "object" &&
                                         typeof v.tag === "number" &&
-                                        v.value !== undefined
+                                        getTagContents(v) !== null
                                     ) {
+                                        const taggedValue =
+                                            getTagContents(v);
                                         if (v.tag === 0)
-                                            return new Date(
-                                                v.value,
-                                            ).toISOString();
+                                            return new Date(taggedValue).toISOString();
                                         if (v.tag === 1)
-                                            return new Date(
-                                                v.value * 1000,
-                                            ).toISOString();
+                                            return new Date(taggedValue * 1000).toISOString();
                                         if (v.tag === 1004)
-                                            return new Date(
-                                                v.value,
-                                            ).toISOString();
-                                        return toISO(v.value);
+                                            return new Date(taggedValue).toISOString();
+                                        return toISO(taggedValue);
                                     }
                                     if (v instanceof Date)
                                         return v.toISOString();
@@ -1618,11 +1688,22 @@
             }
 
             // DeviceSigned: capture deviceAuth COSE_Sign1 (holder auth)
-            let deviceSigned = getFieldAny(doc, ["deviceSigned", 2]);
-            const deviceSignedRaw = deviceSigned;
-            deviceSigned = unwrapTaggedOrCbor(deviceSigned);
+            let deviceSigned = codecDocument
+                ? codecDocument.deviceSigned
+                : getFieldAny(doc, ["deviceSigned", 2]);
+            const deviceSignedRaw = codecDocument
+                ? typeof codecDocument.deviceSigned.encodeToCborValue ===
+                  "function"
+                    ? codecDocument.deviceSigned.encodeToCborValue()
+                    : codecDocument.deviceSigned
+                : deviceSigned;
+            if (!codecDocument) {
+                deviceSigned = unwrapTaggedOrCbor(deviceSigned);
+            }
             if (deviceSigned) {
-                let deviceAuth = getFieldAny(deviceSigned, ["deviceAuth", 0]);
+                let deviceAuth = codecDocument
+                    ? deviceSigned.deviceAuth
+                    : getFieldAny(deviceSigned, ["deviceAuth", 0]);
                 let deviceAuthCose = null;
                 if (deviceAuth) {
                     let cur = deviceAuth;
@@ -1636,8 +1717,9 @@
                         cur.constructor.name === "Tagged" &&
                         cur.tag === 24
                     ) {
+                        const tagContents = getTagContents(cur);
                         const bytes =
-                            toUint8(cur.value) || fromJsonBytes(cur.value);
+                            toUint8(tagContents) || fromJsonBytes(tagContents);
                         if (
                             bytes &&
                             CBOR &&
@@ -1708,11 +1790,38 @@
             new Uint8Array(iv),
             "",
         );
+        if (
+            window.Iso18013Bridge &&
+            typeof window.Iso18013Bridge.decodeDeviceResponse === "function"
+        ) {
+            return window.Iso18013Bridge.decodeDeviceResponse(plaintext);
+        }
         return CBOR.decode(plaintext);
     }
 
     // Decrypt SessionEstablishment.data (raw AES-GCM) → DeviceResponse object
     async function decryptSessionEstablishmentDataToObject(encryptedData) {
+        const activeSession =
+            window.SessionEstablishment &&
+            typeof window.SessionEstablishment.getActiveReaderSession ===
+                "function"
+                ? window.SessionEstablishment.getActiveReaderSession()
+                : null;
+        if (
+            activeSession &&
+            typeof activeSession.decryptFromDevice === "function"
+        ) {
+            const plaintext =
+                await activeSession.decryptFromDevice(encryptedData);
+            if (
+                window.Iso18013Bridge &&
+                typeof window.Iso18013Bridge.decodeDeviceResponse === "function"
+            ) {
+                return window.Iso18013Bridge.decodeDeviceResponse(plaintext);
+            }
+            return getCBOR().decode(plaintext);
+        }
+
         const mdocIdentifier = new Uint8Array([0, 0, 0, 0, 0, 0, 0, 1]);
         const counter = 1;
         const iv = new Uint8Array(12);
@@ -1724,6 +1833,12 @@
             iv,
             new Uint8Array(0),
         );
+        if (
+            window.Iso18013Bridge &&
+            typeof window.Iso18013Bridge.decodeDeviceResponse === "function"
+        ) {
+            return window.Iso18013Bridge.decodeDeviceResponse(plaintext);
+        }
         return getCBOR().decode(plaintext);
     }
 

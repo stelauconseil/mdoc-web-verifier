@@ -1797,6 +1797,9 @@
         <script src="js/jsQR.js"></script>
         <script src="js/cbor.min.js"></script>
         <script src="js/noble-curves.min.js"></script>
+        <script src="js/vendor/iso18013-codec.min.js?v=20260403c"></script>
+        <script src="js/vendor/iso18013-session.min.js?v=20260403c"></script>
+        <script src="js/vendor/iso18013-security.min.js?v=20260403c"></script>
         <!-- JPEG 2000 decoder (OpenJPEG) for converting JP2/J2K portraits to JPEG -->
         <script src="js/openjpeg.js"></script>
         <script>
@@ -1824,15 +1827,16 @@
         </script>
         <!-- Feature modules (globals) -->
         <script src="js/activity-log.js"></script>
+        <script src="js/iso18013-bridge.js?v=20260403b"></script>
         <script src="js/iaca-management.js"></script>
         <script src="js/reader-authentication.js"></script>
         <script src="js/device-engagement.js"></script>
-        <script src="js/wallet-response.js"></script>
+        <script src="js/wallet-response.js?v=20260403a"></script>
         <script src="js/request-builder.js"></script>
         <script src="js/ble-transport.js"></script>
         <script src="js/session-crypto.js"></script>
-        <script src="js/verification.js"></script>
-        <script src="js/session-establishment.js"></script>
+        <script src="js/verification.js?v=20260403a"></script>
+        <script src="js/session-establishment.js?v=20260403a"></script>
 
         <script type="module">
             // ==== CBOR bootstrap (works even if global isn't set) ====
@@ -2059,7 +2063,7 @@
 
             let deBytes = null; // Raw DeviceEngagement CBOR bytes
             let mdocPubKey = null; // { x:Uint8Array, y:Uint8Array } P-256
-            let readerKeyPair = null; // CryptoKeyPair (ECDH)
+            let readerKeyPair = null; // Iso180135SessionEncryption
             let skReader = null; // Uint8Array(32) - Reader encrypts requests with this
             let skDevice = null; // Uint8Array(32) - Reader decrypts responses with this
             window.skDevice = skDevice;
@@ -2169,36 +2173,6 @@
                             y: new Uint8Array(capture.mdocPubKey.y),
                         };
                     }
-                    if (
-                        capture.readerKeyPairJwk?.privateKey &&
-                        capture.readerKeyPairJwk?.publicKey
-                    ) {
-                        try {
-                            const priv = await crypto.subtle.importKey(
-                                "jwk",
-                                capture.readerKeyPairJwk.privateKey,
-                                { name: "ECDH", namedCurve: "P-256" },
-                                true,
-                                ["deriveBits"],
-                            );
-                            const pub = await crypto.subtle.importKey(
-                                "jwk",
-                                capture.readerKeyPairJwk.publicKey,
-                                { name: "ECDH", namedCurve: "P-256" },
-                                true,
-                                [],
-                            );
-                            readerKeyPair = {
-                                privateKey: priv,
-                                publicKey: pub,
-                            };
-                        } catch (e) {
-                            console.warn(
-                                "Replay import reader key pair failed:",
-                                e,
-                            );
-                        }
-                    }
                     if (capture.skDeviceB64) {
                         skDevice = b64ToU8(capture.skDeviceB64);
                         window.skDevice = skDevice;
@@ -2226,12 +2200,16 @@
                     // Otherwise try session response (raw SessionEstablishment response)
                     if (capture.sessionResponseB64) {
                         const assembled = b64ToU8(capture.sessionResponseB64);
-                        const decoded = CBOR.decode(assembled);
-                        const dataField = decoded?.data;
-                        const dataU8 =
-                            dataField instanceof Uint8Array
-                                ? dataField
-                                : new Uint8Array(dataField?.data || []);
+                        const sessionMessage =
+                            window.Iso18013Bridge.decodeSessionMessage(
+                                assembled,
+                            );
+                        const dataU8 = sessionMessage?.data;
+                        if (!(dataU8 instanceof Uint8Array)) {
+                            throw new Error(
+                                "Replay session response does not contain SessionData.data",
+                            );
+                        }
                         const deviceResponse =
                             await window.WalletResponse.decryptSessionEstablishmentDataToObject(
                                 dataU8,
@@ -2333,7 +2311,14 @@
 
                 // Try to decode the response
                 try {
-                    const decoded = CBOR.decode(assembled);
+                    let sessionMessage = null;
+                    try {
+                        sessionMessage =
+                            window.Iso18013Bridge.decodeSessionMessage(
+                                assembled,
+                            );
+                    } catch {}
+                    const decoded = sessionMessage ?? CBOR.decode(assembled);
                     console.log("Decoded wallet response:", decoded);
                     console.log("Response type:", typeof decoded);
                     console.log("Is Map:", decoded instanceof Map);
@@ -2346,7 +2331,12 @@
                     let isSessionResponse = false;
 
                     // Log all fields to see what we actually received
-                    if (decoded instanceof Map) {
+                    if (sessionMessage) {
+                        isSessionResponse = true;
+                        console.log(
+                            "✅ Detected ISO 18013 session message via codec",
+                        );
+                    } else if (decoded instanceof Map) {
                         console.log(
                             "Response is a Map with keys:",
                             Array.from(decoded.keys()),
@@ -3512,15 +3502,16 @@
                             btn.textContent = "Verifying…";
                             if (resultEl) resultEl.textContent = "";
                             try {
-                                const res =
-                                    typeof window.verifyCredentialSignature ===
+                                if (
+                                    typeof window.verifyCredentialSignature !==
                                     "function"
-                                        ? await window.verifyCredentialSignature(
-                                              doc,
-                                          )
-                                        : await window.verifyCOSESign1SignatureWithChain(
-                                              sig.coseSign1,
-                                          );
+                                ) {
+                                    throw new Error(
+                                        "Shared credential verification is not available",
+                                    );
+                                }
+                                const res =
+                                    await window.verifyCredentialSignature(doc);
                                 const parts = [];
                                 const claimsOk = res.claims
                                     ? res.claims.allMatched !== false
@@ -3632,10 +3623,7 @@
                     });
 
                     // Auto-verify signature and chain if verifier is available
-                    if (
-                        typeof window.verifyCOSESign1SignatureWithChain ===
-                        "function"
-                    ) {
+                    if (typeof window.verifyCredentialSignature === "function") {
                         documents.forEach(async (doc, idx) => {
                             try {
                                 const sig = doc?.signature;
@@ -3650,14 +3638,7 @@
                                     `revocationStatus-${idx}`,
                                 );
                                 const res =
-                                    typeof window.verifyCredentialSignature ===
-                                    "function"
-                                        ? await window.verifyCredentialSignature(
-                                              doc,
-                                          )
-                                        : await window.verifyCOSESign1SignatureWithChain(
-                                              sig.coseSign1,
-                                          );
+                                    await window.verifyCredentialSignature(doc);
                                 const claimsOk = res.claims
                                     ? res.claims.allMatched !== false
                                     : true;
@@ -4741,6 +4722,46 @@
 
                 async function checkMsoRevocationStatus(statusInfo, sig) {
                     try {
+                        async function verifySignedStatusCose(coseSign1) {
+                            if (
+                                !window.Iso18013Bridge ||
+                                typeof window.Iso18013Bridge
+                                    .verifySignedStatusObject !== "function"
+                            ) {
+                                throw new Error(
+                                    "iso18013 browser status verification libraries are not available",
+                                );
+                            }
+
+                            const trustAnchors =
+                                window.IacaManager?.getActiveIACAs?.()
+                                    ?.map((iaca) => iaca?.pem)
+                                    ?.filter(
+                                        (pem) =>
+                                            typeof pem === "string" &&
+                                            pem.trim().length > 0,
+                                    ) || [];
+                            if (trustAnchors.length === 0) {
+                                throw new Error(
+                                    "No active IACA trust anchors are available for status verification",
+                                );
+                            }
+
+                            const verified =
+                                await window.Iso18013Bridge.verifySignedStatusObject(
+                                    {
+                                        coseSign1,
+                                        trustAnchors,
+                                    },
+                                );
+                            return {
+                                signatureValid: verified?.ok === true,
+                                payload: verified?.payload || null,
+                                chainValid: true,
+                                sharedVerification: verified,
+                            };
+                        }
+
                         // Normalize input and detect mechanism
                         const asObj = (v) =>
                             v instanceof Map ? Object.fromEntries(v) : v;
@@ -4936,30 +4957,27 @@
                                 );
                             } catch {}
                             // Verify signature if possible
+                            let verifiedStatus = null;
                             try {
+                                verifiedStatus =
+                                    await verifySignedStatusCose(cwt);
                                 if (
-                                    typeof window.verifyCOSESign1SignatureWithChain ===
-                                    "function"
+                                    verifiedStatus &&
+                                    verifiedStatus.signatureValid === false
                                 ) {
-                                    const ver =
-                                        await window.verifyCOSESign1SignatureWithChain(
-                                            cwt,
-                                        );
-                                    if (ver && ver.signatureValid === false) {
-                                        return {
-                                            result: "unknown",
-                                            reason: "invalid_cwt_signature",
-                                            kind: hasIdentifier
-                                                ? "IdentifierList"
-                                                : "StatusList",
-                                            source: uri,
-                                        };
-                                    }
+                                    return {
+                                        result: "unknown",
+                                        reason: "invalid_cwt_signature",
+                                        kind: hasIdentifier
+                                            ? "IdentifierList"
+                                            : "StatusList",
+                                        source: uri,
+                                    };
                                 }
                             } catch {}
 
                             // Decode claims
-                            const payload = cwt[2];
+                            const payload = verifiedStatus?.payload || cwt[2];
                             let claims = null;
                             try {
                                 claims =
@@ -5377,7 +5395,28 @@
                                             Array.isArray(maybe2) &&
                                             maybe2.length === 4
                                         ) {
-                                            const payload2 = maybe2[2];
+                                            let verifiedStatus2 = null;
+                                            try {
+                                                verifiedStatus2 =
+                                                    await verifySignedStatusCose(
+                                                        maybe2,
+                                                    );
+                                                if (
+                                                    verifiedStatus2 &&
+                                                    verifiedStatus2.signatureValid ===
+                                                        false
+                                                ) {
+                                                    return {
+                                                        result: "unknown",
+                                                        reason: "invalid_cwt_signature",
+                                                        kind: "StatusList",
+                                                        source: pageUri,
+                                                    };
+                                                }
+                                            } catch {}
+                                            const payload2 =
+                                                verifiedStatus2?.payload ||
+                                                maybe2[2];
                                             let claims2 = null;
                                             try {
                                                 claims2 =
@@ -5795,14 +5834,13 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                 console.log("Raw response bytes:", hex(assembled));
 
                 if (!readerKeyPair) {
-                    throw new Error(
-                        "Reader ephemeral key pair not initialized",
-                    );
+                    throw new Error("Reader session is not initialized");
                 }
 
                 let decoded;
                 try {
-                    decoded = CBOR.decode(assembled);
+                    decoded =
+                        window.Iso18013Bridge.decodeSessionMessage(assembled);
                 } catch (decodeError) {
                     console.warn(
                         "Session response is not valid CBOR:",
@@ -5826,119 +5864,22 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                 };
 
                 const decodedMap = toMap(decoded);
-                let eDeviceKey = null;
-
-                const possibleLabels = ["eDeviceKey", "publicKey", "deviceKey"];
-                if (decodedMap) {
-                    for (const label of possibleLabels) {
-                        if (decodedMap.has(label)) {
-                            eDeviceKey = decodedMap.get(label);
-                            console.log(
-                                `Found potential wallet key under label "${label}"`,
-                            );
-                            break;
-                        }
-                    }
+                const keys =
+                    typeof readerKeyPair.getDerivedKeysForDebug === "function"
+                        ? readerKeyPair.getDerivedKeysForDebug()
+                        : null;
+                if (keys) {
+                    skReader = keys.skReader;
+                    skDevice = keys.skDevice;
+                    window.skDevice = skDevice;
+                    sessionKey = skReader;
+                    console.log("Session keys ready. SKReader:", hex(skReader));
+                    console.log("Session keys ready. SKDevice:", hex(skDevice));
                 }
-
-                // Some wallets nest the key inside the "deviceEngagement" or similar structures
-                if (!eDeviceKey && decodedMap) {
-                    for (const value of decodedMap.values()) {
-                        const nested = toMap(value);
-                        if (nested) {
-                            for (const label of possibleLabels) {
-                                if (nested.has(label)) {
-                                    eDeviceKey = nested.get(label);
-                                    console.log(
-                                        `Found nested wallet key under label "${label}"`,
-                                    );
-                                    break;
-                                }
-                            }
-                        }
-                        if (eDeviceKey) break;
-                    }
-                }
-
-                let walletKeyMap = null;
-                if (eDeviceKey) {
-                    if (eDeviceKey instanceof CBOR.Tagged) {
-                        console.log(
-                            "Wallet key is CBOR.Tagged - decoding value",
-                        );
-                        const value = eDeviceKey.value;
-                        const bytes =
-                            value instanceof Uint8Array
-                                ? value
-                                : new Uint8Array(value);
-                        walletKeyMap = toMap(CBOR.decode(bytes));
-                    } else if (eDeviceKey instanceof Uint8Array) {
-                        console.log("Wallet key is raw Uint8Array - decoding");
-                        walletKeyMap = toMap(
-                            CBOR.decode(
-                                new Uint8Array(
-                                    eDeviceKey.buffer,
-                                    eDeviceKey.byteOffset,
-                                    eDeviceKey.byteLength,
-                                ),
-                            ),
-                        );
-                    } else if (ArrayBuffer.isView(eDeviceKey)) {
-                        console.log(
-                            "Wallet key is ArrayBuffer view - decoding",
-                        );
-                        const bytes = new Uint8Array(
-                            eDeviceKey.buffer,
-                            eDeviceKey.byteOffset,
-                            eDeviceKey.byteLength,
-                        );
-                        walletKeyMap = toMap(CBOR.decode(bytes));
-                    } else {
-                        walletKeyMap = toMap(eDeviceKey);
-                    }
-                }
-
-                let sharedSecretBuffer = null;
-
-                try {
-                    if (walletKeyMap) {
-                        window.sessionDebug = window.sessionDebug || {};
-                        window.sessionDebug.walletEphemeralKey = walletKeyMap;
-                    }
-                } catch {}
-
-                // log('⚠️ Wallet response did not contain an ephemeral key. Falling back to static DeviceEngagement key.');
-                const mdocPub = await window.SessionCrypto.importMdocPubKeyXY(
-                    mdocPubKey.x,
-                    mdocPubKey.y,
-                );
-                sharedSecretBuffer =
-                    await window.SessionCrypto.deriveSharedSecretBits(
-                        readerKeyPair.privateKey,
-                        mdocPub,
-                    );
-
-                const sharedSecretBytes = new Uint8Array(sharedSecretBuffer);
-                transcriptAAD =
-                    await window.SessionEstablishment.buildTranscriptAAD(
-                        deBytes,
-                    );
-                const keys = await window.SessionCrypto.deriveSessionKey(
-                    sharedSecretBytes,
-                    transcriptAAD,
-                );
-
-                skReader = keys.readerKey;
-                skDevice = keys.deviceKey;
-                window.skDevice = skDevice;
-                sessionKey = skReader;
                 sessionEstablished = true;
                 window.sessionEstablished = true;
 
-                console.log("Session keys ready. SKReader:", hex(skReader));
-                console.log("Session keys ready. SKDevice:", hex(skDevice));
-
-                log("✅ Session ready using static DeviceEngagement key");
+                log("✅ Session ready using shared iso18013-session state");
 
                 // Now decrypt and display the documents from the 'data' field
                 log("🔓 Decrypting wallet response to extract documents...");
@@ -5946,7 +5887,7 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                 // Get the 'data' field from the response (decodedMap already declared above)
                 const responseData = decodedMap
                     ? decodedMap.get("data") || decodedMap.get(4)
-                    : null;
+                    : decoded?.data;
 
                 // Normalize the 'data' into a Uint8Array for WebCrypto
                 const toBytes = (v) => {
@@ -6075,6 +6016,13 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                     console.warn("Error disconnecting BLE device:", e);
                 }
                 // Reset session-related state
+                if (
+                    window.SessionEstablishment &&
+                    typeof window.SessionEstablishment.resetReaderCoseKeyCache ===
+                        "function"
+                ) {
+                    window.SessionEstablishment.resetReaderCoseKeyCache();
+                }
                 sessionEstablished = false;
                 readerKeyPair = null;
                 skReader = null;
@@ -6266,35 +6214,15 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                     sessionEstablished = false;
                     window.sessionEstablished = false;
 
-                    // Generate ephemeral key pair
+                    // Generate reader session
                     readerKeyPair =
-                        await window.SessionEstablishment.makeReaderEphemeralKeyPair();
+                        await window.SessionEstablishment.makeReaderEphemeralKeyPair(
+                            deBytes,
+                        );
                     await window.SessionEstablishment.exportReaderPublicToCoseKey(
                         readerKeyPair,
                     );
-                    try {
-                        const privJwk = await crypto.subtle.exportKey(
-                            "jwk",
-                            readerKeyPair.privateKey,
-                        );
-                        const pubJwk = await crypto.subtle.exportKey(
-                            "jwk",
-                            readerKeyPair.publicKey,
-                        );
-                        updateReplayCapture({
-                            readerKeyPairJwk: {
-                                privateKey: privJwk,
-                                publicKey: pubJwk,
-                            },
-                        });
-                        saveReplayCapture();
-                    } catch (e) {
-                        console.warn(
-                            "Failed to export reader key pair for replay:",
-                            e,
-                        );
-                    }
-                    log("✅ Generated ephemeral key pair");
+                    log("✅ Generated shared reader session");
 
                     // Build SessionTranscript immediately (needed for reader authentication)
                     // SessionTranscript = [DeviceEngagement, EReaderKey, Handover]
@@ -6342,13 +6270,8 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                     } = await window.SessionEstablishment.buildLegacySessionEstablishmentWithData(
                         {
                             deBytes,
-                            mdocPubKey,
                             readerKeyPair,
-                            transcriptAAD,
-                            skReader,
                             buildRequestByType: buildRequestByTypeWithRecord,
-                            log,
-                            CBOR,
                         },
                     );
                     updateReplayCapture({

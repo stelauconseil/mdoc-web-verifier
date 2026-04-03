@@ -11,6 +11,9 @@
     function getCBOR() {
         return window.CBOR || self.CBOR || self.cbor;
     }
+    function getCodec() {
+        return window.Iso18013Codec || null;
+    }
     const log = window.log || console.log;
 
     async function buildRequestByType(requestTypes) {
@@ -26,6 +29,7 @@
 
         log("Building request for types: " + JSON.stringify(requestTypes));
 
+        const codec = getCodec();
         const deviceRequest = { version: "1.0", docRequests: [] };
         for (const requestType of requestTypes) {
             const docRequest = buildSingleDocRequest(requestType);
@@ -52,12 +56,20 @@
             if (ra && ra.isEnabled && ra.isEnabled()) {
                 let addedCount = 0;
                 for (const dr of deviceRequest.docRequests) {
-                    if (dr && dr.itemsRequest && dr.itemsRequest.tag === 24) {
-                        const itemsCbor = dr.itemsRequest.value; // raw ItemsRequest CBOR
+                    const itemsCbor =
+                        codec && dr?.itemsRequest?.encodeToCborValue
+                            ? codec.encodeCbor(dr.itemsRequest.encodeToCborValue())
+                            : dr && dr.itemsRequest && dr.itemsRequest.tag === 24
+                              ? dr.itemsRequest.value
+                              : null;
+                    if (itemsCbor) {
                         try {
                             const cose =
                                 await ra.signReaderAuthentication(itemsCbor);
-                            dr.readerAuth = cose; // Per ISO 18013-5: readerAuth is inside DocRequest
+                            dr.readerAuth =
+                                codec && codec.ReaderAuth
+                                    ? codec.ReaderAuth.decodeFromCborValue(cose)
+                                    : cose; // Per ISO 18013-5: readerAuth is inside DocRequest
                             addedCount++;
                         } catch (signErr) {
                             console.warn(
@@ -84,6 +96,12 @@
             );
         }
 
+        if (codec && codec.DeviceRequest) {
+            return new codec.DeviceRequest(
+                deviceRequest.version,
+                deviceRequest.docRequests,
+            ).encode();
+        }
         return CBOR.encode(deviceRequest);
     }
 
@@ -465,6 +483,12 @@
                 window.REQUEST_ORDERS_BY_DOCTYPE[docType] = orderSnapshot;
             } catch {}
         } catch (_) {}
+        const codec = getCodec();
+        if (codec && codec.DocRequest && codec.ItemsRequest) {
+            return new codec.DocRequest(
+                new codec.ItemsRequest(docType, nameSpacesObj, undefined),
+            );
+        }
         const itemsRequestCbor = CBOR.encode(itemsRequest);
         const taggedItemsRequest = new CBOR.Tagged(24, itemsRequestCbor);
         const docRequest = { itemsRequest: taggedItemsRequest };

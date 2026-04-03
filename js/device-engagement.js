@@ -247,8 +247,17 @@
         if (!CBOR) throw new Error("CBOR library not available");
         const deBytes = extractCborFromMdocUri(uri);
         let de;
+        let deviceEngagement = null;
+        let bo = null;
+        let coseKey = null;
         try {
-            de = CBOR.decode(deBytes);
+            if (window.Iso18013Bridge) {
+                deviceEngagement =
+                    window.Iso18013Bridge.decodeDeviceEngagement(deBytes);
+                de = deviceEngagement.encodeToCborValue();
+            } else {
+                de = CBOR.decode(deBytes);
+            }
         } catch (_e) {
             const maybe = CBOR.decode(deBytes);
             if (
@@ -256,12 +265,50 @@
                 maybe.tag === 24 &&
                 maybe.value instanceof Uint8Array
             ) {
-                de = CBOR.decode(maybe.value);
+                if (window.Iso18013Bridge) {
+                    try {
+                        deviceEngagement =
+                            window.Iso18013Bridge.decodeDeviceEngagement(
+                                maybe.value,
+                            );
+                        de = deviceEngagement.encodeToCborValue();
+                    } catch (_) {
+                        de = CBOR.decode(maybe.value);
+                    }
+                } else {
+                    de = CBOR.decode(maybe.value);
+                }
             } else {
                 throw new Error("CBOR decode failed for Device Engagement");
             }
         }
-        const bo = tryExtractBleOptions(de);
+        if (deviceEngagement) {
+            const bleMethod =
+                deviceEngagement.deviceRetrievalMethods?.find(
+                    (method) =>
+                        typeof method.isBle === "function" && method.isBle(),
+                ) ?? null;
+            const bleOptions = bleMethod?.retrievalOptions;
+            if (bleOptions) {
+                bo = {
+                    uuidBytes:
+                        bleOptions.peripheralServerModeUuid ??
+                        bleOptions.centralClientModeUuid ??
+                        null,
+                    uuidStr: null,
+                    addrBytes:
+                        bleOptions.peripheralServerModeDeviceAddress ?? null,
+                };
+            }
+            try {
+                coseKey = window.Iso18013Bridge.decodeCoseKey(
+                    deviceEngagement.security.eKey,
+                );
+            } catch (_) {}
+        }
+        if (!bo) {
+            bo = tryExtractBleOptions(de);
+        }
         if (!bo) throw new Error("BLE options not found in Device Engagement");
         const asUuidString = (bytes) => {
             if (!(bytes instanceof Uint8Array) || bytes.length !== 16)
@@ -285,8 +332,10 @@
                   .join(":")
             : null;
 
-        let coseKey = null;
-        if (Array.isArray(de?.security)) {
+        if (
+            !coseKey &&
+            Array.isArray(de?.security)
+        ) {
             for (let i = 0; i < de.security.length; i++) {
                 const sec = de.security[i];
                 if (sec instanceof Map && sec.has(33)) {
@@ -311,7 +360,7 @@
                     }
                 }
             }
-        } else if (de?.security) {
+        } else if (!coseKey && de?.security) {
             const sec = de.security;
             if (sec instanceof Map) {
                 if (sec.has(33)) coseKey = sec.get(33);
@@ -375,13 +424,31 @@
         }
         if (!coseKey)
             throw new Error("mdoc ephemeral COSE_Key not found in DE");
-        const getField = (k) =>
-            coseKey instanceof Map ? coseKey.get(k) : coseKey[k];
+        const getField = (k) => {
+            if (
+                coseKey &&
+                typeof coseKey === "object" &&
+                typeof coseKey.encodeToCborValue === "function" &&
+                typeof coseKey.kty !== "undefined"
+            ) {
+                switch (k) {
+                    case -1:
+                        return coseKey.crv;
+                    case -2:
+                        return coseKey.x;
+                    case -3:
+                        return coseKey.y;
+                    default:
+                        return undefined;
+                }
+            }
+            return coseKey instanceof Map ? coseKey.get(k) : coseKey[k];
+        };
         const xField = getField(-2) || getField("x");
         const yField = getField(-3) || getField("y");
-        const x = new Uint8Array(xField);
-        const y = new Uint8Array(yField);
-        if (x.length !== 32 || y.length !== 32)
+        const x = xField ? new Uint8Array(xField) : null;
+        const y = yField ? new Uint8Array(yField) : null;
+        if (x && y && (x.length !== 32 || y.length !== 32))
             throw new Error(
                 `Invalid COSE_Key coordinates: x=${x.length}, y=${y.length}`,
             );
