@@ -518,20 +518,21 @@
     </footer>
 
     <!-- Libs -->
-    <script src="js/jsQR.js"></script>
-    <script src="js/cbor.min.js"></script>
-    <script src="js/noble-curves.min.js"></script>
-    <script src="js/vendor/iso18013-codec.min.js?v=20260403c"></script>
-    <script src="js/vendor/iso18013-session.min.js?v=20260403c"></script>
-    <script src="js/vendor/iso18013-security.min.js?v=20260403c"></script>
-    <script src="js/iso18013-bridge.js?v=20260403b"></script>
-    <script src="js/session-crypto.js"></script>
+    <script src="js/vendor/jsQR.js"></script>
+    <script src="js/vendor/noble-curves.min.js?v=20260403f"></script>
+    <script src="js/vendor/iso18013-codec.min.js?v=20260403k"></script>
+    <script src="js/vendor/cbor-shim.js?v=20260403f"></script>
+    <script src="js/vendor/iso18013-session.min.js?v=20260403k"></script>
+    <script src="js/vendor/iso18013-security.min.js?v=20260403k"></script>
+    <script src="js/vendor/iso18013-session-provider.min.js?v=20260403k"></script>
+    <script src="js/vendor/iso18013-security-provider.min.js?v=20260403k"></script>
+    <script src="js/iso18013-bridge.js?v=20260403h"></script>
     <script src="js/ble-transport.js"></script>
-    <script src="js/session-establishment.js?v=20260403a"></script>
-    <script src="js/verification.js?v=20260403a"></script>
+    <script src="js/session-establishment.js?v=20260403f"></script>
+    <script src="js/verification.js?v=20260403h"></script>
     <!-- Feature modules used by visitor page -->
     <script src="js/device-engagement.js"></script>
-    <script src="js/wallet-response.js?v=20260403a"></script>
+    <script src="js/wallet-response.js?v=20260403h"></script>
     <script src="js/request-builder.js"></script>
 
     <script type="module">
@@ -575,7 +576,7 @@
       let CBORRef = self.CBOR || self.cbor;
       if (!CBORRef)
         throw new Error(
-          "CBOR library unavailable. Ensure js/cbor.min.js is loaded.",
+          "CBOR shim unavailable. Ensure iso18013-codec and js/vendor/cbor-shim.js are loaded.",
         );
       const CBOR = CBORRef;
       window.CBOR = CBOR;
@@ -739,16 +740,15 @@
         return { uuid: res.uuid, addr: res.addr };
       }
 
-      // ==== Session key + transcript via modules ====
-      // Use SessionCrypto and SessionEstablishment provided by shared modules
+      // ==== Session key + transcript via shared ISO libraries ====
 
       // ==== Messages ====
-      async function buildLegacySessionEstablishmentWithData() {
+      async function buildSessionEstablishmentWithData() {
         const {
           message,
           keys,
           transcriptAAD: aad,
-        } = await window.SessionEstablishment.buildLegacySessionEstablishmentWithData(
+        } = await window.SessionEstablishment.buildSessionEstablishmentWithData(
           {
             deBytes,
             readerKeyPair,
@@ -825,10 +825,10 @@
         transcriptAAD =
           await window.SessionEstablishment.buildTranscriptAAD(deBytes);
         // Build + send request
-        const legacyMessage = await buildLegacySessionEstablishmentWithData();
-        statusEl.textContent = `Sending request… (${legacyMessage.length} bytes)`;
+        const sessionMessageBytes = await buildSessionEstablishmentWithData();
+        statusEl.textContent = `Sending request… (${sessionMessageBytes.length} bytes)`;
         await window.BLE.sendFragmented(
-          legacyMessage,
+          sessionMessageBytes,
           parseInt(chunkInput.value, 10) || 185,
         );
         statusEl.textContent = "Request sent. Waiting for wallet…";
@@ -860,13 +860,14 @@
                 "data" in decoded ||
                 "status" in decoded;
           }
-          if (isSessionResponse) {
-            await processSessionResponse(assembled);
-          } else {
-            await decryptAndDisplayResponse(assembled);
+          if (!isSessionResponse) {
+            throw new Error(
+              "Unexpected encrypted payload outside the SessionData flow",
+            );
           }
+          await processSessionResponse(assembled);
         } catch (e) {
-          console.warn("CBOR decode failed, treating as binary", e);
+          console.warn("Failed to process BLE payload", e);
         }
       }
 
@@ -928,16 +929,9 @@
             );
           await handleDeviceResponseForVisitor(deviceResponse);
         } else {
-          // In alternate flow, wallet may send DeviceResponse directly as the first message
-          try {
-            const deviceResponse =
-              await window.WalletResponse.decryptCoseEncrypt0ToObject(
-                assembled,
-              );
-            await handleDeviceResponseForVisitor(deviceResponse);
-          } catch (e) {
-            console.warn("Fallback decrypt failed:", e);
-          }
+          throw new Error(
+            "SessionData.data is missing from the wallet response",
+          );
         }
       }
 

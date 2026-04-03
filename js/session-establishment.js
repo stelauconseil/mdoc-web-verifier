@@ -69,7 +69,10 @@
             }
         }
         const readerSession =
-            await session.Iso180135SessionEncryption.create({ namedCurve });
+            await session.Iso180135SessionEncryption.create({
+                namedCurve,
+                provider: bridge.getSessionCryptoProvider(),
+            });
         _activeReaderSession = readerSession;
         return readerSession;
     }
@@ -129,15 +132,14 @@
     }
 
     async function buildTranscriptAAD(deBytes, readerSession) {
+        const { bridge } = requireLibraries();
         const artifacts = await buildTranscriptArtifacts(deBytes, readerSession);
-        const digest = await crypto.subtle.digest(
-            "SHA-256",
-            artifacts.wrappedTranscriptBytes,
-        );
-        return new Uint8Array(digest);
+        return bridge
+            .getSessionCryptoProvider()
+            .sha256(artifacts.wrappedTranscriptBytes);
     }
 
-    async function buildLegacySessionEstablishmentWithData(opts) {
+    async function buildSessionEstablishmentWithData(opts) {
         const {
             deBytes,
             readerKeyPair,
@@ -186,11 +188,9 @@
 
         let transcriptAAD = null;
         try {
-            const digest = await crypto.subtle.digest(
-                "SHA-256",
-                wrappedTranscriptBytes,
-            );
-            transcriptAAD = new Uint8Array(digest);
+            transcriptAAD = await bridge
+                .getSessionCryptoProvider()
+                .sha256(wrappedTranscriptBytes);
         } catch {}
 
         return {
@@ -208,7 +208,7 @@
         buildReaderCoseKey,
         resetReaderCoseKeyCache,
         buildTranscriptAAD,
-        buildLegacySessionEstablishmentWithData,
+        buildSessionEstablishmentWithData,
         getActiveReaderSession,
         setActiveReaderSession,
     };

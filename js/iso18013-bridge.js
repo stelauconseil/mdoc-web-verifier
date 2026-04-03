@@ -1,4 +1,7 @@
 (function () {
+    let _sessionCryptoProvider = null;
+    let _securityCryptoProvider = null;
+
     function requireLibraries() {
         if (
             typeof window.Iso18013Codec === "undefined" ||
@@ -15,6 +18,40 @@
             session: window.Iso18013Session,
             security: window.Iso18013Security,
         };
+    }
+
+    function getSessionCryptoProvider() {
+        if (_sessionCryptoProvider) {
+            return _sessionCryptoProvider;
+        }
+        const providerModule = window.Iso18013SessionProvider;
+        if (
+            !providerModule ||
+            typeof providerModule.NobleCryptoProvider !== "function"
+        ) {
+            throw new Error(
+                "Iso18013SessionProvider browser bundle is not loaded. Expected window.Iso18013SessionProvider.NobleCryptoProvider.",
+            );
+        }
+        _sessionCryptoProvider = new providerModule.NobleCryptoProvider();
+        return _sessionCryptoProvider;
+    }
+
+    function getSecurityCryptoProvider() {
+        if (_securityCryptoProvider) {
+            return _securityCryptoProvider;
+        }
+        const providerModule = window.Iso18013SecurityProvider;
+        if (
+            !providerModule ||
+            typeof providerModule.NobleCryptoProvider !== "function"
+        ) {
+            throw new Error(
+                "Iso18013SecurityProvider browser bundle is not loaded. Expected window.Iso18013SecurityProvider.NobleCryptoProvider.",
+            );
+        }
+        _securityCryptoProvider = new providerModule.NobleCryptoProvider();
+        return _securityCryptoProvider;
     }
 
     function isPlainObject(value) {
@@ -273,7 +310,7 @@
         return codec.isSessionData(message);
     }
 
-    async function verifyPresentedDocument(input) {
+    function normalizeVerificationInputs(input) {
         const { codec, security } = requireLibraries();
         let normalizedDocument;
         try {
@@ -399,11 +436,24 @@
                 }`,
             );
         }
+
+        return {
+            codec,
+            security,
+            normalizedDocument,
+            normalizedSessionTranscript,
+        };
+    }
+
+    async function verifyPresentedDocument(input) {
+        const { security, normalizedDocument, normalizedSessionTranscript } =
+            normalizeVerificationInputs(input);
         try {
             return await security.verifyPresentedDocument({
                 ...input,
                 document: normalizedDocument,
                 sessionTranscript: normalizedSessionTranscript,
+                provider: getSecurityCryptoProvider(),
             });
         } catch (error) {
             throw new Error(
@@ -414,14 +464,39 @@
         }
     }
 
+    async function verifyPresentedDocumentDetailed(input) {
+        const { security, normalizedDocument, normalizedSessionTranscript } =
+            normalizeVerificationInputs(input);
+        try {
+            return await security.verifyPresentedDocumentDetailed({
+                ...input,
+                document: normalizedDocument,
+                sessionTranscript: normalizedSessionTranscript,
+                provider: getSecurityCryptoProvider(),
+            });
+        } catch (error) {
+            throw new Error(
+                `[Iso18013Bridge] security.verifyPresentedDocumentDetailed failed: ${
+                    error instanceof Error ? error.message : String(error)
+                }`,
+            );
+        }
+    }
+
     async function verifyCoseSign1(input) {
         const { security } = requireLibraries();
-        return security.verifyCoseSign1(input);
+        return security.verifyCoseSign1({
+            ...input,
+            provider: getSecurityCryptoProvider(),
+        });
     }
 
     async function verifySignedStatusObject(input) {
         const { security } = requireLibraries();
-        return security.verifySignedStatusObject(input);
+        return security.verifySignedStatusObject({
+            ...input,
+            provider: getSecurityCryptoProvider(),
+        });
     }
 
     window.Iso18013Bridge = {
@@ -439,7 +514,10 @@
         decodeSessionMessage,
         isSessionEstablishmentMessage,
         isSessionDataMessage,
+        getSessionCryptoProvider,
+        getSecurityCryptoProvider,
         verifyPresentedDocument,
+        verifyPresentedDocumentDetailed,
         verifyCoseSign1,
         verifySignedStatusObject,
     };

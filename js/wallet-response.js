@@ -89,53 +89,6 @@
         return null;
     }
 
-    // AES-GCM decrypt helper used by this module (pure, no DOM)
-    async function aesGcmDecrypt(ciphertext, keyBytes, iv, additionalData) {
-        if (
-            !keyBytes ||
-            !(keyBytes instanceof Uint8Array) ||
-            keyBytes.length === 0
-        ) {
-            throw new Error("Session key missing for AES-GCM decryption");
-        }
-        const key = await crypto.subtle.importKey(
-            "raw",
-            keyBytes,
-            { name: "AES-GCM", length: 256 },
-            false,
-            ["decrypt"],
-        );
-        const ivU8 = iv instanceof Uint8Array ? iv : new Uint8Array(iv);
-        let aadU8 = null;
-        if (additionalData instanceof Uint8Array) {
-            aadU8 = additionalData;
-        } else if (additionalData && typeof additionalData === "string") {
-            // Per spec, AAD is empty; if a string is passed, coerce to empty
-            aadU8 = new Uint8Array(0);
-        } else if (
-            additionalData &&
-            (ArrayBuffer.isView(additionalData) ||
-                additionalData instanceof ArrayBuffer)
-        ) {
-            aadU8 =
-                additionalData instanceof Uint8Array
-                    ? additionalData
-                    : new Uint8Array(additionalData.buffer || additionalData);
-        } else {
-            aadU8 = new Uint8Array(0);
-        }
-        const params = { name: "AES-GCM", iv: ivU8, tagLength: 128 };
-        if (aadU8 && aadU8.length) params.additionalData = aadU8;
-        const pt = await crypto.subtle.decrypt(
-            params,
-            key,
-            ciphertext instanceof Uint8Array
-                ? ciphertext
-                : new Uint8Array(ciphertext),
-        );
-        return new Uint8Array(pt);
-    }
-
     // JSON conversion helper used by response rendering and debug views
     function convertToJSON(obj) {
         if (obj === null || obj === undefined) return obj;
@@ -1769,36 +1722,6 @@
         return model;
     }
 
-    // Decrypt COSE_Encrypt0 → DeviceResponse object (no rendering)
-    async function decryptCoseEncrypt0ToObject(encryptedData) {
-        const CBOR = getCBOR();
-        const coseEnc0 = CBOR.decode(encryptedData);
-        if (!Array.isArray(coseEnc0) || coseEnc0.length !== 3)
-            throw new Error(
-                "Invalid COSE_Encrypt0 structure - expected 3-element array",
-            );
-        const [, unprotectedHeader, ciphertext] = coseEnc0;
-        // Read IV from unprotected header (header key 5)
-        const iv =
-            unprotectedHeader instanceof Map
-                ? unprotectedHeader.get(5)
-                : unprotectedHeader?.[5];
-        if (!iv) throw new Error("No IV found in unprotected header");
-        const plaintext = await aesGcmDecrypt(
-            new Uint8Array(ciphertext),
-            window.skDevice ? new Uint8Array(window.skDevice) : null,
-            new Uint8Array(iv),
-            "",
-        );
-        if (
-            window.Iso18013Bridge &&
-            typeof window.Iso18013Bridge.decodeDeviceResponse === "function"
-        ) {
-            return window.Iso18013Bridge.decodeDeviceResponse(plaintext);
-        }
-        return CBOR.decode(plaintext);
-    }
-
     // Decrypt SessionEstablishment.data (raw AES-GCM) → DeviceResponse object
     async function decryptSessionEstablishmentDataToObject(encryptedData) {
         const activeSession =
@@ -1821,41 +1744,18 @@
             }
             return getCBOR().decode(plaintext);
         }
-
-        const mdocIdentifier = new Uint8Array([0, 0, 0, 0, 0, 0, 0, 1]);
-        const counter = 1;
-        const iv = new Uint8Array(12);
-        iv.set(mdocIdentifier, 0);
-        new DataView(iv.buffer, 8, 4).setUint32(0, counter, false);
-        const plaintext = await aesGcmDecrypt(
-            encryptedData,
-            window.skDevice ? new Uint8Array(window.skDevice) : null,
-            iv,
-            new Uint8Array(0),
+        throw new Error(
+            "Shared iso18013-session reader state is required to decrypt SessionData",
         );
-        if (
-            window.Iso18013Bridge &&
-            typeof window.Iso18013Bridge.decodeDeviceResponse === "function"
-        ) {
-            return window.Iso18013Bridge.decodeDeviceResponse(plaintext);
-        }
-        return getCBOR().decode(plaintext);
     }
 
     // Public API (pure functions only)
     window.WalletResponse = {
-        aesGcmDecrypt,
-        decryptCoseEncrypt0ToObject,
         decryptSessionEstablishmentDataToObject,
         buildResponseViewModel,
         convertToJSON,
-        // Legacy aliases for backward compatibility (return objects; no DOM side-effects)
         decryptSessionEstablishmentData:
             decryptSessionEstablishmentDataToObject,
-        decryptAndDisplayResponse: async function (encryptedData) {
-            // Previously decrypted and displayed; now returns the decoded object
-            return await decryptCoseEncrypt0ToObject(encryptedData);
-        },
     };
 
     // All DOM/HTML helpers removed from this module

@@ -7,18 +7,14 @@
 */
 
 (function () {
-    // Resolve CBOR lazily at call time to avoid load-order races
-    function getCBOR() {
-        return window.CBOR || self.CBOR || self.cbor;
-    }
     function getCodec() {
         return window.Iso18013Codec || null;
     }
     const log = window.log || console.log;
 
     async function buildRequestByType(requestTypes) {
-        const CBOR = getCBOR();
-        if (!CBOR) throw new Error("CBOR library not available");
+        const codec = getCodec();
+        if (!codec) throw new Error("Iso18013Codec library not available");
         if (!requestTypes) {
             requestTypes = Array.from(
                 document.querySelectorAll('input[name="requestType"]:checked'),
@@ -29,7 +25,6 @@
 
         log("Building request for types: " + JSON.stringify(requestTypes));
 
-        const codec = getCodec();
         const deviceRequest = { version: "1.0", docRequests: [] };
         for (const requestType of requestTypes) {
             const docRequest = buildSingleDocRequest(requestType);
@@ -42,22 +37,12 @@
 
         // Optionally add Reader Authentication per spec (inside each DocRequest)
         try {
-            console.log("Checking Reader Authentication status...");
             const ra = window.ReaderAuth;
-            console.log("ReaderAuth object:", ra);
-            console.log(
-                "ReaderAuth.isEnabled():",
-                ra?.isEnabled ? ra.isEnabled() : undefined,
-            );
-            console.log(
-                "ReaderAuth.signReaderAuthentication:",
-                !!(ra && typeof ra.signReaderAuthentication === "function"),
-            );
             if (ra && ra.isEnabled && ra.isEnabled()) {
                 let addedCount = 0;
                 for (const dr of deviceRequest.docRequests) {
                     const itemsCbor =
-                        codec && dr?.itemsRequest?.encodeToCborValue
+                        dr?.itemsRequest?.encodeToCborValue
                             ? codec.encodeCbor(dr.itemsRequest.encodeToCborValue())
                             : dr && dr.itemsRequest && dr.itemsRequest.tag === 24
                               ? dr.itemsRequest.value
@@ -66,10 +51,7 @@
                         try {
                             const cose =
                                 await ra.signReaderAuthentication(itemsCbor);
-                            dr.readerAuth =
-                                codec && codec.ReaderAuth
-                                    ? codec.ReaderAuth.decodeFromCborValue(cose)
-                                    : cose; // Per ISO 18013-5: readerAuth is inside DocRequest
+                            dr.readerAuth = codec.ReaderAuth.decodeFromCborValue(cose);
                             addedCount++;
                         } catch (signErr) {
                             console.warn(
@@ -96,18 +78,15 @@
             );
         }
 
-        if (codec && codec.DeviceRequest) {
-            return new codec.DeviceRequest(
-                deviceRequest.version,
-                deviceRequest.docRequests,
-            ).encode();
-        }
-        return CBOR.encode(deviceRequest);
+        return new codec.DeviceRequest(
+            deviceRequest.version,
+            deviceRequest.docRequests,
+        ).encode();
     }
 
     function buildSingleDocRequest(requestType) {
-        const CBOR = getCBOR();
-        if (!CBOR) throw new Error("CBOR library not available");
+        const codec = getCodec();
+        if (!codec) throw new Error("Iso18013Codec library not available");
         let docType, namespace, fields;
         // Optional multi-namespace holders for specific doctypes
         let photoIdFields = null; // org.iso.23220.photoID.1
@@ -483,14 +462,13 @@
                 window.REQUEST_ORDERS_BY_DOCTYPE[docType] = orderSnapshot;
             } catch {}
         } catch (_) {}
-        const codec = getCodec();
-        if (codec && codec.DocRequest && codec.ItemsRequest) {
+        if (codec.DocRequest && codec.ItemsRequest) {
             return new codec.DocRequest(
                 new codec.ItemsRequest(docType, nameSpacesObj, undefined),
             );
         }
-        const itemsRequestCbor = CBOR.encode(itemsRequest);
-        const taggedItemsRequest = new CBOR.Tagged(24, itemsRequestCbor);
+        const itemsRequestCbor = codec.encodeCbor(itemsRequest);
+        const taggedItemsRequest = new codec.Tag(24, itemsRequestCbor);
         const docRequest = { itemsRequest: taggedItemsRequest };
         return docRequest;
     }

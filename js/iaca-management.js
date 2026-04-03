@@ -945,11 +945,17 @@
                     const validity = window.extractCertValidity
                         ? window.extractCertValidity(certInfo.bytes)
                         : {};
-                    const sha256Hash = await crypto.subtle.digest(
-                        "SHA-256",
-                        certInfo.bytes,
-                    );
-                    const hexThumbprint = Array.from(new Uint8Array(sha256Hash))
+                    const provider =
+                        window.Iso18013Bridge &&
+                        typeof window.Iso18013Bridge.getSecurityCryptoProvider ===
+                            "function"
+                            ? window.Iso18013Bridge.getSecurityCryptoProvider()
+                            : null;
+                    const thumbprintBytes =
+                        provider && typeof provider.sha256 === "function"
+                            ? await provider.sha256(certInfo.bytes)
+                            : new Uint8Array();
+                    const hexThumbprint = Array.from(thumbprintBytes)
                         .map((b) => b.toString(16).padStart(2, "0"))
                         .join(":")
                         .toUpperCase();

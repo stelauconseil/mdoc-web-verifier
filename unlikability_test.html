@@ -570,10 +570,15 @@
     </footer>
 
     <!-- Libs -->
-    <script src="js/jsQR.js"></script>
-    <script src="js/cbor.min.js"></script>
-    <script src="js/noble-curves.min.js"></script>
-    <script src="js/session-crypto.js"></script>
+    <script src="js/vendor/jsQR.js"></script>
+    <script src="js/vendor/noble-curves.min.js"></script>
+    <script src="js/vendor/iso18013-codec.min.js?v=20260403k"></script>
+    <script src="js/vendor/cbor-shim.js"></script>
+    <script src="js/vendor/iso18013-session.min.js?v=20260403k"></script>
+    <script src="js/vendor/iso18013-security.min.js?v=20260403k"></script>
+    <script src="js/vendor/iso18013-session-provider.min.js?v=20260403k"></script>
+    <script src="js/vendor/iso18013-security-provider.min.js?v=20260403k"></script>
+    <script src="js/iso18013-bridge.js"></script>
     <script src="js/ble-transport.js"></script>
     <script src="js/session-establishment.js"></script>
     <script src="js/verification.js"></script>
@@ -625,7 +630,7 @@
       let CBORRef = self.CBOR || self.cbor;
       if (!CBORRef)
         throw new Error(
-          "CBOR library unavailable. Ensure js/cbor.min.js is loaded.",
+          "CBOR shim unavailable. Ensure iso18013-codec and js/vendor/cbor-shim.js are loaded.",
         );
       const CBOR = CBORRef;
       window.CBOR = CBOR;
@@ -776,65 +781,37 @@
         return { uuid: res.uuid, addr: res.addr };
       }
 
-      // ==== Session key + transcript via modules ====
-      // Use SessionCrypto and SessionEstablishment provided by shared modules
+      // ==== Session key + transcript via shared ISO libraries ====
 
       // ==== Messages ====
-      async function buildLegacySessionEstablishmentWithData() {
-        // Build a DeviceRequest based on the selected request type:
-        // - PID : nationality
-        // - AV  : age_over_18
-        // - mDL : age_over_18
+      function mapRequestTypeForBuilder(selected) {
+        if (selected === "pid_nationality") return "pid_basic";
+        if (selected === "mdl_age18") return "mdl_age";
+        return "age_verify_18";
+      }
+
+      async function buildSessionEstablishmentWithData() {
         const buildSelectedRequest = async () => {
-          const deviceRequest = { version: "1.0", docRequests: [] };
-          const sel =
+          const selected =
             (requestTypeSelect && requestTypeSelect.value) || "av_age18";
-
-          let docType, namespace, fields;
-          if (sel === "pid_nationality") {
-            docType = "eu.europa.ec.eudi.pid.1";
-            namespace = "eu.europa.ec.eudi.pid.1";
-            fields = { nationality: false };
-          } else if (sel === "mdl_age18") {
-            docType = "org.iso.18013.5.1.mDL";
-            namespace = "org.iso.18013.5.1";
-            fields = { age_over_18: false };
-          } else {
-            // 'av_age18' default
-            docType = "eu.europa.ec.av.1";
-            namespace = "eu.europa.ec.av.1";
-            fields = { age_over_18: false };
-          }
-
-          const items = {
-            docType,
-            nameSpaces: { [namespace]: fields },
-            requestInfo: {},
-          };
-          const tagged = new CBOR.Tagged(24, CBOR.encode(items));
-          deviceRequest.docRequests.push({ itemsRequest: tagged });
-          return CBOR.encode(deviceRequest);
+          const requestType = mapRequestTypeForBuilder(selected);
+          return window.RequestBuilder.buildRequestByType([requestType]);
         };
 
         const {
           message,
           keys,
           transcriptAAD: aad,
-        } = await window.SessionEstablishment.buildLegacySessionEstablishmentWithData(
+        } = await window.SessionEstablishment.buildSessionEstablishmentWithData(
           {
             deBytes,
-            mdocPubKey,
             readerKeyPair,
-            transcriptAAD,
-            skReader,
             buildRequestByType: buildSelectedRequest,
-            log,
-            CBOR,
           },
         );
         if (keys) {
-          skReader = keys.readerKey;
-          skDevice = keys.deviceKey;
+          skReader = keys.skReader || null;
+          skDevice = keys.skDevice || null;
           window.skDevice = skDevice;
           sessionEstablished = true;
           window.sessionEstablished = true;
@@ -888,17 +865,17 @@
         await new Promise((r) => setTimeout(r, 300));
         // Ephemeral key + transcript
         readerKeyPair =
-          await window.SessionEstablishment.makeReaderEphemeralKeyPair();
+          await window.SessionEstablishment.makeReaderEphemeralKeyPair(deBytes);
         await window.SessionEstablishment.exportReaderPublicToCoseKey(
           readerKeyPair,
         );
         transcriptAAD =
           await window.SessionEstablishment.buildTranscriptAAD(deBytes);
         // Build + send request
-        const legacyMessage = await buildLegacySessionEstablishmentWithData();
-        statusEl.textContent = `Sending request… (${legacyMessage.length} bytes)`;
+        const sessionMessageBytes = await buildSessionEstablishmentWithData();
+        statusEl.textContent = `Sending request… (${sessionMessageBytes.length} bytes)`;
         await window.BLE.sendFragmented(
-          legacyMessage,
+          sessionMessageBytes,
           parseInt(chunkInput.value, 10) || 185,
         );
         statusEl.textContent = "Request sent. Waiting for wallet…";
@@ -907,7 +884,12 @@
       // ==== S->C assembly and processing ====
       async function processS2CAssembled(assembled, reason = "final-flag") {
         try {
-          const decoded = CBOR.decode(assembled);
+          let decoded = null;
+          try {
+            decoded = window.Iso18013Bridge.decodeSessionMessage(assembled);
+          } catch {
+            decoded = CBOR.decode(assembled);
+          }
           // Treat as session response until keys are ready
           let isSessionResponse = !skReader || !skDevice;
           if (!isSessionResponse) {
@@ -923,78 +905,18 @@
                 "data" in decoded ||
                 "status" in decoded;
           }
-          if (isSessionResponse) {
-            await processSessionResponse(assembled);
-          } else {
-            await decryptAndDisplayResponse(assembled);
+          if (!isSessionResponse) {
+            throw new Error(
+              "Unexpected encrypted payload outside the SessionData flow",
+            );
           }
+          await processSessionResponse(assembled);
         } catch (e) {
-          console.warn("CBOR decode failed, treating as binary", e);
+          console.warn("Failed to process BLE payload", e);
         }
       }
 
       // BLE notifications assembly is handled in BLE transport module
-
-      // Bridges to WalletResponse helpers
-      // Avoid calling WalletResponse decryptors directly here because they render UI elements
-      // that don't exist on this page. We'll do local decrypt-to-object and then call the
-      // overridden display function.
-
-      async function decryptSessionEstablishmentDataLocal(encryptedData) {
-        // IV: mdoc identifier (8 bytes) || counter (4 bytes, big-endian 1)
-        const mdocIdentifier = new Uint8Array([0, 0, 0, 0, 0, 0, 0, 1]);
-        const iv = new Uint8Array(12);
-        iv.set(mdocIdentifier, 0);
-        new DataView(iv.buffer, 8, 4).setUint32(0, 1, false);
-        if (!window.skDevice) throw new Error("SKDevice key not set");
-        const key = await crypto.subtle.importKey(
-          "raw",
-          new Uint8Array(window.skDevice),
-          { name: "AES-GCM", length: 256 },
-          false,
-          ["decrypt"],
-        );
-        const plaintext = await crypto.subtle.decrypt(
-          {
-            name: "AES-GCM",
-            iv,
-            additionalData: new Uint8Array(0),
-            tagLength: 128,
-          },
-          key,
-          encryptedData,
-        );
-        return CBOR.decode(new Uint8Array(plaintext));
-      }
-
-      async function decryptCoseEncrypt0ToObjectLocal(encryptedCose) {
-        const cose = CBOR.decode(encryptedCose);
-        if (!Array.isArray(cose) || cose.length !== 3)
-          throw new Error("Invalid COSE_Encrypt0");
-        const [_prot, unprot, ciphertext] = cose;
-        const iv =
-          unprot instanceof Map ? unprot.get(5) : unprot ? unprot[5] : null;
-        if (!iv) throw new Error("No IV in COSE unprotected header");
-        if (!window.skDevice) throw new Error("SKDevice key not set");
-        const key = await crypto.subtle.importKey(
-          "raw",
-          new Uint8Array(window.skDevice),
-          { name: "AES-GCM", length: 256 },
-          false,
-          ["decrypt"],
-        );
-        const plaintext = await crypto.subtle.decrypt(
-          {
-            name: "AES-GCM",
-            iv: new Uint8Array(iv),
-            additionalData: new Uint8Array(0),
-            tagLength: 128,
-          },
-          key,
-          new Uint8Array(ciphertext),
-        );
-        return CBOR.decode(new Uint8Array(plaintext));
-      }
 
       // ==== Session finalization (from index) simplified ====
       async function processSessionResponse(assembled) {
@@ -1015,26 +937,18 @@
           return null;
         };
         const decodedMap = toMap(decoded);
-        // Derive keys using DeviceEngagement key
-        const mdocPub = await window.SessionCrypto.importMdocPubKeyXY(
-          mdocPubKey.x,
-          mdocPubKey.y,
-        );
-        const sharedSecretBuffer =
-          await window.SessionCrypto.deriveSharedSecretBits(
-            readerKeyPair.privateKey,
-            mdocPub,
-          );
-        transcriptAAD =
-          await window.SessionEstablishment.buildTranscriptAAD(deBytes);
-        const keys = await window.SessionCrypto.deriveSessionKey(
-          new Uint8Array(sharedSecretBuffer),
-          transcriptAAD,
-        );
-        skReader = keys.readerKey;
-        skDevice = keys.deviceKey;
-        window.skDevice = skDevice;
-        sessionEstablished = true;
+        const activeSession =
+          window.SessionEstablishment &&
+          typeof window.SessionEstablishment.getActiveReaderSession ===
+            "function"
+            ? window.SessionEstablishment.getActiveReaderSession()
+            : null;
+        if (
+          !activeSession ||
+          typeof activeSession.decryptFromDevice !== "function"
+        ) {
+          throw new Error("Shared reader session is not available");
+        }
         // Decrypt raw data if present
         const responseData = decodedMap
           ? decodedMap.get("data") || decodedMap.get(4)
@@ -1053,18 +967,17 @@
         };
         const dataBytes = toBytes(responseData);
         if (dataBytes && dataBytes.length > 0) {
+          const plaintext = await activeSession.decryptFromDevice(dataBytes);
           const deviceResponse =
-            await decryptSessionEstablishmentDataLocal(dataBytes);
+            window.Iso18013Bridge &&
+            typeof window.Iso18013Bridge.decodeDeviceResponse === "function"
+              ? window.Iso18013Bridge.decodeDeviceResponse(plaintext)
+              : CBOR.decode(plaintext);
           await handleDeviceResponseForUnlinkability(deviceResponse);
         } else {
-          // In alternate flow, wallet may send DeviceResponse directly as the first message
-          try {
-            const deviceResponse =
-              await decryptCoseEncrypt0ToObjectLocal(assembled);
-            await handleDeviceResponseForUnlinkability(deviceResponse);
-          } catch (e) {
-            console.warn("Fallback decrypt failed:", e);
-          }
+          throw new Error(
+            "SessionData.data is missing from the wallet response",
+          );
         }
       }
 
