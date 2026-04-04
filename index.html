@@ -1296,29 +1296,6 @@
                 <div id="responseDisplay"></div>
             </section>
 
-            <section class="card" id="offlineParserSection">
-                <h2>4. Offline DeviceResponse Parser</h2>
-                <p class="muted">
-                    Paste base64url(CBOR DeviceResponse) to inspect parsed keys and render the same response view offline.
-                </p>
-                <textarea
-                    id="offlineDeviceResponseInput"
-                    placeholder="Paste base64url(CBOR DeviceResponse)"
-                ></textarea>
-                <div class="row" style="margin-top: 0.5rem">
-                    <button id="btnParseDeviceResponse" class="secondary">
-                        Parse DeviceResponse
-                    </button>
-                    <button id="btnClearDeviceResponse">Clear</button>
-                </div>
-                <p id="offlineDeviceResponseStatus" class="muted" style="margin-top: 0.5rem">
-                    Idle
-                </p>
-                <p class="muted" style="margin-top: 0.25rem">
-                    Parsed keys: <span id="offlineDeviceResponseKeys">—</span>
-                </p>
-            </section>
-
             <section class="card" id="logsSection">
                 <div
                     style="
@@ -2020,21 +1997,6 @@
                 document.getElementById("responseDisplay");
             const responseSectionEl =
                 document.getElementById("responseSection");
-            const offlineDeviceResponseInput = document.getElementById(
-                "offlineDeviceResponseInput",
-            );
-            const btnParseDeviceResponse = document.getElementById(
-                "btnParseDeviceResponse",
-            );
-            const btnClearDeviceResponse = document.getElementById(
-                "btnClearDeviceResponse",
-            );
-            const offlineDeviceResponseStatus = document.getElementById(
-                "offlineDeviceResponseStatus",
-            );
-            const offlineDeviceResponseKeys = document.getElementById(
-                "offlineDeviceResponseKeys",
-            );
             const statusEl = document.getElementById("qrStatus");
             const mdocUriEl = document.getElementById("mdocUri");
             const svcUuidEl = document.getElementById("svcUuid");
@@ -7042,68 +7004,6 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                     handleQrPayload(qrInput.value, "manual input");
                 }
             });
-
-            const parseOfflineDeviceResponse = () => {
-                try {
-                    const raw = offlineDeviceResponseInput?.value?.trim() || "";
-                    if (!raw) {
-                        if (offlineDeviceResponseStatus)
-                            offlineDeviceResponseStatus.textContent =
-                                "Please paste base64url(CBOR DeviceResponse).";
-                        if (offlineDeviceResponseKeys)
-                            offlineDeviceResponseKeys.textContent = "—";
-                        return;
-                    }
-                    const bytes = b64uToU8(raw);
-                    if (!bytes || !bytes.length) {
-                        throw new Error("Invalid base64url input");
-                    }
-                    const decoded = CBOR.decode(bytes);
-                    const topKeys =
-                        decoded instanceof Map
-                            ? Array.from(decoded.keys()).map((k) => String(k))
-                            : decoded && typeof decoded === "object"
-                              ? Object.keys(decoded)
-                              : [];
-
-                    if (offlineDeviceResponseKeys) {
-                        offlineDeviceResponseKeys.textContent = topKeys.length
-                            ? topKeys.join(", ")
-                            : "(no top-level object keys)";
-                    }
-
-                    const model = buildResponseViewModel(decoded);
-                    renderResponseViewModel(model);
-
-                    if (offlineDeviceResponseStatus) {
-                        offlineDeviceResponseStatus.textContent =
-                            "Parsed successfully.";
-                    }
-                } catch (e) {
-                    if (offlineDeviceResponseStatus) {
-                        offlineDeviceResponseStatus.textContent = `Parse failed: ${e?.message || e}`;
-                    }
-                    if (offlineDeviceResponseKeys)
-                        offlineDeviceResponseKeys.textContent = "—";
-                }
-            };
-
-            if (btnParseDeviceResponse) {
-                btnParseDeviceResponse.addEventListener(
-                    "click",
-                    parseOfflineDeviceResponse,
-                );
-            }
-            if (btnClearDeviceResponse) {
-                btnClearDeviceResponse.addEventListener("click", () => {
-                    if (offlineDeviceResponseInput)
-                        offlineDeviceResponseInput.value = "";
-                    if (offlineDeviceResponseStatus)
-                        offlineDeviceResponseStatus.textContent = "Idle";
-                    if (offlineDeviceResponseKeys)
-                        offlineDeviceResponseKeys.textContent = "—";
-                });
-            }
 
             // ==== IACA Management Event Listeners ====
             btnAddIaca.addEventListener("click", () => {
