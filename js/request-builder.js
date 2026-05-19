@@ -273,7 +273,7 @@
         if (!CBOR) throw new Error("CBOR library not available");
         let docType, namespace, fields;
         // Optional multi-namespace holders for specific doctypes
-        let photoIdFields = null; // org.iso.23220.photoID.1
+        let photoIdFields = null; // org.iso.23220.photoid.1
         let photoIdDGFields = null; // org.iso.23220.datagroups.1
         let micovAttestationFields = null;
         let frHscIsoFields = null;
@@ -286,9 +286,13 @@
             docType = "eu.europa.ec.av.1";
             namespace = "eu.europa.ec.av.1";
         } else if (requestType.startsWith("photoid_")) {
-            docType = "org.iso.23220.photoID.1";
+            docType =
+                requestType === "photoid_basic_upper" ||
+                requestType === "photoid_full_upper"
+                    ? "org.iso.23220.photoID.1"
+                    : "org.iso.23220.photoid.1";
             // This document type uses multiple namespaces; 'namespace' is unused in multi-namespace branch
-            namespace = "org.iso.23220.photoID.1";
+            namespace = docType;
             log(
                 "📸 Building Photo ID request - docType: " +
                     docType +
@@ -362,28 +366,40 @@
                 break;
             case "mdl_full":
                 fields = {
+                    // Mandatory
                     family_name: false,
                     given_name: false,
                     birth_date: false,
-                    age_over_18: false,
-                    age_over_21: false,
                     issue_date: false,
                     expiry_date: false,
                     issuing_country: false,
                     issuing_authority: false,
                     document_number: false,
+                    portrait: false,
                     driving_privileges: false,
+                    un_distinguishing_sign: false,
+                    // Optional
+                    administrative_number: false,
+                    sex: false,
                     height: false,
                     weight: false,
                     eye_colour: false,
                     hair_colour: false,
-                    sex: false,
+                    birth_place: false,
                     resident_address: false,
+                    portrait_capture_date: false,
+                    age_in_years: false,
+                    age_birth_year: false,
+                    age_over_18: false,
+                    age_over_21: false,
+                    issuing_jurisdiction: false,
+                    nationality: false,
                     resident_city: false,
                     resident_state: false,
                     resident_postal_code: false,
                     resident_country: false,
-                    portrait: false,
+                    family_name_national_character: false,
+                    given_name_national_character: false,
                     signature_usual_mark: false,
                 };
                 break;
@@ -467,25 +483,54 @@
                     expiry_date: false,
                 };
                 break;
+            case "photoid_basic":
+            case "photoid_basic_upper":
+                // org.iso.23220.1 (mapped from requested legacy aliases)
+                fields = {
+                    family_name: false,
+                    given_name: false,
+                    birth_date: false,
+                    portrait: false,
+                    issue_date: false,
+                    expiry_date: false,
+                    issuing_authority: false,
+                    issuing_country: false,
+                    age_over_18: false,
+                    age_in_years: false,
+                    age_over_21: false,
+                    age_birth_year: false,
+                    name_at_birth: false,
+                    given_name_latin1: false,
+                    family_name_latin1: false,
+                };
+                // org.iso.23220.photoid.1
+                photoIdFields = {
+                    travel_document_type: false,
+                    travel_document_number: false,
+                    travel_document_mrz: false,
+                };
+                // org.iso.23220.datagroups.1
+                photoIdDGFields = {
+                    dg1: false,
+                    dg2: false,
+                    sod: false,
+                };
+                break;
             case "photoid_full":
+            case "photoid_full_upper":
                 // org.iso.23220.1
                 fields = {
                     family_name: false,
-                    family_name_unicode: false,
                     family_name_latin1: false,
                     given_name: false,
-                    given_name_unicode: false,
                     given_name_latin1: false,
                     birth_date: false,
                     portrait: false,
                     issue_date: false,
-                    issuance_date: false,
                     expiry_date: false,
                     issuing_authority: false,
-                    issuing_authority_unicode: false,
                     issuing_country: false,
                     age_over_18: false,
-                    age_over_21: false,
                     age_in_years: false,
                     age_birth_year: false,
                     portrait_capture_date: false,
@@ -499,7 +544,7 @@
                     nationality: false,
                     document_number: false,
                 };
-                // org.iso.23220.photoID.1
+                // org.iso.23220.photoid.1
                 photoIdFields = {
                     person_id: false,
                     birth_country: false,
@@ -508,15 +553,18 @@
                     administrative_number: false,
                     resident_street: false,
                     resident_house_number: false,
+                    resident_state: false,
+                    travel_document_type: false,
                     travel_document_number: false,
+                    travel_document_mrz: false,
+                    family_name_viz: false,
+                    given_name_viz: false,
+                    enrolment_portrait_image: false,
                 };
                 //org.iso.23220.datagroups.1
                 photoIdDGFields = {
                     dg1: false,
                     dg2: false,
-                    dg11: false,
-                    dg12: false,
-                    dg13: false,
                     sod: false,
                 };
                 break;
@@ -604,7 +652,7 @@
             // Build multi-namespace request for ISO 23220 Photo ID (three namespaces)
             nameSpacesObj = {
                 "org.iso.23220.1": fields || {},
-                "org.iso.23220.photoID.1": photoIdFields || {},
+                "org.iso.23220.photoid.1": photoIdFields || {},
                 "org.iso.23220.datagroups.1": photoIdDGFields || {},
             };
         } else if (requestType.startsWith("fr_hsc_")) {
