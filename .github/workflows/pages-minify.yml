@@ -2,7 +2,7 @@ name: Build & Deploy (minify + obfuscate)
 
 on:
   push:
-    branches: ["main"]
+    branches: ["sd-jwt"]
   workflow_dispatch:
 
 permissions:
