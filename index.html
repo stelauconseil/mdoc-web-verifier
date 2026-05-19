@@ -1143,6 +1143,30 @@
                         />
                         Photo ID Full
                     </label>
+                    <span class="muted" style="font-size: 0.78rem; margin-left: 0.25rem; display: inline-flex; align-items: center"
+                        >Default doctype: org.iso.23220.photoid.1</span
+                    >
+                </div>
+                <div class="radio-group request-type" style="margin-top: 0.5rem">
+                    <label class="radio-chip small">
+                        <input
+                            type="checkbox"
+                            name="requestType"
+                            value="photoid_basic_upper"
+                        />
+                        Photo ID Basic
+                    </label>
+                    <label class="radio-chip small">
+                        <input
+                            type="checkbox"
+                            name="requestType"
+                            value="photoid_full_upper"
+                        />
+                        Photo ID Full
+                    </label>
+                    <span class="muted" style="font-size: 0.78rem; margin-left: 0.25rem; display: inline-flex; align-items: center"
+                        >Alternate doctype: org.iso.23220.photoID.1</span
+                    >
                 </div>
 
                 <div style="margin: 1.25rem 0 10px 0">
@@ -6905,6 +6929,14 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                             case "photoid_basic":
                                 description =
                                     "ISO 23220 Photo ID Basic: name, birth_date, portrait, issue/expiry, age claims, travel document + datagroups";
+                                break;
+                            case "photoid_basic_upper":
+                                description =
+                                    "ISO 23220 Photo ID Basic variant with docType org.iso.23220.photoID.1";
+                                break;
+                            case "photoid_full_upper":
+                                description =
+                                    "ISO 23220 Photo ID Full variant with docType org.iso.23220.photoID.1";
                                 break;
                             case "micov_full":
                                 description =

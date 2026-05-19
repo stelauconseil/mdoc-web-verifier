@@ -105,9 +105,13 @@
             docType = "eu.europa.ec.av.1";
             namespace = "eu.europa.ec.av.1";
         } else if (requestType.startsWith("photoid_")) {
-            docType = "org.iso.23220.photoid.1";
+            docType =
+                requestType === "photoid_basic_upper" ||
+                requestType === "photoid_full_upper"
+                    ? "org.iso.23220.photoID.1"
+                    : "org.iso.23220.photoid.1";
             // This document type uses multiple namespaces; 'namespace' is unused in multi-namespace branch
-            namespace = "org.iso.23220.photoid.1";
+            namespace = docType;
             log(
                 "📸 Building Photo ID request - docType: " +
                     docType +
@@ -299,6 +303,7 @@
                 };
                 break;
             case "photoid_basic":
+            case "photoid_basic_upper":
                 // org.iso.23220.1 (mapped from requested legacy aliases)
                 fields = {
                     family_name: false,
@@ -331,6 +336,7 @@
                 };
                 break;
             case "photoid_full":
+            case "photoid_full_upper":
                 // org.iso.23220.1
                 fields = {
                     family_name: false,
