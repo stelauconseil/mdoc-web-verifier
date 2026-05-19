@@ -298,6 +298,38 @@
                     expiry_date: false,
                 };
                 break;
+            case "photoid_basic":
+                // org.iso.23220.1 (mapped from requested legacy aliases)
+                fields = {
+                    family_name: false,
+                    given_name: false,
+                    birth_date: false,
+                    portrait: false,
+                    issue_date: false,
+                    expiry_date: false,
+                    issuing_authority: false,
+                    issuing_country: false,
+                    age_over_18: false,
+                    age_in_years: false,
+                    age_over_21: false,
+                    age_birth_year: false,
+                    name_at_birth: false,
+                    given_name_latin1: false,
+                    family_name_latin1: false,
+                };
+                // org.iso.23220.photoid.1
+                photoIdFields = {
+                    travel_document_type: false,
+                    travel_document_number: false,
+                    travel_document_mrz: false,
+                };
+                // org.iso.23220.datagroups.1
+                photoIdDGFields = {
+                    dg1: false,
+                    dg2: false,
+                    sod: false,
+                };
+                break;
             case "photoid_full":
                 // org.iso.23220.1
                 fields = {

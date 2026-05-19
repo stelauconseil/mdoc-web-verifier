@@ -1131,6 +1131,14 @@
                         <input
                             type="checkbox"
                             name="requestType"
+                            value="photoid_basic"
+                        />
+                        Photo ID Basic
+                    </label>
+                    <label class="radio-chip small">
+                        <input
+                            type="checkbox"
+                            name="requestType"
                             value="photoid_full"
                         />
                         Photo ID Full
@@ -6893,6 +6901,10 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                             case "photoid_full":
                                 description =
                                     "ISO 23220 Photo ID: name, birth_date, portrait, nationality, physical characteristics, address";
+                                break;
+                            case "photoid_basic":
+                                description =
+                                    "ISO 23220 Photo ID Basic: name, birth_date, portrait, issue/expiry, age claims, travel document + datagroups";
                                 break;
                             case "micov_full":
                                 description =
