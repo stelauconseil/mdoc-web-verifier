@@ -581,7 +581,6 @@
                 font-weight: 500;
                 letter-spacing: 0.03em;
                 margin-bottom: 0.75rem;
-                text-transform: uppercase;
             }
 
             .namespace-section {
@@ -2889,6 +2888,76 @@
                                             : `Item ${idx + 1}`;
                                     const kind = entry?.valueKind;
                                     let valueHtml = "";
+
+                                    // Special handling for travel_document_type: append ICAO definition to value
+                                    if (
+                                        label === "travel_document_type" ||
+                                        label === "Travel Document Type" ||
+                                        fmtLabel(label).toLowerCase().includes("travel document type")
+                                    ) {
+                                        let code = "";
+                                        // Try to extract the code from entry.text, entry.value, or entry.elementValue
+                                        if (entry && typeof entry === "object") {
+                                            code = entry.text ?? entry.value ?? entry.elementValue ?? "";
+                                        } else {
+                                            code = entry;
+                                        }
+                                        // Remove '<' and whitespace for ICAO code normalization
+                                        code = String(code).replace(/<+/g, "").trim();
+                                        const def = getTravelDocumentTypeDefinition(code);
+                                        html += `
+              <div class="data-item">
+                <div class="data-label">${esc(fmtLabel(label))}</div>
+                <div class="data-value">${esc(String(code))}${esc(def)}</div>
+              </div>
+            `;
+                                        return;
+                                    }
+
+                                    // Special handling for Travel Document Mrz: use same two-line format as DG1/MRZ
+                                    if (
+                                        label === "travel_document_mrz" ||
+                                        label === "Travel Document Mrz" ||
+                                        fmtLabel(label).toLowerCase().includes("travel document mrz")
+                                    ) {
+                                        // Get MRZ string content
+                                        let mrzString = "";
+                                        if (entry && typeof entry === "object") {
+                                            mrzString = entry.text ?? entry.value ?? entry.elementValue ?? "";
+                                        } else {
+                                            mrzString = String(entry);
+                                        }
+                                        mrzString = String(mrzString).trim();
+                                        
+                                        // Split single-line string into two lines: TD3 is 88 chars (44 + 44), TD2 is 72 chars (36 + 36)
+                                        let mrzLine1 = "";
+                                        let mrzLine2 = "";
+                                        const len = mrzString.length;
+                                        if (len > 0) {
+                                            const midpoint = Math.ceil(len / 2);
+                                            mrzLine1 = mrzString.substring(0, midpoint);
+                                            mrzLine2 = mrzString.substring(midpoint);
+                                        }
+                                        
+                                        let mrzHtml = `<div class="data-value mrz-display">`;
+                                        
+                                        // Raw MRZ lines in monospace (displayed as two lines)
+                                        if (mrzString.length > 0) {
+                                            mrzHtml += `<div style="font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.9rem; background: #f8fafc; padding: 0.5rem; border-radius: 4px; line-height: 1.2; border: 1px solid rgba(148,163,184,0.25);">`;
+                                            if (mrzLine1) mrzHtml += `${esc(mrzLine1)}<br>`;
+                                            if (mrzLine2) mrzHtml += `${esc(mrzLine2)}`;
+                                            mrzHtml += `</div>`;
+                                        }
+                                        
+                                        mrzHtml += `</div>`;
+                                        html += `
+              <div class="data-item">
+                <div class="data-label">${esc(fmtLabel(label))}</div>
+                ${mrzHtml}
+              </div>
+            `;
+                                        return;
+                                    }
 
                                     if (kind === "date") {
                                         valueHtml = `<div class="data-value">📅 ${esc(entry.text ?? "")}</div>`;
@@ -6410,9 +6479,49 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
 
             // Helper: Format field names to be more readable
             function formatFieldName(fieldName) {
+                if (fieldName === "travel_document_type") {
+                    return "Travel Document Type";
+                }
                 return fieldName
                     .replace(/_/g, " ")
                     .replace(/\b\w/g, (c) => c.toUpperCase());
+            }
+
+            // ICAO Doc 9303 travel document type code mapping
+            function getTravelDocumentTypeDefinition(code) {
+                // ICAO Doc 9303: two-letter codes for MRPs (Machine Readable Passports)
+                const mrpSecondary = {
+                    "P": "National/ordinary passport",
+                    "E": "Emergency passport",
+                    "D": "Diplomatic passport",
+                    "O": "Official/service passport",
+                    "R": "Refugee passport",
+                    "T": "Alien/Non-citizen passport",
+                    "S": "Stateless passport",
+                    "L": "Laissez-passer passport",
+                    "M": "Military passport",
+                };
+                const map = {
+                    "P": "Passport",
+                    "ID": "Identity Card",
+                    "AC": "Crew Member Certificate",
+                    "V": "Visa",
+                    "D": "Diplomatic Passport",
+                    "S": "Service Passport",
+                    "T": "Travel Document (other)",
+                    "C": "Seafarer's Identity Document",
+                    "A": "Alien's Passport",
+                    "F": "Refugee Travel Document",
+                    "L": "Stateless Person's Document",
+                    // Add more as needed
+                };
+                if (!code) return "";
+                const c = String(code).toUpperCase();
+                // Handle two-letter MRP codes (e.g., PD, PP, PE, etc.)
+                if (c.length === 2 && c[0] === "P" && mrpSecondary[c[1]]) {
+                    return ` (${mrpSecondary[c[1]]})`;
+                }
+                return map[c] ? ` (${map[c]})` : "";
             }
 
             async function processSessionResponse(assembled) {
