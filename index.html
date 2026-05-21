@@ -2482,6 +2482,52 @@
             const buildResponseViewModel = (...args) =>
                 window.WalletResponse.buildResponseViewModel(...args);
 
+            // Single CORS proxy configuration used across the app.
+            const CORS_PROXY_CONFIG = {
+                host: "allorigins.win",
+                baseUrl: "https://api.allorigins.win/raw?url=",
+                timeoutMs: 90000,
+            };
+
+            const withCorsProxy = (targetUrl, warnPrefix = null) => {
+                try {
+                    if (!targetUrl || typeof targetUrl !== "string")
+                        return targetUrl;
+                    const parsed = new URL(targetUrl, location.href);
+                    if (parsed.origin === location.origin) return targetUrl;
+                    if (parsed.hostname === CORS_PROXY_CONFIG.host)
+                        return targetUrl;
+                    const proxied = `${CORS_PROXY_CONFIG.baseUrl}${encodeURIComponent(parsed.href)}`;
+                    if (warnPrefix) console.warn(warnPrefix, proxied);
+                    return proxied;
+                } catch {
+                    return targetUrl;
+                }
+            };
+
+            const fetchWithCorsTimeout = async (url, options = {}) => {
+                const controller = new AbortController();
+                const timer = setTimeout(
+                    () => controller.abort(),
+                    CORS_PROXY_CONFIG.timeoutMs,
+                );
+                try {
+                    return await fetch(url, {
+                        ...options,
+                        signal: controller.signal,
+                    });
+                } catch (e) {
+                    if (e?.name === "AbortError") {
+                        throw new Error(
+                            `CORS request timed out after ${CORS_PROXY_CONFIG.timeoutMs}ms`,
+                        );
+                    }
+                    throw e;
+                } finally {
+                    clearTimeout(timer);
+                }
+            };
+
             // New: Render the wallet response view-model into the page
             function renderResponseViewModel(model) {
                 try {
@@ -4224,46 +4270,6 @@
                                                 } catch {}
                                             } catch {}
 
-                                            // CORS helper: proxy cross-origin URLs to avoid browser CORS blocks (GET only)
-                                            const maybeProxy = (u) => {
-                                                try {
-                                                    if (
-                                                        !u ||
-                                                        typeof u !== "string"
-                                                    )
-                                                        return u;
-                                                    const parsed = new URL(
-                                                        u,
-                                                        location.href,
-                                                    );
-                                                    // Same-origin: no proxy
-                                                    if (
-                                                        parsed.origin ===
-                                                        location.origin
-                                                    )
-                                                        return u;
-                                                    // Already proxied via isomorphic-git proxy
-                                                    if (
-                                                        parsed.hostname ===
-                                                        "cors-anywhere.com"
-                                                    )
-                                                        return u;
-                                                    // Use a simple, binary-safe CORS proxy for GETs
-                                                    const proxied = `https://cors-anywhere.com/${parsed.href}`;
-                                                    console.warn(
-                                                        "[StatusCheck] Using CORS proxy for status fetch:",
-                                                        proxied,
-                                                    );
-                                                    try {
-                                                        log(
-                                                            "Status: using CORS proxy",
-                                                        );
-                                                    } catch {}
-                                                    return proxied;
-                                                } catch {
-                                                    return u;
-                                                }
-                                            };
                                             const cloneStatusInfoWithProxy = (
                                                 si,
                                             ) => {
@@ -4288,7 +4294,17 @@
                                                     get(si, "url") ||
                                                     get(si, "u");
                                                 if (typeof sUri === "string") {
-                                                    const p = maybeProxy(sUri);
+                                                    const p = withCorsProxy(
+                                                        sUri,
+                                                        "[StatusCheck] Using CORS proxy for status fetch:",
+                                                    );
+                                                    if (p !== sUri) {
+                                                        try {
+                                                            log(
+                                                                "Status: using CORS proxy",
+                                                            );
+                                                        } catch {}
+                                                    }
                                                     // Set on common keys to maximize compatibility downstream
                                                     set(out, "uri", p);
                                                     set(out, "url", p);
@@ -4301,7 +4317,10 @@
                                                         (x) =>
                                                             typeof x ===
                                                             "string"
-                                                                ? maybeProxy(x)
+                                                                ? withCorsProxy(
+                                                                      x,
+                                                                      "[StatusCheck] Using CORS proxy for status fetch:",
+                                                                  )
                                                                 : x,
                                                     );
                                                     set(out, "pages", mapped);
@@ -4918,24 +4937,10 @@
 
                         const ACCEPT_STATUS =
                             'application/statuslist+cwt, application/identifierlist+cwt, application/cose; cose-type="cose-sign1", application/cbor, application/json, application/pkix-crl, application/octet-stream, text/plain';
-                        // Apply CORS proxy for cross-origin requests
-                        const proxyUri = (() => {
-                            try {
-                                const parsed = new URL(uri, location.href);
-                                if (parsed.origin === location.origin)
-                                    return uri;
-                                if (parsed.hostname === "cors-anywhere.com")
-                                    return uri;
-                                const proxied = `https://cors-anywhere.com/${parsed.href}`;
-                                console.warn(
-                                    "[StatusCheck] Using CORS proxy:",
-                                    proxied,
-                                );
-                                return proxied;
-                            } catch {
-                                return uri;
-                            }
-                        })();
+                        const proxyUri = withCorsProxy(
+                            uri,
+                            "[StatusCheck] Using CORS proxy:",
+                        );
                         try {
                             console.log("[StatusCheck] Start", {
                                 uri: proxyUri,
@@ -4949,7 +4954,7 @@
                                 `Status: checking ${uri}${typeof idx === "number" ? " @ idx " + idx : ""}`,
                             );
                         } catch {}
-                        const res = await fetch(proxyUri, {
+                        const res = await fetchWithCorsTimeout(proxyUri, {
                             headers: { Accept: ACCEPT_STATUS },
                         });
                         try {
@@ -5369,38 +5374,18 @@
                                             `Status: fetching page ${pageIndex} (${pageSize})`,
                                         );
                                     } catch {}
-                                    // Apply CORS proxy to paged fetch
-                                    const proxyPageUri = (() => {
-                                        try {
-                                            const parsed = new URL(
-                                                pageUri,
-                                                location.href,
-                                            );
-                                            if (
-                                                parsed.origin ===
-                                                location.origin
-                                            )
-                                                return pageUri;
-                                            if (
-                                                parsed.hostname ===
-                                                "cors-anywhere.com"
-                                            )
-                                                return pageUri;
-                                            const proxied = `https://cors-anywhere.com/${parsed.href}`;
-                                            console.warn(
-                                                "[StatusCheck] Using CORS proxy for paged fetch:",
-                                                proxied,
-                                            );
-                                            return proxied;
-                                        } catch {
-                                            return pageUri;
-                                        }
-                                    })();
+                                    const proxyPageUri = withCorsProxy(
+                                        pageUri,
+                                        "[StatusCheck] Using CORS proxy for paged fetch:",
+                                    );
                                     let pageIndexUsed = pageIndex;
                                     let pageUriUsed = proxyPageUri;
-                                    let res2 = await fetch(pageUriUsed, {
+                                    let res2 = await fetchWithCorsTimeout(
+                                        pageUriUsed,
+                                        {
                                         headers: { Accept: ACCEPT_STATUS },
-                                    });
+                                        },
+                                    );
                                     if (
                                         res2.status === 404 &&
                                         /statuspagelist/i.test(pageUri)
@@ -5408,29 +5393,12 @@
                                         // Fallback: provider may use 1-based page numbering
                                         const altIndex = pageIndex + 1;
                                         const altUri = `${uri.replace(/\/$/, "")}/${altIndex}`;
-                                        const proxyAltUri = (() => {
-                                            try {
-                                                const parsed = new URL(
-                                                    altUri,
-                                                    location.href,
-                                                );
-                                                if (
-                                                    parsed.origin ===
-                                                    location.origin
-                                                )
-                                                    return altUri;
-                                                if (
-                                                    parsed.hostname ===
-                                                    "cors-anywhere.com"
-                                                )
-                                                    return altUri;
-                                                return `https://cors-anywhere.com/${parsed.href}`;
-                                            } catch {
-                                                return altUri;
-                                            }
-                                        })();
+                                        const proxyAltUri = withCorsProxy(
+                                            altUri,
+                                        );
                                         try {
-                                            const resAlt = await fetch(
+                                            const resAlt =
+                                                await fetchWithCorsTimeout(
                                                 proxyAltUri,
                                                 {
                                                     headers: {
@@ -6653,21 +6621,10 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                 btnImportVicalUri.disabled = true;
                 setVicalStatus("Importing from URI…");
                 try {
-                    // Apply CORS proxy for cross-origin VICAL downloads
-                    let proxied = uri;
-                    try {
-                        const parsed = new URL(uri, location.href);
-                        if (
-                            parsed.origin !== location.origin &&
-                            parsed.hostname !== "cors-anywhere.com"
-                        ) {
-                            proxied = `https://cors-anywhere.com/${parsed.href}`;
-                            console.warn(
-                                "[VICAL] Using CORS proxy for VICAL fetch:",
-                                proxied,
-                            );
-                        }
-                    } catch {}
+                    const proxied = withCorsProxy(
+                        uri,
+                        "[VICAL] Using CORS proxy for VICAL fetch:",
+                    );
                     const res = await window.IacaManager.importVICALFromUri(
                         proxied,
                         {
