@@ -438,6 +438,18 @@
     function extractCertValidity(certDer) {
         try {
             const cert = new Uint8Array(certDer);
+            const emptyValidity = {
+                notBefore: null,
+                notAfter: null,
+                notBeforeEncoded: null,
+                notAfterEncoded: null,
+                notBeforeDisplay: null,
+                notAfterDisplay: null,
+                notBeforeTimezone: null,
+                notAfterTimezone: null,
+                notBeforeTimezoneRaw: null,
+                notAfterTimezoneRaw: null,
+            };
             function parseDerLength(bytes, offset) {
                 const firstByte = bytes[offset];
                 if (firstByte < 0x80) {
@@ -450,6 +462,15 @@
                 }
                 return { length, bytesUsed: 1 + numBytes };
             }
+
+            function formatTimezone(rawTz) {
+                if (!rawTz || rawTz === "Z") return "UTC";
+                const sign = rawTz[0];
+                const hh = rawTz.slice(1, 3);
+                const mm = rawTz.slice(3, 5);
+                return `UTC${sign}${hh}:${mm}`;
+            }
+
             function parseTime(bytes, offset) {
                 const tag = bytes[offset];
                 const lenInfo = parseDerLength(bytes, offset + 1);
@@ -457,38 +478,104 @@
                 const timeEnd = timeStart + lenInfo.length;
                 const timeBytes = bytes.slice(timeStart, timeEnd);
                 const timeStr = new TextDecoder().decode(timeBytes);
+                const parseOffsetMinutes = (rawTz) => {
+                    if (!rawTz || rawTz === "Z") return 0;
+                    const sign = rawTz[0] === "+" ? 1 : -1;
+                    const hh = parseInt(rawTz.slice(1, 3), 10);
+                    const mm = parseInt(rawTz.slice(3, 5), 10);
+                    return sign * (hh * 60 + mm);
+                };
+                const formatDisplay = (
+                    year,
+                    month,
+                    day,
+                    hour,
+                    minute,
+                    second,
+                    tzRaw,
+                ) => {
+                    const y = String(year).padStart(4, "0");
+                    const mo = String(month + 1).padStart(2, "0");
+                    const d = String(day).padStart(2, "0");
+                    const h = String(hour).padStart(2, "0");
+                    const mi = String(minute).padStart(2, "0");
+                    const s = String(second).padStart(2, "0");
+                    const suffix =
+                        !tzRaw || tzRaw === "Z"
+                            ? " UTC"
+                            : ` UTC${tzRaw.slice(0, 3)}:${tzRaw.slice(3, 5)}`;
+                    return `${y}-${mo}-${d} ${h}:${mi}:${s}${suffix}`;
+                };
+                const asResult = (date, tzRaw, display) => ({
+                    date,
+                    encoded: timeStr,
+                    display,
+                    timezone: formatTimezone(tzRaw),
+                    timezoneRaw: tzRaw,
+                });
+
                 if (tag === 0x17) {
-                    const year = parseInt(timeStr.substr(0, 2));
+                    const m = timeStr.match(
+                        /^(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})?(Z|[+\-]\d{4})?$/,
+                    );
+                    if (!m) return null;
+                    const year = parseInt(m[1], 10);
                     const fullYear = year >= 50 ? 1900 + year : 2000 + year;
-                    const month = parseInt(timeStr.substr(2, 2)) - 1;
-                    const day = parseInt(timeStr.substr(4, 2));
-                    const hour = parseInt(timeStr.substr(6, 2));
-                    const minute = parseInt(timeStr.substr(8, 2));
-                    const second = parseInt(timeStr.substr(10, 2));
-                    return new Date(
-                        Date.UTC(fullYear, month, day, hour, minute, second),
+                    const month = parseInt(m[2], 10) - 1;
+                    const day = parseInt(m[3], 10);
+                    const hour = parseInt(m[4], 10);
+                    const minute = parseInt(m[5], 10);
+                    const second = m[6] ? parseInt(m[6], 10) : 0;
+                    const tzRaw = m[7] || "Z";
+                    const offsetMinutes = parseOffsetMinutes(tzRaw);
+                    const utcMs =
+                        Date.UTC(fullYear, month, day, hour, minute, second) -
+                        offsetMinutes * 60 * 1000;
+                    const display = formatDisplay(
+                        fullYear,
+                        month,
+                        day,
+                        hour,
+                        minute,
+                        second,
+                        tzRaw,
                     );
+                    return asResult(new Date(utcMs), tzRaw, display);
                 } else if (tag === 0x18) {
-                    const year = parseInt(timeStr.substr(0, 4));
-                    const month = parseInt(timeStr.substr(4, 2)) - 1;
-                    const day = parseInt(timeStr.substr(6, 2));
-                    const hour = parseInt(timeStr.substr(8, 2));
-                    const minute = parseInt(timeStr.substr(10, 2));
-                    const second = parseInt(timeStr.substr(12, 2));
-                    return new Date(
-                        Date.UTC(year, month, day, hour, minute, second),
+                    const m = timeStr.match(
+                        /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})?(?:\.\d+)?(Z|[+\-]\d{4})?$/,
                     );
+                    if (!m) return null;
+                    const year = parseInt(m[1], 10);
+                    const month = parseInt(m[2], 10) - 1;
+                    const day = parseInt(m[3], 10);
+                    const hour = parseInt(m[4], 10);
+                    const minute = parseInt(m[5], 10);
+                    const second = m[6] ? parseInt(m[6], 10) : 0;
+                    const tzRaw = m[7] || "Z";
+                    const offsetMinutes = parseOffsetMinutes(tzRaw);
+                    const utcMs =
+                        Date.UTC(year, month, day, hour, minute, second) -
+                        offsetMinutes * 60 * 1000;
+                    const display = formatDisplay(
+                        year,
+                        month,
+                        day,
+                        hour,
+                        minute,
+                        second,
+                        tzRaw,
+                    );
+                    return asResult(new Date(utcMs), tzRaw, display);
                 }
                 return null;
             }
             let offset = 0;
-            if (cert[offset] !== 0x30)
-                return { notBefore: null, notAfter: null };
+            if (cert[offset] !== 0x30) return emptyValidity;
             offset++;
             const certLenInfo = parseDerLength(cert, offset);
             offset += certLenInfo.bytesUsed;
-            if (cert[offset] !== 0x30)
-                return { notBefore: null, notAfter: null };
+            if (cert[offset] !== 0x30) return emptyValidity;
             offset++;
             const tbsLenInfo = parseDerLength(cert, offset);
             offset += tbsLenInfo.bytesUsed;
@@ -512,8 +599,7 @@
                 const issuerLenInfo = parseDerLength(cert, offset);
                 offset += issuerLenInfo.bytesUsed + issuerLenInfo.length;
             }
-            if (cert[offset] !== 0x30)
-                return { notBefore: null, notAfter: null };
+            if (cert[offset] !== 0x30) return emptyValidity;
             offset++;
             const valLenInfo = parseDerLength(cert, offset);
             offset += valLenInfo.bytesUsed;
@@ -522,10 +608,32 @@
             const notBeforeLenInfo = parseDerLength(cert, offset);
             offset += notBeforeLenInfo.bytesUsed + notBeforeLenInfo.length;
             const notAfter = parseTime(cert, offset);
-            return { notBefore, notAfter };
+            return {
+                notBefore: notBefore?.date || null,
+                notAfter: notAfter?.date || null,
+                notBeforeEncoded: notBefore?.encoded || null,
+                notAfterEncoded: notAfter?.encoded || null,
+                notBeforeDisplay: notBefore?.display || null,
+                notAfterDisplay: notAfter?.display || null,
+                notBeforeTimezone: notBefore?.timezone || null,
+                notAfterTimezone: notAfter?.timezone || null,
+                notBeforeTimezoneRaw: notBefore?.timezoneRaw || null,
+                notAfterTimezoneRaw: notAfter?.timezoneRaw || null,
+            };
         } catch (err) {
             console.warn("Error extracting certificate validity:", err);
-            return { notBefore: null, notAfter: null };
+            return {
+                notBefore: null,
+                notAfter: null,
+                notBeforeEncoded: null,
+                notAfterEncoded: null,
+                notBeforeDisplay: null,
+                notAfterDisplay: null,
+                notBeforeTimezone: null,
+                notAfterTimezone: null,
+                notBeforeTimezoneRaw: null,
+                notAfterTimezoneRaw: null,
+            };
         }
     }
 

@@ -30,6 +30,16 @@
         return btoa(s);
     }
 
+    function derCertToPem(u8) {
+        if (!u8 || u8.length === 0) return "";
+        const b64 = bytesToBase64(u8);
+        const lines = [];
+        for (let i = 0; i < b64.length; i += 64) {
+            lines.push(b64.slice(i, i + 64));
+        }
+        return `-----BEGIN CERTIFICATE-----\n${lines.join("\n")}\n-----END CERTIFICATE-----`;
+    }
+
     // --- Minimal BER-TLV helpers for ICAO DG parsing ---
     function readTag(bytes, offset = 0) {
         let i = offset;
@@ -1457,6 +1467,19 @@
                                         info.issuerDN || info.issuerCN || null,
                                     notBefore: validity?.notBefore || null,
                                     notAfter: validity?.notAfter || null,
+                                    notBeforeEncoded:
+                                        validity?.notBeforeEncoded || null,
+                                    notAfterEncoded:
+                                        validity?.notAfterEncoded || null,
+                                    notBeforeDisplay:
+                                        validity?.notBeforeDisplay || null,
+                                    notAfterDisplay:
+                                        validity?.notAfterDisplay || null,
+                                    notBeforeTimezone:
+                                        validity?.notBeforeTimezone || null,
+                                    notAfterTimezone:
+                                        validity?.notAfterTimezone || null,
+                                    pem: derCertToPem(der),
                                 };
                             }
                         } catch (_) {}
