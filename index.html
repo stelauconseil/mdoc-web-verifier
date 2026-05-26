@@ -3520,6 +3520,7 @@
                             const docIdxLocal = documents.indexOf(doc);
                             const detailsId = `issuerDetails-${docIdxLocal}`;
                             const msoViewId = `msoView-${docIdxLocal}`;
+                            const certPemViewId = `certPemView-${docIdxLocal}`;
                             const sigStatusId = `sigStatus-${docIdxLocal}`;
                             const chainStatusId = `chainStatus-${docIdxLocal}`;
                             const revocationStatusId = `revocationStatus-${docIdxLocal}`;
@@ -3622,15 +3623,19 @@
 
               <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 12px 0;" />
 
-              <div class="data-item"><div class="data-label">🧾 Document signer</div><div class="data-value"></div></div>
+              <div class="data-item"><div class="data-label">🧾 Document signer</div><div class="data-value" style="margin-left: auto; display: flex; justify-content: flex-end; width: 100%;">${
+                  sig.certificate?.pem
+                      ? `<button type="button" data-action="copy-cert-pem" data-target="${certPemViewId}" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: #059669;">📋 Copy PEM</button><pre id="${certPemViewId}" style="display:none;">${esc(sig.certificate.pem)}</pre>`
+                      : ""
+              }</div></div>
               <div class="data-item"><div class="data-label">Signature Algorithm</div><div class="data-value">${esc(sig.algorithm || "—")}${curveLabel}</div></div>
               ${
                   sig.certificate
                       ? `
                 <div class="data-item"><div class="data-label">Subject</div><div class="data-value">${esc(sig.certificate.subject || "—")}</div></div>
                 <div class="data-item"><div class="data-label">Issuer</div><div class="data-value">${esc(sig.certificate.issuer || "—")}</div></div>
-                <div class="data-item"><div class="data-label">Valid From</div><div class="data-value">📅 ${sig.certificate.notBefore ? fmtDateTime(sig.certificate.notBefore) : "—"}</div></div>
-                <div class="data-item"><div class="data-label">Valid Until</div><div class="data-value">📅 ${sig.certificate.notAfter ? fmtDateTime(sig.certificate.notAfter) : "—"}</div></div>
+                                <div class="data-item"><div class="data-label">Valid From</div><div class="data-value">📅 ${sig.certificate.notBeforeDisplay ? esc(sig.certificate.notBeforeDisplay) : "—"}</div></div>
+                                <div class="data-item"><div class="data-label">Valid Until</div><div class="data-value">📅 ${sig.certificate.notAfterDisplay ? esc(sig.certificate.notAfterDisplay) : "—"}</div></div>
               `
                       : ""
               }
@@ -3898,6 +3903,29 @@
                         '[data-action="copy-mso"]',
                     );
                     copyMsoButtons.forEach((btn) => {
+                        const targetId = btn.getAttribute("data-target");
+                        const targetEl = document.getElementById(targetId);
+                        if (!targetEl) return;
+                        btn.addEventListener("click", async () => {
+                            try {
+                                await navigator.clipboard.writeText(
+                                    targetEl.textContent || "",
+                                );
+                                const old = btn.textContent;
+                                btn.textContent = "Copied!";
+                                setTimeout(() => {
+                                    btn.textContent = old;
+                                }, 1200);
+                            } catch {}
+                        });
+                    });
+
+                    // Wire certificate PEM copy buttons
+                    const copyCertPemButtons =
+                        responseDisplayEl.querySelectorAll(
+                            '[data-action="copy-cert-pem"]',
+                        );
+                    copyCertPemButtons.forEach((btn) => {
                         const targetId = btn.getAttribute("data-target");
                         const targetEl = document.getElementById(targetId);
                         if (!targetEl) return;
