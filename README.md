@@ -93,6 +93,7 @@ Depending on your wallet, the main reader and example pages can work with:
 
 - **mDL** – `org.iso.18013.5.1.mDL` (Mobile Driving Licence)
 - **EU PID** – `eu.europa.ec.eudi.pid.1` (Person Identification Data)
+- **BIDA** – `eu.europa.ec.eudi.bida.1` (Basic Identification Data Attestation)
 - **EU Age Verification** – `eu.europa.ec.av.1` (age‑only attestations such as `age_over_18`)
 - **Photo ID** – `org.iso.23220.photoID.1` (+ related ISO 23220 namespaces)
 - **mICOV** – `org.micov.1` (vaccination / test attestations)

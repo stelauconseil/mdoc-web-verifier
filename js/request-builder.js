@@ -3,7 +3,7 @@
   Author: Nicolas Chalanset
   
   Request Builder module
-  Builds device requests for mDL, EU PID, Age Verification, Photo ID, mICOV, and mVC
+  Builds device requests for mDL, EU PID, BIDA, Age Verification, Photo ID, mICOV, and mVC
 */
 
 (function () {
@@ -101,6 +101,9 @@
         if (requestType.startsWith("pid_")) {
             docType = "eu.europa.ec.eudi.pid.1";
             namespace = "eu.europa.ec.eudi.pid.1";
+        } else if (requestType.startsWith("bida_")) {
+            docType = "eu.europa.ec.eudi.bida.1";
+            namespace = "eu.europa.ec.eudi.bida.1";
         } else if (requestType.startsWith("age_verify_")) {
             docType = "eu.europa.ec.av.1";
             namespace = "eu.europa.ec.av.1";
@@ -279,6 +282,63 @@
                     age_over_21: false,
                     age_in_years: false,
                     age_birth_year: false,
+                };
+                break;
+            case "bida_basic":
+                fields = {
+                    // Mandatory attributes
+                    family_name: false,
+                    given_name: false,
+                    birth_date: false,
+                    place_of_birth: false,
+                    nationality: false,
+                    // Mandatory metadata
+                    issuing_authority: false,
+                    issuing_country: false,
+                    expiry_date: false,
+                    assurance_level: false,
+                    possession: false,
+                };
+                break;
+            case "bida_full":
+                fields = {
+                    // Mandatory attributes
+                    family_name: false,
+                    given_name: false,
+                    birth_date: false,
+                    place_of_birth: false,
+                    nationality: false,
+                    // Mandatory metadata
+                    issuing_authority: false,
+                    issuing_country: false,
+                    expiry_date: false,
+                    assurance_level: false,
+                    possession: false,
+                    // Optional attributes
+                    resident_address: false,
+                    resident_country: false,
+                    resident_state: false,
+                    resident_city: false,
+                    resident_postal_code: false,
+                    resident_street: false,
+                    resident_house_number: false,
+                    personal_administrative_number: false,
+                    portrait: false,
+                    family_name_birth: false,
+                    given_name_birth: false,
+                    sex: false,
+                    email_address: false,
+                    mobile_phone_number: false,
+                    // Optional metadata
+                    issuance_date: false,
+                    document_number: false,
+                    trust_anchor: false,
+                    attestation_legal_category: false,
+                    identity_proofing_method: false,
+                    evidence_source: false,
+                    authoritative_source: false,
+                    identity_proofing_date: false,
+                    issuer_policy: false,
                 };
                 break;
             case "age_verify_15":

@@ -1015,7 +1015,7 @@
                 </p>
 
                 <div style="margin-bottom: 10px; margin-top: 0.25rem">
-                    <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">EU PID (Personal Identity Document)</strong>
+                    <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">EU PID (Person Identification Data)</strong>
                 </div>
                 <div class="radio-group request-type">
                     <label class="radio-chip small">
@@ -1042,6 +1042,28 @@
                             checked
                         />
                         EU PID Full
+                    </label>
+                </div>
+
+                <div style="margin: 1.25rem 0 10px 0">
+                    <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">BIDA (Basic Identification Data Attestation)</strong>
+                </div>
+                <div class="radio-group request-type">
+                    <label class="radio-chip small">
+                        <input
+                            type="checkbox"
+                            name="requestType"
+                            value="bida_basic"
+                        />
+                        BIDA Basic
+                    </label>
+                    <label class="radio-chip small">
+                        <input
+                            type="checkbox"
+                            name="requestType"
+                            value="bida_full"
+                        />
+                        BIDA Full
                     </label>
                 </div>
 
@@ -1094,7 +1116,7 @@
                             name="requestType"
                             value="age_verify_15"
                         />
-                        Age 15+
+                        15+
                     </label>
                     <label class="radio-chip small">
                         <input
@@ -1102,7 +1124,7 @@
                             name="requestType"
                             value="age_verify_18"
                         />
-                        Age 18+
+                        18+
                     </label>
                     <label class="radio-chip small">
                         <input
@@ -1110,7 +1132,7 @@
                             name="requestType"
                             value="age_verify_21"
                         />
-                        Age 21+
+                        21+
                     </label>
                     <label class="radio-chip small">
                         <input
@@ -7000,6 +7022,14 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                                 description =
                                     "Full EU PID: all available fields including address, nationality, birth details";
                                 break;
+                            case "bida_basic":
+                                description =
+                                    "BIDA Basic: mandatory identity attributes and metadata";
+                                break;
+                            case "bida_full":
+                                description =
+                                    "BIDA Full: all mandatory and optional attributes and metadata";
+                                break;
                             case "age_verify_15":
                                 description =
                                     "Age Verification 15+: age_over_15 only";
@@ -7050,6 +7080,7 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                         // Multiple documents selected
                         const docTypes = selected.map((t) => {
                             if (t.startsWith("pid_")) return "EU PID";
+                            if (t.startsWith("bida_")) return "BIDA";
                             if (t.startsWith("age_verify_"))
                                 return "Age Verification";
                             if (t.startsWith("photoid_")) return "Photo ID";
