@@ -24,10 +24,12 @@
     // Supports Brainpool curves (P-256r1, P-320r1, P-384r1, P-512r1) via @noble/curves
     async function extractPublicKeyFromCert(certDer, quiet = false) {
         try {
-            console.log(
-                "Extracting public key from certificate, size:",
-                certDer.length,
-            );
+            if (window.DEBUG_VERBOSE) {
+                console.log(
+                    "Extracting public key from certificate, size:",
+                    certDer.length,
+                );
+            }
 
             const cert = new Uint8Array(certDer);
 
@@ -66,7 +68,9 @@
             for (const [curveName, oid] of Object.entries(curveOIDs)) {
                 if (findOID(oid) !== -1) {
                     detectedCurve = curveName;
-                    console.log(`✓ Detected curve: ${curveName}`);
+                    if (window.DEBUG_VERBOSE) {
+                        console.log(`✓ Detected curve: ${curveName}`);
+                    }
                     break;
                 }
             }
@@ -110,9 +114,11 @@
                         cert[i - 2] >= keySize + 1
                     ) {
                         publicKeyBytes = candidate;
-                        console.log(
-                            `Found ${detectedCurve} public key at offset ${i}`,
-                        );
+                        if (window.DEBUG_VERBOSE) {
+                            console.log(
+                                `Found ${detectedCurve} public key at offset ${i}`,
+                            );
+                        }
                         break;
                     }
                 }
@@ -127,8 +133,12 @@
             const x = publicKeyBytes.slice(1, 1 + coordSize);
             const y = publicKeyBytes.slice(1 + coordSize, 1 + 2 * coordSize);
 
-            console.log(`Extracted ${detectedCurve} X:`, hex(x));
-            console.log(`Extracted ${detectedCurve} Y:`, hex(y));
+            if (window.DEBUG_VERBOSE) {
+                console.log(`Extracted ${detectedCurve} X:`, hex(x));
+            }
+            if (window.DEBUG_VERBOSE) {
+                console.log(`Extracted ${detectedCurve} Y:`, hex(y));
+            }
 
             if (!window.nobleCurves) {
                 if (!quiet)
@@ -153,16 +163,20 @@
                         `❌ Curve ${detectedCurve} (${nobleCurveName}) not available in @noble/curves`,
                     );
                 if (!quiet)
-                    console.log(
-                        "Available curves:",
-                        Object.keys(window.nobleCurves),
-                    );
+                    if (window.DEBUG_VERBOSE) {
+                        console.log(
+                            "Available curves:",
+                            Object.keys(window.nobleCurves),
+                        );
+                    }
                 return null;
             }
 
-            console.log(
-                `✅ ${detectedCurve} public key extracted (using @noble/curves for verification)`,
-            );
+            if (window.DEBUG_VERBOSE) {
+                console.log(
+                    `✅ ${detectedCurve} public key extracted (using @noble/curves for verification)`,
+                );
+            }
             return {
                 key: publicKeyBytes,
                 curve: detectedCurve,
@@ -212,9 +226,11 @@
             rawSig.set(rPadded, 0);
             rawSig.set(sPadded, halfLen);
 
-            console.log(
-                `[DER] Converted DER signature (${derSig.length} bytes) to raw r||s (${rawSig.length} bytes)`,
-            );
+            if (window.DEBUG_VERBOSE) {
+                console.log(
+                    `[DER] Converted DER signature (${derSig.length} bytes) to raw r||s (${rawSig.length} bytes)`,
+                );
+            }
             return rawSig;
         } catch (err) {
             console.warn("[DER] Failed to convert DER signature:", err.message);
@@ -1025,30 +1041,44 @@
             const unusedBits = certBytes[pos++];
             sigLength -= 1;
             const signature = certBytes.slice(pos, pos + sigLength);
-            console.log("🔍 [X.509 Signature Extraction DEBUG]:");
-            console.log(
-                "  Signature from BIT STRING (first 16 bytes):",
-                Array.from(signature.slice(0, 16))
-                    .map((b) => b.toString(16).padStart(2, "0"))
-                    .join(" "),
-            );
-            console.log("  Signature length:", signature.length);
-            console.log(
-                "  First byte:",
-                "0x" + signature[0].toString(16).padStart(2, "0"),
-                signature[0] === 0x30
-                    ? "(DER SEQUENCE ✓)"
-                    : "(NOT DER SEQUENCE!)",
-            );
+            if (window.DEBUG_VERBOSE) {
+                console.log("🔍 [X.509 Signature Extraction DEBUG]:");
+            }
+            if (window.DEBUG_VERBOSE) {
+                console.log(
+                    "  Signature from BIT STRING (first 16 bytes):",
+                    Array.from(signature.slice(0, 16))
+                        .map((b) => b.toString(16).padStart(2, "0"))
+                        .join(" "),
+                );
+            }
+            if (window.DEBUG_VERBOSE) {
+                console.log("  Signature length:", signature.length);
+            }
+            if (window.DEBUG_VERBOSE) {
+                console.log(
+                    "  First byte:",
+                    "0x" + signature[0].toString(16).padStart(2, "0"),
+                    signature[0] === 0x30
+                        ? "(DER SEQUENCE ✓)"
+                        : "(NOT DER SEQUENCE!)",
+                );
+            }
             const rawSignature = convertDERSignatureToRaw(signature);
-            console.log("  After convertDERSignatureToRaw():");
-            console.log(
-                "  Raw signature (first 16 bytes):",
-                Array.from(rawSignature.slice(0, 16))
-                    .map((b) => b.toString(16).padStart(2, "0"))
-                    .join(" "),
-            );
-            console.log("  Raw signature length:", rawSignature.length);
+            if (window.DEBUG_VERBOSE) {
+                console.log("  After convertDERSignatureToRaw():");
+            }
+            if (window.DEBUG_VERBOSE) {
+                console.log(
+                    "  Raw signature (first 16 bytes):",
+                    Array.from(rawSignature.slice(0, 16))
+                        .map((b) => b.toString(16).padStart(2, "0"))
+                        .join(" "),
+                );
+            }
+            if (window.DEBUG_VERBOSE) {
+                console.log("  Raw signature length:", rawSignature.length);
+            }
             return {
                 tbsCertificate,
                 signature: rawSignature,
@@ -1063,10 +1093,14 @@
     function convertDERSignatureToRaw(derSig) {
         try {
             let pos = 0;
-            console.log(`🔍 [DER to Raw Conversion]`);
-            console.log(
-                `   Input DER (first 32 bytes): ${hex(derSig.slice(0, Math.min(32, derSig.length)))}`,
-            );
+            if (window.DEBUG_VERBOSE) {
+                console.log(`🔍 [DER to Raw Conversion]`);
+            }
+            if (window.DEBUG_VERBOSE) {
+                console.log(
+                    `   Input DER (first 32 bytes): ${hex(derSig.slice(0, Math.min(32, derSig.length)))}`,
+                );
+            }
             if (derSig[pos++] !== 0x30) {
                 throw new Error("Invalid DER signature: Expected SEQUENCE");
             }
@@ -1080,20 +1114,28 @@
             } else {
                 seqLength = derSig[pos++];
             }
-            console.log(`   SEQUENCE length: ${seqLength}`);
+            if (window.DEBUG_VERBOSE) {
+                console.log(`   SEQUENCE length: ${seqLength}`);
+            }
             if (derSig[pos++] !== 0x02) {
                 throw new Error(
                     "Invalid DER signature: Expected INTEGER for r",
                 );
             }
             let rLength = derSig[pos++];
-            console.log(`   r length: ${rLength}`);
+            if (window.DEBUG_VERBOSE) {
+                console.log(`   r length: ${rLength}`);
+            }
             let r = derSig.slice(pos, pos + rLength);
-            console.log(`   r raw (with potential padding): ${hex(r)}`);
+            if (window.DEBUG_VERBOSE) {
+                console.log(`   r raw (with potential padding): ${hex(r)}`);
+            }
             pos += rLength;
             if (r[0] === 0x00 && r.length > 1) {
                 r = r.slice(1);
-                console.log(`   r after removing 0x00 padding: ${hex(r)}`);
+                if (window.DEBUG_VERBOSE) {
+                    console.log(`   r after removing 0x00 padding: ${hex(r)}`);
+                }
             }
             if (derSig[pos++] !== 0x02) {
                 throw new Error(
@@ -1101,12 +1143,18 @@
                 );
             }
             let sLength = derSig[pos++];
-            console.log(`   s length: ${sLength}`);
+            if (window.DEBUG_VERBOSE) {
+                console.log(`   s length: ${sLength}`);
+            }
             let s = derSig.slice(pos, pos + sLength);
-            console.log(`   s raw (with potential padding): ${hex(s)}`);
+            if (window.DEBUG_VERBOSE) {
+                console.log(`   s raw (with potential padding): ${hex(s)}`);
+            }
             if (s[0] === 0x00 && s.length > 1) {
                 s = s.slice(1);
-                console.log(`   s after removing 0x00 padding: ${hex(s)}`);
+                if (window.DEBUG_VERBOSE) {
+                    console.log(`   s after removing 0x00 padding: ${hex(s)}`);
+                }
             }
             const componentSize = Math.max(r.length, s.length) <= 32 ? 32 : 48;
             const rPadded = new Uint8Array(componentSize);
@@ -1186,9 +1234,11 @@
             typeof window !== "undefined" && window.DEBUG_VERBOSE === true;
 
         try {
-            console.log(
-                "=== VALIDATING ISSUER CERTIFICATE AGAINST IACA ROOTS ===",
-            );
+            if (DEBUG_VERBOSE) {
+                console.log(
+                    "=== VALIDATING ISSUER CERTIFICATE AGAINST IACA ROOTS ===",
+                );
+            }
 
             const activeIACAs = getActiveIACAs();
 
@@ -1199,9 +1249,11 @@
                 return result;
             }
 
-            console.log(
-                `Testing issuer certificate against ${activeIACAs.length} active IACA(s)`,
-            );
+            if (DEBUG_VERBOSE) {
+                console.log(
+                    `Testing issuer certificate against ${activeIACAs.length} active IACA(s)`,
+                );
+            }
 
             if (DEBUG_VERBOSE) console.log("Parsing issuer certificate...");
             const parsedCert = parseX509Certificate(issuerCertBytes);
@@ -1213,7 +1265,9 @@
                 return result;
             }
 
-            console.log("✓ Parsed issuer certificate");
+            if (DEBUG_VERBOSE) {
+                console.log("✓ Parsed issuer certificate");
+            }
             if (DEBUG_VERBOSE) {
                 console.log(
                     "  TBS length:",
@@ -1289,18 +1343,24 @@
             }
             const sigAlg = parseCertSignatureAlgorithmOID(issuerCertBytes);
             if (sigAlg) {
-                console.log(`  Signature Algorithm: ${sigAlg.oidStr}`);
+                if (DEBUG_VERBOSE) {
+                    console.log(`  Signature Algorithm: ${sigAlg.oidStr}`);
+                }
                 if (DEBUG_VERBOSE)
                     console.log(`  OID hex: ${hex(sigAlg.oidBytes)}`);
             } else {
-                console.log("  Signature Algorithm OID: unavailable");
+                if (DEBUG_VERBOSE) {
+                    console.log("  Signature Algorithm OID: unavailable");
+                }
             }
 
             const aki = extractAuthorityKeyIdentifier(issuerCertBytes);
-            console.log(
-                "  Authority Key Identifier (AKI):",
-                aki || "not found",
-            );
+            if (DEBUG_VERBOSE) {
+                console.log(
+                    "  Authority Key Identifier (AKI):",
+                    aki || "not found",
+                );
+            }
 
             const certSigLength = parsedCert.signature.length;
             const hashFromOID =
@@ -1314,7 +1374,9 @@
                           ? "SHA-512"
                           : "SHA-256";
             const algName = hashFromOID.replace("SHA-", "ES");
-            console.log(`  Using hash: ${hashFromOID}`);
+            if (DEBUG_VERBOSE) {
+                console.log(`  Using hash: ${hashFromOID}`);
+            }
             if (DEBUG_VERBOSE)
                 console.log(
                     `  Certificate signature length: ${certSigLength} bytes`,
@@ -1325,12 +1387,16 @@
                     ? ["p384", "brainpoolP384r1"]
                     : ["p256", "brainpoolP256r1"];
 
-            console.log(`  Expected IACA curves: ${expectedCurves.join(", ")}`);
+            if (DEBUG_VERBOSE) {
+                console.log(`  Expected IACA curves: ${expectedCurves.join(", ")}`);
+            }
 
             let matchingIACAs = activeIACAs;
 
             if (aki) {
-                console.log(`🔍 Searching for IACA with matching SKI...`);
+                if (DEBUG_VERBOSE) {
+                    console.log(`🔍 Searching for IACA with matching SKI...`);
+                }
                 const iacasWithSKI = [];
 
                 for (const iaca of activeIACAs) {
@@ -1348,15 +1414,21 @@
                         const ski = extractSubjectKeyIdentifier(iacaBytes);
 
                         if (ski) {
-                            console.log(`  ${iaca.name}: SKI = ${ski}`);
+                            if (DEBUG_VERBOSE) {
+                                console.log(`  ${iaca.name}: SKI = ${ski}`);
+                            }
                             if (ski.toLowerCase() === aki.toLowerCase()) {
-                                console.log(
-                                    `  ✅ MATCH! This IACA signed the DS certificate`,
-                                );
+                                if (DEBUG_VERBOSE) {
+                                    console.log(
+                                        `  ✅ MATCH! This IACA signed the DS certificate`,
+                                    );
+                                }
                                 iacasWithSKI.push(iaca);
                             }
                         } else {
-                            console.log(`  ${iaca.name}: No SKI found`);
+                            if (DEBUG_VERBOSE) {
+                                console.log(`  ${iaca.name}: No SKI found`);
+                            }
                         }
                     } catch (e) {
                         console.warn(
@@ -1368,9 +1440,11 @@
 
                 if (iacasWithSKI.length > 0) {
                     matchingIACAs = iacasWithSKI;
-                    console.log(
-                        `✓ Found ${matchingIACAs.length} IACA(s) with matching SKI`,
-                    );
+                    if (DEBUG_VERBOSE) {
+                        console.log(
+                            `✓ Found ${matchingIACAs.length} IACA(s) with matching SKI`,
+                        );
+                    }
                 } else {
                     console.warn(
                         "⚠️ No IACA found with matching SKI, will try all IACAs",
@@ -1379,9 +1453,11 @@
             }
 
             for (const iaca of matchingIACAs) {
-                console.log(
-                    `Testing IACA: ${iaca.name}${matchingIACAs.length === 1 ? " (matched by AKI/SKI)" : ""}`,
-                );
+                if (DEBUG_VERBOSE) {
+                    console.log(
+                        `Testing IACA: ${iaca.name}${matchingIACAs.length === 1 ? " (matched by AKI/SKI)" : ""}`,
+                    );
+                }
 
                 try {
                     const iacaB64 = iaca.pem
@@ -1399,21 +1475,27 @@
                     const iacaPublicKey = await pemToCryptoKey(iaca.pem);
 
                     if (!iacaPublicKey) {
-                        console.log(
-                            `  ✗ Failed to import IACA public key (missing or invalid certificate)`,
-                        );
+                        if (DEBUG_VERBOSE) {
+                            console.log(
+                                `  ✗ Failed to import IACA public key (missing or invalid certificate)`,
+                            );
+                        }
                         result.errors.push(
                             `${iaca.name}: IACA certificate missing or invalid`,
                         );
                         continue;
                     }
 
-                    console.log(
-                        `  ✓ Imported IACA public key (curve: ${iacaPublicKey.nobleCurveName})`,
-                    );
+                    if (DEBUG_VERBOSE) {
+                        console.log(
+                            `  ✓ Imported IACA public key (curve: ${iacaPublicKey.nobleCurveName})`,
+                        );
+                    }
 
                     if (!iacaPublicKey || iacaPublicKey.type !== "noble") {
-                        console.log("  ✗ Invalid IACA public key format");
+                        if (DEBUG_VERBOSE) {
+                            console.log("  ✗ Invalid IACA public key format");
+                        }
                         result.errors.push(`${iaca.name}: Invalid key format`);
                         continue;
                     }
@@ -1421,14 +1503,18 @@
                     if (
                         !expectedCurves.includes(iacaPublicKey.nobleCurveName)
                     ) {
-                        console.log(
-                            `  ⊘ Skipping: IACA curve ${iacaPublicKey.nobleCurveName} incompatible with ${algName} signature (${certSigLength} bytes)`,
-                        );
+                        if (DEBUG_VERBOSE) {
+                            console.log(
+                                `  ⊘ Skipping: IACA curve ${iacaPublicKey.nobleCurveName} incompatible with ${algName} signature (${certSigLength} bytes)`,
+                            );
+                        }
                         continue;
                     }
 
                     if (!window.nobleCurves) {
-                        console.log("  ✗ @noble/curves library not loaded");
+                        if (DEBUG_VERBOSE) {
+                            console.log("  ✗ @noble/curves library not loaded");
+                        }
                         result.errors.push(
                             `${iaca.name}: Crypto library not available`,
                         );
@@ -1438,9 +1524,11 @@
                     const curveLib =
                         window.nobleCurves[iacaPublicKey.nobleCurveName];
                     if (!curveLib) {
-                        console.log(
-                            `  ✗ Curve ${iacaPublicKey.nobleCurveName} not available`,
-                        );
+                        if (DEBUG_VERBOSE) {
+                            console.log(
+                                `  ✗ Curve ${iacaPublicKey.nobleCurveName} not available`,
+                            );
+                        }
                         result.errors.push(
                             `${iaca.name}: Curve ${iacaPublicKey.nobleCurveName} not supported`,
                         );
@@ -1493,9 +1581,11 @@
                             if (DEBUG_VERBOSE)
                                 console.log(`     ✓ TBS length is correct`);
                         } else {
-                            console.log(
-                                `     ✗ TBS length mismatch! Expected ${tbsLengthFromTag + 4}, got ${parsedCert.tbsCertificate.length}`,
-                            );
+                            if (DEBUG_VERBOSE) {
+                                console.log(
+                                    `     ✗ TBS length mismatch! Expected ${tbsLengthFromTag + 4}, got ${parsedCert.tbsCertificate.length}`,
+                                );
+                            }
                         }
                     }
 
@@ -1523,7 +1613,9 @@
                             hex(iacaPublicKey.key.slice(33, 65)),
                         );
                     }
-                    console.log(`  Attempting verification`);
+                    if (DEBUG_VERBOSE) {
+                        console.log(`  Attempting verification`);
+                    }
 
                     let preHash = null;
                     try {
@@ -1535,9 +1627,11 @@
                         if (DEBUG_VERBOSE)
                             console.log(`  📊 ${hashFromOID}(TBS) computed`);
                     } catch (e) {
-                        console.log(
-                            `  ⚠️ Unable to compute ${hashFromOID} digest: ${e.message}`,
-                        );
+                        if (DEBUG_VERBOSE) {
+                            console.log(
+                                `  ⚠️ Unable to compute ${hashFromOID} digest: ${e.message}`,
+                            );
+                        }
                     }
 
                     let isValid = false;
@@ -1579,9 +1673,11 @@
                                     );
                             }
                         } catch (pointErr) {
-                            console.log(
-                                `     ✗ Public key is NOT a valid point: ${pointErr.message}`,
-                            );
+                            if (DEBUG_VERBOSE) {
+                                console.log(
+                                    `     ✗ Public key is NOT a valid point: ${pointErr.message}`,
+                                );
+                            }
                         }
 
                         if (DEBUG_VERBOSE) {
@@ -1776,28 +1872,36 @@
 
                         if (!isValid && DEBUG_VERBOSE) {
                             try {
-                                console.log(
-                                    `  🧪 Attempt E: verify(signature_DER, RAW_TBS, publicKey)`,
-                                );
+                                if (DEBUG_VERBOSE) {
+                                    console.log(
+                                        `  🧪 Attempt E: verify(signature_DER, RAW_TBS, publicKey)`,
+                                    );
+                                }
                                 const res = curveLib.verify(
                                     parsedCert.signatureDER,
                                     parsedCert.tbsCertificate,
                                     iacaPublicKey.key,
                                 );
-                                console.log(`     Result: ${res}`);
+                                if (DEBUG_VERBOSE) {
+                                    console.log(`     Result: ${res}`);
+                                }
                                 isValid = res;
                             } catch (e) {
-                                console.log(
-                                    `     Attempt E threw: ${e.message}`,
-                                );
+                                if (DEBUG_VERBOSE) {
+                                    console.log(
+                                        `     Attempt E threw: ${e.message}`,
+                                    );
+                                }
                             }
                         }
 
                         if (!isValid && DEBUG_VERBOSE) {
                             try {
-                                console.log(
-                                    `  🧪 Attempt F: verify(signature_DER, ${hashFromOID}(TBS), publicKey)`,
-                                );
+                                if (DEBUG_VERBOSE) {
+                                    console.log(
+                                        `  🧪 Attempt F: verify(signature_DER, ${hashFromOID}(TBS), publicKey)`,
+                                    );
+                                }
                                 const preHashBuf = await crypto.subtle.digest(
                                     hashFromOID,
                                     parsedCert.tbsCertificate,
@@ -1808,12 +1912,16 @@
                                     preHash,
                                     iacaPublicKey.key,
                                 );
-                                console.log(`     Result: ${res}`);
+                                if (DEBUG_VERBOSE) {
+                                    console.log(`     Result: ${res}`);
+                                }
                                 isValid = res;
                             } catch (e) {
-                                console.log(
-                                    `     Attempt F threw: ${e.message}`,
-                                );
+                                if (DEBUG_VERBOSE) {
+                                    console.log(
+                                        `     Attempt F threw: ${e.message}`,
+                                    );
+                                }
                             }
                         }
 
@@ -1823,9 +1931,11 @@
                             window.crypto?.subtle
                         ) {
                             try {
-                                console.log(
-                                    `  🧪 Attempt G: WebCrypto.verify(ECDSA, ${hashFromOID})`,
-                                );
+                                if (DEBUG_VERBOSE) {
+                                    console.log(
+                                        `  🧪 Attempt G: WebCrypto.verify(ECDSA, ${hashFromOID})`,
+                                    );
+                                }
                                 const namedCurve =
                                     iacaPublicKey.nobleCurveName === "p256"
                                         ? "P-256"
@@ -1850,116 +1960,170 @@
                                         parsedCert.signatureDER,
                                         parsedCert.tbsCertificate,
                                     );
-                                    console.log(
-                                        `     WebCrypto verify result: ${ok}`,
-                                    );
+                                    if (DEBUG_VERBOSE) {
+                                        console.log(
+                                            `     WebCrypto verify result: ${ok}`,
+                                        );
+                                    }
                                     isValid = ok;
                                 } else {
-                                    console.log(
-                                        `     (Skipping Attempt G: unsupported curve ${iacaPublicKey.nobleCurveName})`,
-                                    );
+                                    if (DEBUG_VERBOSE) {
+                                        console.log(
+                                            `     (Skipping Attempt G: unsupported curve ${iacaPublicKey.nobleCurveName})`,
+                                        );
+                                    }
                                 }
                             } catch (e) {
-                                console.log(
-                                    `     Attempt G threw: ${e.message}`,
-                                );
+                                if (DEBUG_VERBOSE) {
+                                    console.log(
+                                        `     Attempt G threw: ${e.message}`,
+                                    );
+                                }
                             }
                         }
 
                         if (!isValid && DEBUG_VERBOSE) {
-                            console.log(
-                                `  🧪 Attempt 3: Sanity check - re-verify DS certificate COSE_Sign1`,
-                            );
-                            console.log(
-                                `     (This should succeed since it worked earlier)`,
-                            );
-                            console.log(
-                                `     DS cert byte at 382: 0x${issuerCertBytes[382].toString(16)} (should be 0x04)`,
-                            );
-                            console.log(
-                                `     DS cert public key X: ${hex(issuerCertBytes.slice(383, 383 + 32))}`,
-                            );
-                            console.log(
-                                `     DS cert public key Y: ${hex(issuerCertBytes.slice(383 + 32, 383 + 64))}`,
-                            );
-                            console.log(
-                                `     Previously verified: COSE_Sign1 with DS cert public key = WORKS ✓`,
-                            );
-                            console.log(
-                                `     Now failing: X.509 cert with IACA public key = FAILS ✗`,
-                            );
-                            console.log(
-                                `     But wait - let's check if the issue is with IACA cert or DS cert...`,
-                            );
-                            console.log(
-                                `  🧪 Attempt 4: Verify IACA is self-signed (sanity check)`,
-                            );
+                            if (DEBUG_VERBOSE) {
+                                console.log(
+                                    `  🧪 Attempt 3: Sanity check - re-verify DS certificate COSE_Sign1`,
+                                );
+                            }
+                            if (DEBUG_VERBOSE) {
+                                console.log(
+                                    `     (This should succeed since it worked earlier)`,
+                                );
+                            }
+                            if (DEBUG_VERBOSE) {
+                                console.log(
+                                    `     DS cert byte at 382: 0x${issuerCertBytes[382].toString(16)} (should be 0x04)`,
+                                );
+                            }
+                            if (DEBUG_VERBOSE) {
+                                console.log(
+                                    `     DS cert public key X: ${hex(issuerCertBytes.slice(383, 383 + 32))}`,
+                                );
+                            }
+                            if (DEBUG_VERBOSE) {
+                                console.log(
+                                    `     DS cert public key Y: ${hex(issuerCertBytes.slice(383 + 32, 383 + 64))}`,
+                                );
+                            }
+                            if (DEBUG_VERBOSE) {
+                                console.log(
+                                    `     Previously verified: COSE_Sign1 with DS cert public key = WORKS ✓`,
+                                );
+                            }
+                            if (DEBUG_VERBOSE) {
+                                console.log(
+                                    `     Now failing: X.509 cert with IACA public key = FAILS ✗`,
+                                );
+                            }
+                            if (DEBUG_VERBOSE) {
+                                console.log(
+                                    `     But wait - let's check if the issue is with IACA cert or DS cert...`,
+                                );
+                            }
+                            if (DEBUG_VERBOSE) {
+                                console.log(
+                                    `  🧪 Attempt 4: Verify IACA is self-signed (sanity check)`,
+                                );
+                            }
                             try {
                                 const iacaParsed =
                                     parseX509Certificate(iacaCertBytes);
                                 if (iacaParsed) {
-                                    console.log(
-                                        `     IACA TBS length: ${iacaParsed.tbsCertificate.length}`,
-                                    );
-                                    console.log(
-                                        `     IACA signature length: ${iacaParsed.signature.length}`,
-                                    );
+                                    if (DEBUG_VERBOSE) {
+                                        console.log(
+                                            `     IACA TBS length: ${iacaParsed.tbsCertificate.length}`,
+                                        );
+                                    }
+                                    if (DEBUG_VERBOSE) {
+                                        console.log(
+                                            `     IACA signature length: ${iacaParsed.signature.length}`,
+                                        );
+                                    }
                                     const iacaSelfVerify = curveLib.verify(
                                         iacaParsed.signature,
                                         iacaParsed.tbsCertificate,
                                         iacaPublicKey.key,
                                     );
-                                    console.log(
-                                        `     IACA self-signed verification: ${iacaSelfVerify}`,
-                                    );
+                                    if (DEBUG_VERBOSE) {
+                                        console.log(
+                                            `     IACA self-signed verification: ${iacaSelfVerify}`,
+                                        );
+                                    }
                                     if (iacaSelfVerify) {
-                                        console.log(
-                                            `     ✓ IACA is properly self-signed!`,
-                                        );
-                                        console.log(
-                                            `     This means the IACA public key is correct.`,
-                                        );
-                                        console.log(
-                                            `     Therefore, the DS certificate signature or TBS must be wrong.`,
-                                        );
+                                        if (DEBUG_VERBOSE) {
+                                            console.log(
+                                                `     ✓ IACA is properly self-signed!`,
+                                            );
+                                        }
+                                        if (DEBUG_VERBOSE) {
+                                            console.log(
+                                                `     This means the IACA public key is correct.`,
+                                            );
+                                        }
+                                        if (DEBUG_VERBOSE) {
+                                            console.log(
+                                                `     Therefore, the DS certificate signature or TBS must be wrong.`,
+                                            );
+                                        }
                                     } else {
-                                        console.log(
-                                            `     ✗ IACA self-signed verification failed!`,
-                                        );
-                                        console.log(`     This could mean:`);
-                                        console.log(
-                                            `       1. IACA public key extraction is wrong`,
-                                        );
-                                        console.log(
-                                            `       2. Our signature/TBS extraction is fundamentally broken`,
-                                        );
-                                        console.log(
-                                            `       3. noble-curves verification has an issue`,
-                                        );
+                                        if (DEBUG_VERBOSE) {
+                                            console.log(
+                                                `     ✗ IACA self-signed verification failed!`,
+                                            );
+                                        }
+                                        if (DEBUG_VERBOSE) {
+                                            console.log(`     This could mean:`);
+                                        }
+                                        if (DEBUG_VERBOSE) {
+                                            console.log(
+                                                `       1. IACA public key extraction is wrong`,
+                                            );
+                                        }
+                                        if (DEBUG_VERBOSE) {
+                                            console.log(
+                                                `       2. Our signature/TBS extraction is fundamentally broken`,
+                                            );
+                                        }
+                                        if (DEBUG_VERBOSE) {
+                                            console.log(
+                                                `       3. noble-curves verification has an issue`,
+                                            );
+                                        }
                                     }
                                 }
                             } catch (iacaErr) {
-                                console.log(
-                                    `     Error verifying IACA: ${iacaErr.message}`,
-                                );
+                                if (DEBUG_VERBOSE) {
+                                    console.log(
+                                        `     Error verifying IACA: ${iacaErr.message}`,
+                                    );
+                                }
                             }
                         }
 
-                        console.log(
-                            `  ✅ Certificate verify result: ${isValid}`,
-                        );
+                        if (DEBUG_VERBOSE) {
+                            console.log(
+                                `  ✅ Certificate verify result: ${isValid}`,
+                            );
+                        }
                     } catch (verifyErr) {
-                        console.log(
-                            `  ✗ verify() threw error: ${verifyErr.message}`,
-                        );
+                        if (DEBUG_VERBOSE) {
+                            console.log(
+                                `  ✗ verify() threw error: ${verifyErr.message}`,
+                            );
+                        }
                         console.error(verifyErr);
                         isValid = false;
                     }
 
                     if (isValid) {
-                        console.log(
-                            `  ✅ Issuer certificate is signed by this IACA!`,
-                        );
+                        if (DEBUG_VERBOSE) {
+                            console.log(
+                                `  ✅ Issuer certificate is signed by this IACA!`,
+                            );
+                        }
 
                         result.valid = true;
                         result.matchedIACA = {
@@ -1973,18 +2137,24 @@
                             `IACA Root: ${iaca.name}${iaca.test ? " (TEST)" : ""}`,
                         ];
 
-                        console.log(
-                            `✅ Issuer certificate validated with IACA: ${iaca.name}${iaca.test ? " (TEST)" : ""}`,
-                        );
+                        if (DEBUG_VERBOSE) {
+                            console.log(
+                                `✅ Issuer certificate validated with IACA: ${iaca.name}${iaca.test ? " (TEST)" : ""}`,
+                            );
+                        }
                         return result;
                     } else {
-                        console.log(`  ✗ Signature does not match this IACA`);
+                        if (DEBUG_VERBOSE) {
+                            console.log(`  ✗ Signature does not match this IACA`);
+                        }
                     }
                 } catch (e) {
-                    console.log(
-                        `  ✗ Verification failed with this IACA:`,
-                        e.message,
-                    );
+                    if (DEBUG_VERBOSE) {
+                        console.log(
+                            `  ✗ Verification failed with this IACA:`,
+                            e.message,
+                        );
+                    }
                     result.errors.push(`${iaca.name}: ${e.message}`);
                 }
             }
@@ -2011,26 +2181,40 @@
         };
 
         try {
-            console.log(
-                "Step 1: Extracting issuer certificate from x5chain...",
-            );
+            if (window.DEBUG_VERBOSE) {
+                console.log(
+                    "Step 1: Extracting issuer certificate from x5chain...",
+                );
+            }
 
             const unprotectedHeader = coseSign1[1] || {};
-            console.log("Unprotected header:", unprotectedHeader);
-            console.log(
-                "Unprotected header type:",
-                Object.prototype.toString.call(unprotectedHeader),
-            );
+            if (window.DEBUG_VERBOSE) {
+                console.log("Unprotected header:", unprotectedHeader);
+            }
+            if (window.DEBUG_VERBOSE) {
+                console.log(
+                    "Unprotected header type:",
+                    Object.prototype.toString.call(unprotectedHeader),
+                );
+            }
 
             let issuerCert;
             if (unprotectedHeader instanceof Map) {
-                console.log("Unprotected header is a Map");
+                if (window.DEBUG_VERBOSE) {
+                    console.log("Unprotected header is a Map");
+                }
                 issuerCert = unprotectedHeader.get(33);
-                console.log("Issuer cert from Map.get(33):", issuerCert);
+                if (window.DEBUG_VERBOSE) {
+                    console.log("Issuer cert from Map.get(33):", issuerCert);
+                }
             } else {
-                console.log("Unprotected header is a plain object");
+                if (window.DEBUG_VERBOSE) {
+                    console.log("Unprotected header is a plain object");
+                }
                 issuerCert = unprotectedHeader[33];
-                console.log("Issuer cert from object[33]:", issuerCert);
+                if (window.DEBUG_VERBOSE) {
+                    console.log("Issuer cert from object[33]:", issuerCert);
+                }
             }
 
             if (!issuerCert) {
@@ -2040,12 +2224,14 @@
                 console.warn(
                     "⚠️ No x5chain (issuer certificate) found in unprotected header",
                 );
-                console.log(
-                    "Available header keys:",
-                    unprotectedHeader instanceof Map
-                        ? Array.from(unprotectedHeader.keys())
-                        : Object.keys(unprotectedHeader),
-                );
+                if (window.DEBUG_VERBOSE) {
+                    console.log(
+                        "Available header keys:",
+                        unprotectedHeader instanceof Map
+                            ? Array.from(unprotectedHeader.keys())
+                            : Object.keys(unprotectedHeader),
+                    );
+                }
                 return result;
             }
 
@@ -2069,15 +2255,19 @@
                 return result;
             }
 
-            console.log(
-                "Issuer certificate size:",
-                issuerCertBytes.length,
-                "bytes",
-            );
+            if (window.DEBUG_VERBOSE) {
+                console.log(
+                    "Issuer certificate size:",
+                    issuerCertBytes.length,
+                    "bytes",
+                );
+            }
 
-            console.log(
-                "Step 2: Extracting public key and verifying signature...",
-            );
+            if (window.DEBUG_VERBOSE) {
+                console.log(
+                    "Step 2: Extracting public key and verifying signature...",
+                );
+            }
             try {
                 const publicKey =
                     await extractPublicKeyFromCert(issuerCertBytes);
@@ -2097,9 +2287,11 @@
                 result.signatureValid = false;
             }
 
-            console.log(
-                "Step 3: Validating issuer certificate against IACA roots...",
-            );
+            if (window.DEBUG_VERBOSE) {
+                console.log(
+                    "Step 3: Validating issuer certificate against IACA roots...",
+                );
+            }
             result.chainInfo = await validateCertificateChain(issuerCertBytes);
             result.chainValid = result.chainInfo.valid;
 
@@ -2708,33 +2900,35 @@
                                     }
                                 }
                             } catch {}
-                            console.log("[valueDigests] First mismatch debug", {
-                                namespace: nsName,
-                                elementIdentifier: entry?.elementIdentifier,
-                                digestId,
-                                issuerSignedItemBytesLen: issuerBytes
-                                    ? issuerBytes.length
-                                    : null,
-                                issuerSignedItemBytesHex: issuerPreview
-                                    ? hex(issuerPreview)
-                                    : null,
-                                expectedDigestLen: expectedBytes
-                                    ? expectedBytes.length
-                                    : null,
-                                expectedDigestHex: expectedPreview
-                                    ? hex(expectedPreview)
-                                    : null,
-                                computedDigestHex: computedHex,
-                                computedTaggedDigestHex: computedTaggedHex,
-                                expectedDigestBase64: expectedBase64Debug,
-                                computedTaggedDigestBase64:
-                                    computedTaggedBase64,
-                                computedCanonicalDigestHex:
-                                    computedCanonicalHex,
-                                computedTaggedCanonicalDigestHex:
-                                    computedTaggedCanonicalHex,
-                                hashAlg,
-                            });
+                            if (window.DEBUG_VERBOSE) {
+                                console.log("[valueDigests] First mismatch debug", {
+                                    namespace: nsName,
+                                    elementIdentifier: entry?.elementIdentifier,
+                                    digestId,
+                                    issuerSignedItemBytesLen: issuerBytes
+                                        ? issuerBytes.length
+                                        : null,
+                                    issuerSignedItemBytesHex: issuerPreview
+                                        ? hex(issuerPreview)
+                                        : null,
+                                    expectedDigestLen: expectedBytes
+                                        ? expectedBytes.length
+                                        : null,
+                                    expectedDigestHex: expectedPreview
+                                        ? hex(expectedPreview)
+                                        : null,
+                                    computedDigestHex: computedHex,
+                                    computedTaggedDigestHex: computedTaggedHex,
+                                    expectedDigestBase64: expectedBase64Debug,
+                                    computedTaggedDigestBase64:
+                                        computedTaggedBase64,
+                                    computedCanonicalDigestHex:
+                                        computedCanonicalHex,
+                                    computedTaggedCanonicalDigestHex:
+                                        computedTaggedCanonicalHex,
+                                    hashAlg,
+                                });
+                            }
                         } catch {}
                     }
 
@@ -2766,10 +2960,12 @@
             });
         if (window.DEBUG_VERBOSE && result.mismatched > 0) {
             const maxDetails = 20;
-            console.log(
-                "[valueDigests] Mismatch details (first " + maxDetails + "):",
-                result.details.slice(0, maxDetails),
-            );
+            if (window.DEBUG_VERBOSE) {
+                console.log(
+                    "[valueDigests] Mismatch details (first " + maxDetails + "):",
+                    result.details.slice(0, maxDetails),
+                );
+            }
         }
         return result;
     }
@@ -2922,15 +3118,21 @@
                     (typeof rawDeviceAuth === "object" &&
                         rawDeviceAuth.deviceMac));
             if (hasMac) {
-                console.log(
-                    "[mdocAuth] ℹ️ Wallet is using MAC authentication (deviceMac), not signature-based authentication",
-                );
-                console.log(
-                    "[mdocAuth] MAC authentication is a valid ISO 18013-5 authentication method",
-                );
-                console.log(
-                    "[mdocAuth] Skipping DeviceAuth signature verification (MAC cannot be verified by reader)",
-                );
+                if (window.DEBUG_VERBOSE) {
+                    console.log(
+                        "[mdocAuth] ℹ️ Wallet is using MAC authentication (deviceMac), not signature-based authentication",
+                    );
+                }
+                if (window.DEBUG_VERBOSE) {
+                    console.log(
+                        "[mdocAuth] MAC authentication is a valid ISO 18013-5 authentication method",
+                    );
+                }
+                if (window.DEBUG_VERBOSE) {
+                    console.log(
+                        "[mdocAuth] Skipping DeviceAuth signature verification (MAC cannot be verified by reader)",
+                    );
+                }
                 if (typeof window.log === "function") {
                     window.log(
                         "✓ Wallet using MAC authentication (valid ISO 18013-5 method)",

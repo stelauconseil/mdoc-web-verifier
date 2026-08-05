@@ -2375,50 +2375,71 @@
                 assembled,
                 reason = "final-flag",
             ) {
+                window.MdocPerf.mark("process_assembled_start");
                 const len = assembled.length;
                 log(
                     `S→C complete${reason ? " (" + reason + ")" : ""}: ${len} bytes`,
                 );
 
-                console.log("=== RECEIVED DATA FROM WALLET ===");
-                console.log("Length:", len);
-                console.log("Hex:", hex(assembled));
+                if (window.DEBUG_VERBOSE) {
+                    console.log("=== RECEIVED DATA FROM WALLET ===");
+                }
+                if (window.DEBUG_VERBOSE) {
+                    console.log("Length:", len);
+                }
+                if (window.DEBUG_VERBOSE) {
+                    console.log("Hex:", hex(assembled));
+                }
 
                 // Try to decode the response
                 try {
                     const decoded = CBOR.decode(assembled);
-                    console.log("Decoded wallet response:", decoded);
-                    console.log("Response type:", typeof decoded);
-                    console.log("Is Map:", decoded instanceof Map);
-                    console.log(
-                        "Is Object:",
-                        decoded && typeof decoded === "object",
-                    );
+                    if (window.DEBUG_VERBOSE) {
+                        console.log("Decoded wallet response:", decoded);
+                    }
+                    if (window.DEBUG_VERBOSE) {
+                        console.log("Response type:", typeof decoded);
+                    }
+                    if (window.DEBUG_VERBOSE) {
+                        console.log("Is Map:", decoded instanceof Map);
+                    }
+                    if (window.DEBUG_VERBOSE) {
+                        console.log(
+                            "Is Object:",
+                            decoded && typeof decoded === "object",
+                        );
+                    }
 
                     // Check if this is a SessionEstablishment response (contains eDeviceKey)
                     let isSessionResponse = false;
 
                     // Log all fields to see what we actually received
                     if (decoded instanceof Map) {
-                        console.log(
-                            "Response is a Map with keys:",
-                            Array.from(decoded.keys()),
-                        );
+                        if (window.DEBUG_VERBOSE) {
+                            console.log(
+                                "Response is a Map with keys:",
+                                Array.from(decoded.keys()),
+                            );
+                        }
                         if (
                             decoded.has("eDeviceKey") ||
                             decoded.has("data") ||
                             decoded.has("status")
                         ) {
                             isSessionResponse = true;
-                            console.log(
-                                "✅ Detected SessionEstablishment response (Map)",
-                            );
+                            if (window.DEBUG_VERBOSE) {
+                                console.log(
+                                    "✅ Detected SessionEstablishment response (Map)",
+                                );
+                            }
                         }
                     } else if (decoded && typeof decoded === "object") {
-                        console.log(
-                            "Response object keys:",
-                            Object.keys(decoded),
-                        );
+                        if (window.DEBUG_VERBOSE) {
+                            console.log(
+                                "Response object keys:",
+                                Object.keys(decoded),
+                            );
+                        }
                         if (
                             decoded.eDeviceKey ||
                             decoded.eReaderKey ||
@@ -2426,9 +2447,11 @@
                             decoded.status
                         ) {
                             isSessionResponse = true;
-                            console.log(
-                                "✅ Detected SessionEstablishment response (Object)",
-                            );
+                            if (window.DEBUG_VERBOSE) {
+                                console.log(
+                                    "✅ Detected SessionEstablishment response (Object)",
+                                );
+                            }
                         }
                     }
 
@@ -2436,9 +2459,11 @@
                     // Check if session keys are established (skReader and skDevice are set)
                     if (!skReader || !skDevice) {
                         isSessionResponse = true;
-                        console.log(
-                            "✅ Detected response before session established - treating as session response",
-                        );
+                        if (window.DEBUG_VERBOSE) {
+                            console.log(
+                                "✅ Detected response before session established - treating as session response",
+                            );
+                        }
                     }
 
                     if (isSessionResponse) {
@@ -2470,7 +2495,9 @@
                             );
                         }
 
-                        console.log("Session response captured and signaled");
+                        if (window.DEBUG_VERBOSE) {
+                            console.log("Session response captured and signaled");
+                        }
                     } else if (skDevice && assembled.length > 20) {
                         // This might be an encrypted DeviceResponse
                         log(
@@ -2495,7 +2522,9 @@
                         log(`📄 Received ${len}-byte response from wallet`);
                     }
                 } catch (e) {
-                    console.log("Could not decode CBOR response:", e.message);
+                    if (window.DEBUG_VERBOSE) {
+                        console.log("Could not decode CBOR response:", e.message);
+                    }
                     log(`📄 Received ${len}-byte binary response from wallet`);
                 }
             }
@@ -3884,7 +3913,6 @@
                                 }
                                 // Trigger MSO status check (revocation) if status list is advertised
                                 try {
-                                    //console.log("sig", sig, sig?.mso, sig?.mso?.status);
                                     if (statusEl && sig) {
                                         // Decode MSO payload (COSE_Sign1 content) and locate a status container
                                         let statusContainer = null;
@@ -3989,20 +4017,24 @@
                                                                 ).map((k) =>
                                                                     String(k),
                                                                 );
-                                                            console.log(
-                                                                "[StatusCheck][Debug] Top-level Map keys:",
-                                                                mapKeys,
-                                                            );
+                                                            if (window.DEBUG_VERBOSE) {
+                                                                console.log(
+                                                                    "[StatusCheck][Debug] Top-level Map keys:",
+                                                                    mapKeys,
+                                                                );
+                                                            }
                                                         } else if (
                                                             typeof msoDecoded ===
                                                             "object"
                                                         ) {
-                                                            console.log(
-                                                                "[StatusCheck][Debug] Top-level object keys:",
-                                                                Object.keys(
-                                                                    msoDecoded,
-                                                                ),
-                                                            );
+                                                            if (window.DEBUG_VERBOSE) {
+                                                                console.log(
+                                                                    "[StatusCheck][Debug] Top-level object keys:",
+                                                                    Object.keys(
+                                                                        msoDecoded,
+                                                                    ),
+                                                                );
+                                                            }
                                                         }
                                                     } catch {}
 
@@ -4140,26 +4172,30 @@
                                                                 searchRoot instanceof
                                                                 Map
                                                             ) {
-                                                                console.log(
-                                                                    "[StatusCheck][Debug] Unwrapped Map keys:",
-                                                                    Array.from(
-                                                                        searchRoot.keys(),
-                                                                    ).map((k) =>
-                                                                        String(
-                                                                            k,
+                                                                if (window.DEBUG_VERBOSE) {
+                                                                    console.log(
+                                                                        "[StatusCheck][Debug] Unwrapped Map keys:",
+                                                                        Array.from(
+                                                                            searchRoot.keys(),
+                                                                        ).map((k) =>
+                                                                            String(
+                                                                                k,
+                                                                            ),
                                                                         ),
-                                                                    ),
-                                                                );
+                                                                    );
+                                                                }
                                                             } else if (
                                                                 typeof searchRoot ===
                                                                 "object"
                                                             ) {
-                                                                console.log(
-                                                                    "[StatusCheck][Debug] Unwrapped object keys:",
-                                                                    Object.keys(
-                                                                        searchRoot,
-                                                                    ),
-                                                                );
+                                                                if (window.DEBUG_VERBOSE) {
+                                                                    console.log(
+                                                                        "[StatusCheck][Debug] Unwrapped object keys:",
+                                                                        Object.keys(
+                                                                            searchRoot,
+                                                                        ),
+                                                                    );
+                                                                }
                                                             }
                                                         } catch {}
                                                     }
@@ -4190,9 +4226,11 @@
                                                     if (topLevelStatus) {
                                                         statusContainer =
                                                             topLevelStatus;
-                                                        console.log(
-                                                            "[StatusCheck] Found top-level status",
-                                                        );
+                                                        if (window.DEBUG_VERBOSE) {
+                                                            console.log(
+                                                                "[StatusCheck] Found top-level status",
+                                                            );
+                                                        }
                                                     } else {
                                                         const found =
                                                             findStatusRecursive(
@@ -4201,14 +4239,18 @@
                                                         if (found) {
                                                             statusContainer =
                                                                 found.container;
-                                                            console.log(
-                                                                "[StatusCheck] Found status via recursive search at path",
-                                                                found.path,
-                                                            );
+                                                            if (window.DEBUG_VERBOSE) {
+                                                                console.log(
+                                                                    "[StatusCheck] Found status via recursive search at path",
+                                                                    found.path,
+                                                                );
+                                                            }
                                                         } else {
-                                                            console.log(
-                                                                "[StatusCheck] No status container found in decoded MSO (root keys logged above).",
-                                                            );
+                                                            if (window.DEBUG_VERBOSE) {
+                                                                console.log(
+                                                                    "[StatusCheck] No status container found in decoded MSO (root keys logged above).",
+                                                                );
+                                                            }
                                                             try {
                                                                 log(
                                                                     "Status: no status container",
@@ -4305,13 +4347,15 @@
                                                         : (statusInfo?.idx ??
                                                           statusInfo?.index ??
                                                           statusInfo?.i);
-                                                console.log(
-                                                    "[StatusCheck] Initiating fetch",
-                                                    {
-                                                        uri: sUri,
-                                                        idx: sIdx,
-                                                    },
-                                                );
+                                                if (window.DEBUG_VERBOSE) {
+                                                    console.log(
+                                                        "[StatusCheck] Initiating fetch",
+                                                        {
+                                                            uri: sUri,
+                                                            idx: sIdx,
+                                                        },
+                                                    );
+                                                }
                                                 try {
                                                     if (sUri)
                                                         log(
@@ -4517,13 +4561,20 @@
 
             // New: Decrypt COSE_Encrypt0 response and render
             async function decryptAndRenderResponse(encryptedBytes) {
+                window.MdocPerf.mark("decrypt_start");
                 const deviceResponse =
                     await window.WalletResponse.decryptCoseEncrypt0ToObject(
                         encryptedBytes,
                     );
+                window.MdocPerf.mark("decrypt_done");
                 const model = buildResponseViewModel(deviceResponse);
-                console.log("Decrypted DeviceResponse view model:", model);
+                window.MdocPerf.mark("decode_done");
+                if (window.DEBUG_VERBOSE) {
+                    console.log("Decrypted DeviceResponse view model:", model);
+                }
                 renderResponseViewModel(model);
+                window.MdocPerf.mark("render_end");
+                window.MdocPerf.summary();
                 // Graceful end: signal state 0x02, then disconnect.
                 await endBleSessionAndDisconnect("DeviceResponse");
             }
@@ -4992,12 +5043,14 @@
                             "[StatusCheck] Using CORS proxy:",
                         );
                         try {
-                            console.log("[StatusCheck] Start", {
-                                uri: proxyUri,
-                                idx,
-                                hasIdentifier,
-                                hasIndex,
-                            });
+                            if (window.DEBUG_VERBOSE) {
+                                console.log("[StatusCheck] Start", {
+                                    uri: proxyUri,
+                                    idx,
+                                    hasIdentifier,
+                                    hasIndex,
+                                });
+                            }
                         } catch {}
                         try {
                             log(
@@ -5008,15 +5061,17 @@
                             headers: { Accept: ACCEPT_STATUS },
                         });
                         try {
-                            console.log(
-                                "[StatusCheck] Fetched top-level resource",
-                                {
-                                    uri,
-                                    status: res.status,
-                                    contentType:
-                                        res.headers.get("content-type"),
-                                },
-                            );
+                            if (window.DEBUG_VERBOSE) {
+                                console.log(
+                                    "[StatusCheck] Fetched top-level resource",
+                                    {
+                                        uri,
+                                        status: res.status,
+                                        contentType:
+                                            res.headers.get("content-type"),
+                                    },
+                                );
+                            }
                         } catch {}
                         const contentType = (
                             res.headers.get("content-type") || ""
@@ -5087,9 +5142,11 @@
                         } catch {}
                         if (cwt) {
                             try {
-                                console.log(
-                                    "[StatusCheck] Detected COSE_Sign1 (CWT)",
-                                );
+                                if (window.DEBUG_VERBOSE) {
+                                    console.log(
+                                        "[StatusCheck] Detected COSE_Sign1 (CWT)",
+                                    );
+                                }
                             } catch {}
                             // Verify signature if possible
                             try {
@@ -5125,7 +5182,9 @@
                             } catch {}
                             const plain = toPlainObject(claims) || {};
                             try {
-                                console.log("[StatusCheck] Parsed CWT claims");
+                                if (window.DEBUG_VERBOSE) {
+                                    console.log("[StatusCheck] Parsed CWT claims");
+                                }
                             } catch {}
 
                             // exp claim is required and must be in the future
@@ -5167,9 +5226,11 @@
                             if (hasIdentifier && idValue != null) {
                                 const kind = "IdentifierList";
                                 try {
-                                    console.log(
-                                        "[StatusCheck] Using IdentifierList mechanism",
-                                    );
+                                    if (window.DEBUG_VERBOSE) {
+                                        console.log(
+                                            "[StatusCheck] Using IdentifierList mechanism",
+                                        );
+                                    }
                                 } catch {}
                                 // claim 65530 or object with 'identifiers'
                                 const idListClaim =
@@ -5260,7 +5321,9 @@
                                     source: uri,
                                 };
                                 try {
-                                    console.log("[StatusCheck] Result", out);
+                                    if (window.DEBUG_VERBOSE) {
+                                        console.log("[StatusCheck] Result", out);
+                                    }
                                 } catch {}
                                 try {
                                     log(
@@ -5337,7 +5400,9 @@
                                 kind,
                             };
                             try {
-                                console.log("[StatusCheck] Result", out);
+                                if (window.DEBUG_VERBOSE) {
+                                    console.log("[StatusCheck] Result", out);
+                                }
                             } catch {}
                             try {
                                 log(
@@ -5410,14 +5475,16 @@
                                         }
                                     } catch {}
                                     try {
-                                        console.log(
-                                            "[StatusCheck] Paged provider detected",
-                                            {
-                                                pageIndex,
-                                                pageSize,
-                                                pageUri,
-                                            },
-                                        );
+                                        if (window.DEBUG_VERBOSE) {
+                                            console.log(
+                                                "[StatusCheck] Paged provider detected",
+                                                {
+                                                    pageIndex,
+                                                    pageSize,
+                                                    pageUri,
+                                                },
+                                            );
+                                        }
                                     } catch {}
                                     try {
                                         log(
@@ -5575,10 +5642,12 @@
                                                     kind: "StatusList",
                                                 };
                                                 try {
-                                                    console.log(
-                                                        "[StatusCheck] Result (paged CWT)",
-                                                        out,
-                                                    );
+                                                    if (window.DEBUG_VERBOSE) {
+                                                        console.log(
+                                                            "[StatusCheck] Result (paged CWT)",
+                                                            out,
+                                                        );
+                                                    }
                                                 } catch {}
                                                 try {
                                                     log(
@@ -5633,10 +5702,12 @@
                                             kind: "StatusList",
                                         };
                                         try {
-                                            console.log(
-                                                "[StatusCheck] Result (paged raw)",
-                                                out,
-                                            );
+                                            if (window.DEBUG_VERBOSE) {
+                                                console.log(
+                                                    "[StatusCheck] Result (paged raw)",
+                                                    out,
+                                                );
+                                            }
                                         } catch {}
                                         try {
                                             log(
@@ -5679,10 +5750,12 @@
                             kind: "StatusList",
                         };
                         try {
-                            console.log(
-                                "[StatusCheck] Result (top-level)",
-                                out,
-                            );
+                            if (window.DEBUG_VERBOSE) {
+                                console.log(
+                                    "[StatusCheck] Result (top-level)",
+                                    out,
+                                );
+                            }
                         } catch {}
                         try {
                             log(
@@ -5950,8 +6023,12 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
             }
 
             async function processSessionResponse(assembled) {
-                console.log("=== FINALIZING SESSION FROM WALLET RESPONSE ===");
-                console.log("Raw response bytes:", hex(assembled));
+                if (window.DEBUG_VERBOSE) {
+                    console.log("=== FINALIZING SESSION FROM WALLET RESPONSE ===");
+                }
+                if (window.DEBUG_VERBOSE) {
+                    console.log("Raw response bytes:", hex(assembled));
+                }
 
                 if (!readerKeyPair) {
                     throw new Error(
@@ -5992,9 +6069,11 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                     for (const label of possibleLabels) {
                         if (decodedMap.has(label)) {
                             eDeviceKey = decodedMap.get(label);
-                            console.log(
-                                `Found potential wallet key under label "${label}"`,
-                            );
+                            if (window.DEBUG_VERBOSE) {
+                                console.log(
+                                    `Found potential wallet key under label "${label}"`,
+                                );
+                            }
                             break;
                         }
                     }
@@ -6008,9 +6087,11 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                             for (const label of possibleLabels) {
                                 if (nested.has(label)) {
                                     eDeviceKey = nested.get(label);
-                                    console.log(
-                                        `Found nested wallet key under label "${label}"`,
-                                    );
+                                    if (window.DEBUG_VERBOSE) {
+                                        console.log(
+                                            `Found nested wallet key under label "${label}"`,
+                                        );
+                                    }
                                     break;
                                 }
                             }
@@ -6022,9 +6103,11 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                 let walletKeyMap = null;
                 if (eDeviceKey) {
                     if (eDeviceKey instanceof CBOR.Tagged) {
-                        console.log(
-                            "Wallet key is CBOR.Tagged - decoding value",
-                        );
+                        if (window.DEBUG_VERBOSE) {
+                            console.log(
+                                "Wallet key is CBOR.Tagged - decoding value",
+                            );
+                        }
                         const value = eDeviceKey.value;
                         const bytes =
                             value instanceof Uint8Array
@@ -6032,7 +6115,9 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                                 : new Uint8Array(value);
                         walletKeyMap = toMap(CBOR.decode(bytes));
                     } else if (eDeviceKey instanceof Uint8Array) {
-                        console.log("Wallet key is raw Uint8Array - decoding");
+                        if (window.DEBUG_VERBOSE) {
+                            console.log("Wallet key is raw Uint8Array - decoding");
+                        }
                         walletKeyMap = toMap(
                             CBOR.decode(
                                 new Uint8Array(
@@ -6043,9 +6128,11 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                             ),
                         );
                     } else if (ArrayBuffer.isView(eDeviceKey)) {
-                        console.log(
-                            "Wallet key is ArrayBuffer view - decoding",
-                        );
+                        if (window.DEBUG_VERBOSE) {
+                            console.log(
+                                "Wallet key is ArrayBuffer view - decoding",
+                            );
+                        }
                         const bytes = new Uint8Array(
                             eDeviceKey.buffer,
                             eDeviceKey.byteOffset,
@@ -6094,8 +6181,12 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                 sessionEstablished = true;
                 window.sessionEstablished = true;
 
-                console.log("Session keys ready. SKReader:", hex(skReader));
-                console.log("Session keys ready. SKDevice:", hex(skDevice));
+                if (window.DEBUG_VERBOSE) {
+                    console.log("Session keys ready. SKReader:", hex(skReader));
+                }
+                if (window.DEBUG_VERBOSE) {
+                    console.log("Session keys ready. SKDevice:", hex(skDevice));
+                }
 
                 log("✅ Session ready using static DeviceEngagement key");
 
@@ -6141,11 +6232,16 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                 const dataBytes = toBytes(responseData);
                 if (dataBytes && dataBytes.length > 0) {
                     try {
+                        window.MdocPerf.mark("decrypt_start");
                         // First try RAW AES-GCM as per spec (ciphertext || 16-byte tag with SKDevice)
                         const deviceResponse =
                             await decryptSessionEstablishmentData(dataBytes);
+                        window.MdocPerf.mark("decrypt_done");
                         const model = buildResponseViewModel(deviceResponse);
+                        window.MdocPerf.mark("decode_done");
                         renderResponseViewModel(model);
+                        window.MdocPerf.mark("render_end");
+                        window.MdocPerf.summary();
                         // Graceful end: signal state 0x02, then disconnect.
                         await endBleSessionAndDisconnect("DeviceResponse");
                     } catch (decryptError) {

@@ -19,7 +19,8 @@
                 return btoa(String.fromCharCode.apply(null, u8));
             }
         } catch (e) {
-            console.log("bytesToBase64: fallback for large array", e);
+            if (window.DEBUG_VERBOSE)
+                console.log("bytesToBase64: fallback for large array", e);
             // fall through to chunked path
         }
         let s = "";
@@ -431,10 +432,11 @@
                 let mrzBytes;
                 if (mrzTlv) {
                     mrzBytes = u8.slice(mrzTlv.start, mrzTlv.end);
-                    console.log(
-                        "DG1: Found MRZ (5F1F), size:",
-                        mrzBytes.length,
-                    );
+                    if (window.DEBUG_VERBOSE)
+                        console.log(
+                            "DG1: Found MRZ (5F1F), size:",
+                            mrzBytes.length,
+                        );
                 } else {
                     // Fallback: some encodings may present 5F1F at start of the content; detect and strip
                     let off = start;
@@ -496,7 +498,8 @@
                     lines.every((l) => l.length === 36)
                 )
                     format = "TD2";
-                console.log("📄 Decoded ICAO DG1 (MRZ) lines:", lines);
+                if (window.DEBUG_VERBOSE)
+                    console.log("📄 Decoded ICAO DG1 (MRZ) lines:", lines);
 
                 return {
                     type: "mrz",
@@ -655,13 +658,14 @@
                         })(bdb);
 
                         const imageData = embedded ? embedded.bytes : bdb;
-                        console.log(
-                            "🖼️ Decoded ICAO DG2 (Portrait), image bytes:",
-                            imageData.length,
-                            embedded
-                                ? `(embedded ${embedded.kind})`
-                                : "(raw BDB)",
-                        );
+                        if (window.DEBUG_VERBOSE)
+                            console.log(
+                                "🖼️ Decoded ICAO DG2 (Portrait), image bytes:",
+                                imageData.length,
+                                embedded
+                                    ? `(embedded ${embedded.kind})`
+                                    : "(raw BDB)",
+                            );
 
                         return {
                             type: "portrait",
@@ -838,17 +842,19 @@
         // Helper: decode JPEG2000 to JPEG data URL using openjpeg and canvas
         function jp2ToJpegDataUrl(u8) {
             try {
-                console.log(
-                    "🖼️ Attempting JP2 to JPEG conversion, bytes:",
-                    u8.length,
-                );
+                if (window.DEBUG_VERBOSE)
+                    console.log(
+                        "🖼️ Attempting JP2 to JPEG conversion, bytes:",
+                        u8.length,
+                    );
                 if (typeof openjpeg === "undefined") {
                     console.warn(
                         "⚠️ openjpeg not available for JP2 conversion - check if openjpeg.js loaded properly",
                     );
                     return null;
                 }
-                console.log("✅ openjpeg available, parsing...");
+                if (window.DEBUG_VERBOSE)
+                    console.log("✅ openjpeg available, parsing...");
 
                 // Convert Uint8Array to regular array for openjpeg
                 const dataArray = Array.from(u8);
@@ -867,12 +873,13 @@
                     return null;
                 }
 
-                console.log(
-                    "📐 JP2 parsed, dimensions:",
-                    result.width,
-                    "x",
-                    result.height,
-                );
+                if (window.DEBUG_VERBOSE)
+                    console.log(
+                        "📐 JP2 parsed, dimensions:",
+                        result.width,
+                        "x",
+                        result.height,
+                    );
 
                 const { width, height, data } = result;
 
@@ -883,7 +890,8 @@
                 const ctx = canvas.getContext("2d");
                 const imageData = ctx.createImageData(width, height);
 
-                console.log("🎨 Converting planar RGB to RGBA ImageData...");
+                if (window.DEBUG_VERBOSE)
+                    console.log("🎨 Converting planar RGB to RGBA ImageData...");
 
                 // Convert 24-bit planar RGB to 32-bit RGBA
                 // openjpeg returns data as [R0,R1,R2...Rn, G0,G1,G2...Gn, B0,B1,B2...Bn]
@@ -903,10 +911,11 @@
                 ctx.putImageData(imageData, 0, 0);
 
                 const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
-                console.log(
-                    "✅ JP2 to JPEG conversion successful, data URL length:",
-                    dataUrl.length,
-                );
+                if (window.DEBUG_VERBOSE)
+                    console.log(
+                        "✅ JP2 to JPEG conversion successful, data URL length:",
+                        dataUrl.length,
+                    );
                 return dataUrl;
             } catch (e) {
                 console.error("❌ JP2 to JPEG conversion failed:", e);
@@ -1041,10 +1050,11 @@
                         entry.valueKind = "mrz";
                         entry.text = icaoData.text;
                         entry.icao = icaoData;
-                        console.log(
-                            "✅ Decoded ICAO DG1 (MRZ) for",
-                            elementIdentifier,
-                        );
+                        if (window.DEBUG_VERBOSE)
+                            console.log(
+                                "✅ Decoded ICAO DG1 (MRZ) for",
+                                elementIdentifier,
+                            );
                         return entry;
                     } else if (
                         icaoData.type === "portrait" &&
@@ -1071,16 +1081,18 @@
                             mimeType === "image/jp2" &&
                             isPortraitField(elementIdentifier)
                         ) {
-                            console.log(
-                                "🖼️ Processing JPEG2000 ICAO portrait field:",
-                                elementIdentifier,
-                            );
-                            const dataUrl = jp2ToJpegDataUrl(imgU8);
-                            if (dataUrl) {
+                            if (window.DEBUG_VERBOSE)
                                 console.log(
-                                    "✅ JP2 conversion successful for ICAO",
+                                    "🖼️ Processing JPEG2000 ICAO portrait field:",
                                     elementIdentifier,
                                 );
+                            const dataUrl = jp2ToJpegDataUrl(imgU8);
+                            if (dataUrl) {
+                                if (window.DEBUG_VERBOSE)
+                                    console.log(
+                                        "✅ JP2 conversion successful for ICAO",
+                                        elementIdentifier,
+                                    );
                                 entry.binary.converted = true;
                                 entry.binary.convertedFrom = mimeType;
                                 entry.binary.mimeType = "image/jpeg";
@@ -1098,10 +1110,12 @@
                                 entry.binary.dataUri = `data:${mimeType};base64,${b64}`;
                             }
                         }
-                        console.log(
-                            "✅ Decoded ICAO DG2 (Portrait) for",
-                            elementIdentifier,
-                        );
+                        if (window.DEBUG_VERBOSE) {
+                            console.log(
+                                "✅ Decoded ICAO DG2 (Portrait) for",
+                                elementIdentifier,
+                            );
+                        }
                         return entry;
                     }
                 }
@@ -1617,7 +1631,7 @@
                                 "digestAlgorithm",
                                 2,
                             ]);
-                            console.log("mso:", mso);
+                            if (window.DEBUG_VERBOSE) console.log("mso:", mso);
                             msoSummary = {
                                 docType: docType || null,
                                 signed: toISO(signedAt),

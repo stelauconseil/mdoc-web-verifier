@@ -117,26 +117,33 @@
         const publicKeyBytes =
             window.SessionCrypto.encodeTag24ByteString(coseKeyEncoded);
 
-        // Build request
-        const mdlRequest = await buildRequestByType();
-
         // Derive keys if not provided
         let aad = transcriptAAD;
         let keys;
+        let mdlRequest;
         if (!skReader || !aad) {
-            const mdocPub = await window.SessionCrypto.importMdocPubKeyXY(
-                mdocPubKey.x,
-                mdocPubKey.y,
-            );
+            // buildRequestByType/importMdocPubKeyXY/buildTranscriptAAD have no
+            // interdependency, so run them concurrently instead of in series.
+            const [mdlReq, mdocPub, aadComputed] = await Promise.all([
+                buildRequestByType(),
+                window.SessionCrypto.importMdocPubKeyXY(
+                    mdocPubKey.x,
+                    mdocPubKey.y,
+                ),
+                buildTranscriptAAD(deBytes),
+            ]);
+            mdlRequest = mdlReq;
             const shared = await window.SessionCrypto.deriveSharedSecretBits(
                 readerKeyPair.privateKey,
                 mdocPub,
             );
-            aad = await buildTranscriptAAD(deBytes);
+            aad = aadComputed;
             keys = await window.SessionCrypto.deriveSessionKey(
                 new Uint8Array(shared),
                 aad,
             );
+        } else {
+            mdlRequest = await buildRequestByType();
         }
 
         const useReaderKey = skReader || keys?.readerKey;

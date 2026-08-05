@@ -13,6 +13,77 @@
 */
 
 (function () {
+    window.MdocPerf =
+        window.MdocPerf ||
+        (function () {
+            let marks = {};
+            let history = [];
+            return {
+                reset() {
+                    if (Object.keys(marks).length) history.push(marks);
+                    marks = {};
+                },
+                mark(label) {
+                    const t = performance.now();
+                    marks[label] = t;
+                    if (window.DEBUG_VERBOSE)
+                        console.log(`⏱ [${label}] ${t.toFixed(1)}ms`);
+                },
+                summary() {
+                    if (!window.DEBUG_VERBOSE) return;
+                    const entries = Object.entries(marks).sort(
+                        (a, b) => a[1] - b[1],
+                    );
+                    if (!entries.length) return;
+                    const t0 = entries[0][1];
+                    let prev = t0;
+                    const rows = entries.map(([label, t]) => {
+                        const row = {
+                            étape: label,
+                            "delta (ms)": +(t - prev).toFixed(1),
+                            "cumulé (ms)": +(t - t0).toFixed(1),
+                        };
+                        prev = t;
+                        return row;
+                    });
+                    console.log(
+                        `⏱ === Timing summary — run #${history.length + 1} (BLE connect → render) ===`,
+                    );
+                    console.table(rows);
+                    if (history.length) this.compareRuns();
+                },
+                compareRuns() {
+                    if (!window.DEBUG_VERBOSE) return;
+                    const runs = [...history, marks];
+                    const latest = runs[runs.length - 1];
+                    const labels = [
+                        ...new Set(runs.flatMap((r) => Object.keys(r))),
+                    ].sort(
+                        (a, b) =>
+                            (latest[a] ?? Infinity) - (latest[b] ?? Infinity),
+                    );
+                    const rows = labels.map((label) => {
+                        const row = { étape: label };
+                        runs.forEach((r, i) => {
+                            if (r[label] != null) {
+                                const t0 = Math.min(...Object.values(r));
+                                row[`run #${i + 1} (ms)`] = +(
+                                    r[label] - t0
+                                ).toFixed(1);
+                            } else {
+                                row[`run #${i + 1} (ms)`] = null;
+                            }
+                        });
+                        return row;
+                    });
+                    console.log(
+                        `⏱ === Comparaison sur ${runs.length} run(s) ===`,
+                    );
+                    console.table(rows);
+                },
+            };
+        })();
+
     const UUIDS = {
         state: "00000001-a123-48ce-896b-4c76973373e6",
         c2s: "00000002-a123-48ce-896b-4c76973373e6",
@@ -59,7 +130,7 @@
         try {
             if (typeof onAssembled === "function")
                 await onAssembled(assembled, reason);
-            else
+            else if (window.DEBUG_VERBOSE)
                 console.log(
                     `S→C complete (${reason || "unknown"}): ${assembled.length} bytes`,
                 );
@@ -74,9 +145,10 @@
         const flag = data[0];
         const chunk = data.slice(1);
         rxBuffer.push(chunk);
-        console.log(
-            `S→C notify: flag=0x${flag.toString(16)} len=${chunk.length}`,
-        );
+        if (window.DEBUG_VERBOSE)
+            console.log(
+                `S→C notify: flag=0x${flag.toString(16)} len=${chunk.length}`,
+            );
 
         try {
             if (rxTimer) clearTimeout(rxTimer);
@@ -108,9 +180,10 @@
                                 rxStalledCount = 0;
                                 rxLastLen = pendingLen;
                             }
-                            console.log(
-                                `⏳ Timeout but CBOR incomplete; waiting (len=${pendingLen}, stalled=${rxStalledCount})`,
-                            );
+                            if (window.DEBUG_VERBOSE)
+                                console.log(
+                                    `⏳ Timeout but CBOR incomplete; waiting (len=${pendingLen}, stalled=${rxStalledCount})`,
+                                );
                             try {
                                 if (rxTimer) clearTimeout(rxTimer);
                             } catch {}
@@ -149,9 +222,10 @@
                                                 rxStalledCount < 5
                                             ) {
                                                 rxStalledCount++;
-                                                console.log(
-                                                    `⏳ Still incomplete; continuing (stalled=${rxStalledCount})`,
-                                                );
+                                                if (window.DEBUG_VERBOSE)
+                                                    console.log(
+                                                        `⏳ Still incomplete; continuing (stalled=${rxStalledCount})`,
+                                                    );
                                                 return;
                                             }
                                             rxBuffer = [];
@@ -192,6 +266,7 @@
                 o += seg.length;
             }
             rxBuffer = [];
+            window.MdocPerf.mark("response_received");
             await processAssembled(assembled, "final-flag");
         }
     }
@@ -219,23 +294,29 @@
         if (!navigator.bluetooth)
             throw new Error("Web Bluetooth not supported");
 
-        console.log(`🔎 Requesting device for service ${serviceUUID}…`);
+        window.MdocPerf.reset();
+        window.MdocPerf.mark("ble_connect_start");
+        if (window.DEBUG_VERBOSE)
+            console.log(`🔎 Requesting device for service ${serviceUUID}…`);
         device = await navigator.bluetooth.requestDevice({
             filters: [{ services: [serviceUUID] }],
             optionalServices: [serviceUUID],
         });
-        console.log(
-            `Device selected: ${device.name || "(unnamed)"} (${device.id})`,
-        );
+        if (window.DEBUG_VERBOSE)
+            console.log(
+                `Device selected: ${device.name || "(unnamed)"} (${device.id})`,
+            );
 
         device.addEventListener("gattserverdisconnected", () => {
-            console.log("📱 Wallet disconnected from reader.");
+            if (window.DEBUG_VERBOSE)
+                console.log("📱 Wallet disconnected from reader.");
             server = service = chState = chC2S = chS2C = null;
         });
 
         try {
             if (device?.gatt?.connected) {
-                console.log("🔌 Closing previous GATT connection");
+                if (window.DEBUG_VERBOSE)
+                    console.log("🔌 Closing previous GATT connection");
                 device.gatt.disconnect();
                 await sleep(200);
             }
@@ -244,23 +325,27 @@
         const tryGatt = async (tries) => {
             for (let i = 0; i <= tries; i++) {
                 try {
-                    console.log(`Connecting to ${device.name || "(unnamed)"}…`);
+                    if (window.DEBUG_VERBOSE)
+                        console.log(`Connecting to ${device.name || "(unnamed)"}…`);
                     server = await withTimeout(
                         device.gatt.connect(),
                         10000,
                         "connecting to GATT",
                     );
-                    console.log("✓ GATT connected");
+                    if (window.DEBUG_VERBOSE) console.log("✓ GATT connected");
+                    window.MdocPerf.mark("gatt_connected");
                     // Reset negotiated chunk for a fresh session
                     negotiatedChunkSize = null;
                     return;
                 } catch (e) {
-                    console.log(
-                        `❌ ${e.message || e}${i < tries ? " — retrying…" : ""}`,
-                    );
+                    if (window.DEBUG_VERBOSE)
+                        console.log(
+                            `❌ ${e.message || e}${i < tries ? " — retrying…" : ""}`,
+                        );
                     if (typeof device.watchAdvertisements === "function") {
                         try {
-                            console.log("📡 Watching advertisements for 2s…");
+                            if (window.DEBUG_VERBOSE)
+                                console.log("📡 Watching advertisements for 2s…");
                             await withTimeout(
                                 device.watchAdvertisements(),
                                 2000,
@@ -276,34 +361,38 @@
 
         await tryGatt(2);
 
-        console.log("🔧 Getting primary service…");
+        if (window.DEBUG_VERBOSE) console.log("🔧 Getting primary service…");
         service = await withTimeout(
             server.getPrimaryService(serviceUUID),
             7000,
             "getting primary service",
         );
-        console.log("✓ Primary service acquired");
+        if (window.DEBUG_VERBOSE) console.log("✓ Primary service acquired");
 
-        console.log("🔩 Getting characteristics (state, c2s, s2c)…");
-        chState = await withTimeout(
-            service.getCharacteristic(UUIDS.state),
-            5000,
-            "getting state characteristic",
-        );
-        chC2S = await withTimeout(
-            service.getCharacteristic(UUIDS.c2s),
-            5000,
-            "getting c2s characteristic",
-        );
-        chS2C = await withTimeout(
-            service.getCharacteristic(UUIDS.s2c),
-            5000,
-            "getting s2c characteristic",
-        );
-        console.log("✓ Characteristics ready");
+        if (window.DEBUG_VERBOSE)
+            console.log("🔩 Getting characteristics (state, c2s, s2c)…");
+        [chState, chC2S, chS2C] = await Promise.all([
+            withTimeout(
+                service.getCharacteristic(UUIDS.state),
+                5000,
+                "getting state characteristic",
+            ),
+            withTimeout(
+                service.getCharacteristic(UUIDS.c2s),
+                5000,
+                "getting c2s characteristic",
+            ),
+            withTimeout(
+                service.getCharacteristic(UUIDS.s2c),
+                5000,
+                "getting s2c characteristic",
+            ),
+        ]);
+        if (window.DEBUG_VERBOSE) console.log("✓ Characteristics ready");
 
         if (!notificationsActive) {
-            console.log("🔔 Enabling notifications on s2c…");
+            if (window.DEBUG_VERBOSE)
+                console.log("🔔 Enabling notifications on s2c…");
             await withTimeout(
                 chS2C.startNotifications(),
                 5000,
@@ -314,23 +403,28 @@
                 handleServer2Client,
             );
             notificationsActive = true;
-            console.log("GATT ready. Notifications enabled.");
+            if (window.DEBUG_VERBOSE)
+                console.log("GATT ready. Notifications enabled.");
         } else {
             // Avoid duplicate log spam if connect() was invoked twice rapidly
-            console.log("GATT ready. Notifications enabled.");
+            if (window.DEBUG_VERBOSE)
+                console.log("GATT ready. Notifications enabled.");
         }
+        window.MdocPerf.mark("ble_ready");
     }
 
     async function writeState(byte) {
         if (!chState) throw new Error("State characteristic not available");
         await chState.writeValueWithoutResponse(Uint8Array.of(byte));
-        console.log(`State set to 0x${byte.toString(16)}`);
+        if (window.DEBUG_VERBOSE)
+            console.log(`State set to 0x${byte.toString(16)}`);
     }
 
     async function sendFragmented(payload, chunkSize) {
         if (!chC2S)
             throw new Error("Client-to-Server characteristic not available");
         if (!device?.gatt?.connected) throw new Error("Device not connected");
+        window.MdocPerf.mark("request_send_start");
         const userSz = parseInt(chunkSize, 10);
         // Start with caller-provided size, or previously negotiated size, or default
         let currentChunk =
@@ -358,11 +452,12 @@
                     await chC2S.writeValueWithoutResponse(frag);
                     // Success: advance and cache negotiated size if we discovered smaller-than-default
                     negotiatedChunkSize = Math.min(currentChunk, defaultChunk);
-                    console.log(
-                        `C→S write: flag=0x${frag[0].toString(
-                            16,
-                        )} len=${take} (chunk=${currentChunk})`,
-                    );
+                    if (window.DEBUG_VERBOSE)
+                        console.log(
+                            `C→S write: flag=0x${frag[0].toString(
+                                16,
+                            )} len=${take} (chunk=${currentChunk})`,
+                        );
                     off += take;
                     break; // proceed to next outer-loop chunk
                 } catch (e) {
@@ -377,19 +472,19 @@
                         throw e;
                     }
                     take = Math.min(rem, currentChunk);
-                    console.log(
-                        `⚠️ write failed (${
-                            e && e.message ? e.message : e
-                        }); reducing chunk to ${currentChunk} and retrying`,
-                    );
+                    if (window.DEBUG_VERBOSE)
+                        console.log(
+                            `⚠️ write failed (${
+                                e && e.message ? e.message : e
+                            }); reducing chunk to ${currentChunk} and retrying`,
+                        );
                     // Tiny delay to avoid hammering the controller
                     await new Promise((r) => setTimeout(r, 10));
                     continue;
                 }
             }
-            if (off < payload.length)
-                await new Promise((r) => setTimeout(r, 10));
         }
+        window.MdocPerf.mark("request_send_end");
     }
 
     function _removeNotificationsListener() {
@@ -412,7 +507,7 @@
         try {
             _removeNotificationsListener();
             if (device?.gatt?.connected) {
-                console.log("🔌 Disconnecting BLE…");
+                if (window.DEBUG_VERBOSE) console.log("🔌 Disconnecting BLE…");
                 device.gatt.disconnect();
             }
         } catch {}
