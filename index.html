@@ -1039,7 +1039,6 @@
                             type="checkbox"
                             name="requestType"
                             value="pid_full"
-                            checked
                         />
                         EU PID Full
                     </label>
@@ -1100,7 +1099,6 @@
                             type="checkbox"
                             name="requestType"
                             value="mdl_full"
-                            checked
                         />
                         mDL Full
                     </label>
@@ -6484,7 +6482,27 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                 }
                 requestAnimationFrame(tick);
             }
+
+            function getSelectedRequestTypes() {
+                return Array.from(
+                    document.querySelectorAll('input[name="requestType"]:checked'),
+                ).map((cb) => cb.value);
+            }
+
+            function ensureCredentialSelection() {
+                const selected = getSelectedRequestTypes();
+                if (selected.length === 0) {
+                    log(
+                        "⚠️ Select at least one credential before scanning or connecting",
+                    );
+                    statusEl.textContent = "Selecteer eerst een credential";
+                    return false;
+                }
+                return true;
+            }
+
             btnScan.addEventListener("click", () => {
+                if (!ensureCredentialSelection()) return;
                 // Ensure previous BLE session is fully closed so old notifications won't repopulate UI
                 try {
                     disconnectBLE();
@@ -6585,6 +6603,12 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
             // Automated connection and session establishment flow
             async function autoConnectFlow() {
                 try {
+                    if (!ensureCredentialSelection()) {
+                        throw new Error(
+                            "Select at least one credential before continuing",
+                        );
+                    }
+
                     // Step 1: Connect to wallet
                     const connected = !!(
                         window.BLE &&
@@ -6770,6 +6794,7 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
             }
 
             btnParseQr.addEventListener("click", () => {
+                if (!ensureCredentialSelection()) return;
                 resetResponseAndLog();
                 handleQrPayload(qrInput.value, "manual input");
             });
@@ -6781,6 +6806,7 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
 
             qrInput.addEventListener("keydown", (event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
+                    if (!ensureCredentialSelection()) return;
                     event.preventDefault();
                     resetResponseAndLog();
                     handleQrPayload(qrInput.value, "manual input");
@@ -7204,7 +7230,7 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
 
                     if (selected.length === 0) {
                         log(
-                            "⚠️ No document types selected - will default to mDL Full",
+                            "⚠️ No document types selected - select at least one credential",
                         );
                     } else if (selected.length === 1) {
                         const type = selected[0];

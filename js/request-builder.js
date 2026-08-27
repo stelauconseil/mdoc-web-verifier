@@ -22,7 +22,9 @@
             ).map((cb) => cb.value);
         }
         if (!Array.isArray(requestTypes)) requestTypes = [requestTypes];
-        if (requestTypes.length === 0) requestTypes = ["full"];
+        if (requestTypes.length === 0) {
+            throw new Error("Select at least one credential before continuing");
+        }
 
         log("Building request for types: " + JSON.stringify(requestTypes));
 
