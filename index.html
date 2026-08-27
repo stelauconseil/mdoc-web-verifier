@@ -6557,11 +6557,10 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                 transcriptAAD = null;
                 walletEphemeralKey = null;
 
-                // Remove existing connect button if present
-                const existingBtn = document.getElementById("btnAutoConnect");
-                if (existingBtn) {
-                    existingBtn.remove();
-                    console.log("Removed existing connect button");
+                if (btnScan) {
+                    btnScan.dataset.mode = "scan";
+                    btnScan.disabled = false;
+                    btnScan.textContent = "Scan QR Code";
                 }
 
                 console.log("BLE connection state reset");
@@ -6632,7 +6631,25 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                 return true;
             }
 
-            btnScan.addEventListener("click", () => {
+            btnScan.addEventListener("click", async () => {
+                if (btnScan.dataset.mode === "connect") {
+                    btnScan.disabled = true;
+                    btnScan.textContent = "Connecting...";
+                    try {
+                        await autoConnectFlow();
+                        btnScan.textContent = "✅ Connected";
+                        btnScan.disabled = true;
+                        btnScan.dataset.mode = "connected";
+                    } catch (error) {
+                        btnScan.disabled = false;
+                        btnScan.textContent =
+                            "🚀 Connect & Request Digital Credentials";
+                        btnScan.dataset.mode = "connect";
+                        log(`❌ Connection failed: ${error.message}`);
+                    }
+                    return;
+                }
+
                 if (!ensureCredentialSelection()) return;
                 // Ensure previous BLE session is fully closed so old notifications won't repopulate UI
                 try {
@@ -6673,56 +6690,23 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                     );
                     saveReplayCapture();
 
-                    // Enable and show a connect button
-                    if (!document.getElementById("btnAutoConnect")) {
-                        const connectBtn = document.createElement("button");
-                        connectBtn.id = "btnAutoConnect";
-                        connectBtn.textContent =
-                            "🚀 Connect & Request Digital Credentials";
-                        connectBtn.style.cssText =
-                            "margin: 1rem 0; padding: 0.75rem 1.5rem; font-size: 1.1em; background: #4CAF50; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;";
-
-                        const showButtonForManualConnect = () => {
-                            const qrSection =
-                                document.getElementById("qrSection");
-                            if (!connectBtn.isConnected)
-                                qrSection.appendChild(connectBtn);
-                            log(
-                                '🚀 Ready to connect! Click "Connect & Request Digital Credentials" below to continue...',
-                            );
-                        };
-
-                        connectBtn.onclick = async () => {
-                            connectBtn.disabled = true;
-                            connectBtn.textContent = "Connecting...";
-                            try {
-                                await autoConnectFlow();
-                                connectBtn.remove(); // Remove button after successful connection
-                            } catch (error) {
-                                connectBtn.disabled = false;
-                                connectBtn.textContent =
-                                    "🚀 Connect & Start Session";
-                                log(`❌ Connection failed: ${error.message}`);
-                            }
-                        };
-
-                        // Compliant mdoc: URIs connect automatically without
-                        // showing the button. Web Bluetooth's requestDevice()
-                        // requires a real user gesture, which a QR scan does
-                        // not provide, so if the browser rejects the
-                        // gesture-less attempt, fall back to the manual
-                        // button instead of failing silently.
-                        if (/^mdoc:/i.test(payload)) {
-                            log("🚀 Compliant mdoc QR detected, connecting…");
-                            autoConnectFlow().catch((error) => {
-                                log(
-                                    `❌ Auto-connect failed (${error.message}); please click to connect manually.`,
-                                );
-                                showButtonForManualConnect();
-                            });
-                        } else {
-                            showButtonForManualConnect();
-                        }
+                    // Reuse the existing Scan QR Code control so the post-scan action
+                    // matches the app's native button styling and sits in the same UI
+                    // slot. The actual Bluetooth permission request still starts only
+                    // after a real user click.
+                    if (btnScan) {
+                        btnScan.dataset.mode = "connect";
+                        btnScan.disabled = false;
+                        btnScan.textContent =
+                            "🚀 Wallet found, click to continue";
+                        btnScan.focus();
+                        btnScan.scrollIntoView({
+                            behavior: "smooth",
+                            block: "center",
+                        });
+                        log(
+                            '🚀 QR scan complete. Click the button to start the Bluetooth pairing request.',
+                        );
                     }
                 } catch (e) {
                     hideVerificationProgress();
