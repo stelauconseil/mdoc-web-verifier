@@ -953,39 +953,6 @@
 
     <body>
         <header class="page-header" role="banner">
-            <div style="position: absolute; left: 1.25rem; top: 1.25rem; z-index: 2">
-                <label
-                    class="muted"
-                    style="
-                        font-size: 0.78rem;
-                        display: flex;
-                        align-items: center;
-                        gap: 0.4rem;
-                        color: rgba(248, 250, 252, 0.5);
-                    "
-                >
-                    Go to
-                    <select
-                        id="pageNavSelect"
-                        style="
-                            padding: 0.3rem 0.5rem;
-                            border-radius: 6px;
-                            border: 1px solid rgba(255, 255, 255, 0.15);
-                            font-size: 0.78rem;
-                            background: rgba(255, 255, 255, 0.08);
-                            color: rgba(248, 250, 252, 0.8);
-                            font-family: var(--font-body);
-                            backdrop-filter: blur(8px);
-                        "
-                    >
-                        <option value="">Select...</option>
-                        <option value="visitor.html">Visitor log</option>
-                        <option value="unlikability_test.html">
-                            Unlinkability test
-                        </option>
-                    </select>
-                </label>
-            </div>
             <h1>ISO 18013-5 Web Proximity mDoc Reader</h1>
             <p>
                 Scan an <strong>mDoc / mDL device engagement QR code</strong>,
@@ -1248,20 +1215,61 @@
                 </div>
             </section>
 
-            <section class="card" id="qrSection">
-                <h2>2. Device Engagement</h2>
+            <section class="card" id="startVerificationSection">
+                <h2>2. Start Verification</h2>
                 <p class="muted">
-                    Use your computer camera to capture the wallet's QR code or
-                    paste details manually.
+                    Start de verificatiesessie zodra je credential-selectie is
+                    voltooid.
                 </p>
                 <div class="row">
                     <button id="btnScan">Scan QR Code</button>
                 </div>
+                <p id="credentialWarning" class="muted" style="display: none; margin: 0.5rem 0 0.75rem 0; color: #b45309">
+                    Selecteer eerst een credential
+                </p>
                 <div class="scanner">
                     <div class="video-frame">
                         <video id="video" playsinline muted></video>
                         <canvas id="canvas"></canvas>
                     </div>
+                </div>
+            </section>
+
+            <section class="card" id="responseSection" style="display: none">
+                <h2>3. Wallet Response</h2>
+                <div id="responseDisplay"></div>
+            </section>
+
+            <section class="card" id="qrSection">
+                <div
+                    style="
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        gap: 8px;
+                    "
+                >
+                    <h2 style="margin: 0">4. Device Engagement</h2>
+                    <button
+                        onclick="toggleDetails('qrDetails')"
+                        class="secondary"
+                        style="
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 6px;
+                            padding: 6px 10px;
+                        "
+                    >
+                        <span id="qrDetails-icon">▶</span>
+                        Details
+                    </button>
+                </div>
+
+                <div id="qrDetails" style="display: none; margin-top: 0.75rem">
+                    <p class="muted">
+                        Use your computer camera to capture the wallet's QR code or
+                        paste details manually.
+                    </p>
                     <div class="status-panel">
                         <p>
                             <strong>Status:</strong>
@@ -1280,49 +1288,44 @@
                             <span id="bleAddr">—</span>
                         </p>
                     </div>
-                </div>
-                <div class="row">
-                    <label class="inline muted"
-                        >BLE MTU (bytes)
-                        <input
-                            id="chunk"
-                            type="number"
-                            min="20"
-                            max="511"
-                            value="244"
-                        />
-                    </label>
-                    <span
-                        class="muted"
-                        style="font-size: 0.82rem"
-                    >
-                        Packet size for BLE transmission. Default 244 bytes
-                        works with most modern devices. Reduce to 20 if
-                        connection issues occur.
-                    </span>
-                </div>
+                    <div class="row">
+                        <label class="inline muted"
+                            >BLE MTU (bytes)
+                            <input
+                                id="chunk"
+                                type="number"
+                                min="20"
+                                max="511"
+                                value="244"
+                            />
+                        </label>
+                        <span
+                            class="muted"
+                            style="font-size: 0.82rem"
+                        >
+                            Packet size for BLE transmission. Default 244 bytes
+                            works with most modern devices. Reduce to 20 if
+                            connection issues occur.
+                        </span>
+                    </div>
 
-                <div class="manual-entry">
-                    <label class="muted" for="qrInput"
-                        >Manual QR payload (paste from clipboard or laser
-                        scanner)</label
-                    >
-                    <textarea
-                        id="qrInput"
-                        placeholder="Paste the full mdoc: URI here"
-                    ></textarea>
-                    <div class="row" style="margin-top: 0">
-                        <button id="btnParseQr" class="secondary">
-                            Use manual QR payload
-                        </button>
-                        <button id="btnClearQr">Clear</button>
+                    <div class="manual-entry">
+                        <label class="muted" for="qrInput"
+                            >Manual QR payload (paste from clipboard or laser
+                            scanner)</label
+                        >
+                        <textarea
+                            id="qrInput"
+                            placeholder="Paste the full mdoc: URI here"
+                        ></textarea>
+                        <div class="row" style="margin-top: 0">
+                            <button id="btnParseQr" class="secondary">
+                                Use manual QR payload
+                            </button>
+                            <button id="btnClearQr">Clear</button>
+                        </div>
                     </div>
                 </div>
-            </section>
-
-            <section class="card" id="responseSection" style="display: none">
-                <h2>3. Wallet Response</h2>
-                <div id="responseDisplay"></div>
             </section>
 
             <section class="card" id="logsSection">
@@ -1335,6 +1338,24 @@
                     "
                 >
                     <h2 style="margin: 0">💻 Activity Log</h2>
+                    <button
+                        onclick="toggleDetails('logsDetails')"
+                        class="secondary"
+                        style="
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 6px;
+                            padding: 6px 10px;
+                        "
+                    >
+                        <span id="logsDetails-icon">▶</span>
+                        Details
+                    </button>
+                </div>
+                <div
+                    id="logsDetails"
+                    style="display: none; margin-top: 0.75rem"
+                >
                     <label
                         style="
                             display: flex;
@@ -1342,6 +1363,7 @@
                             gap: 10px;
                             cursor: pointer;
                             user-select: none;
+                            margin-bottom: 0.75rem;
                         "
                     >
                         <span class="muted">Verbose in console</span>
@@ -1350,14 +1372,14 @@
                             <span class="ra-slider"></span>
                         </span>
                     </label>
+                    <div
+                        class="log"
+                        id="log"
+                        role="log"
+                        aria-live="polite"
+                        aria-label="Session activity log"
+                    ></div>
                 </div>
-                <div
-                    class="log"
-                    id="log"
-                    role="log"
-                    aria-live="polite"
-                    aria-label="Session activity log"
-                ></div>
             </section>
 
             <!-- Reader Authentication Configuration (collapsible) -->
@@ -2028,6 +2050,8 @@
             const qrInput = document.getElementById("qrInput");
             const btnParseQr = document.getElementById("btnParseQr");
             const btnClearQr = document.getElementById("btnClearQr");
+            const credentialWarningEl =
+                document.getElementById("credentialWarning");
 
             // Optional: focus the Manual QR payload textbox without scrolling the page
             window.addEventListener("load", () => {
@@ -6489,15 +6513,26 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                 ).map((cb) => cb.value);
             }
 
+            function setCredentialWarning(message) {
+                if (!credentialWarningEl) return;
+                if (message) {
+                    credentialWarningEl.textContent = message;
+                    credentialWarningEl.style.display = "block";
+                } else {
+                    credentialWarningEl.style.display = "none";
+                }
+            }
+
             function ensureCredentialSelection() {
                 const selected = getSelectedRequestTypes();
                 if (selected.length === 0) {
                     log(
                         "⚠️ Select at least one credential before scanning or connecting",
                     );
-                    statusEl.textContent = "Selecteer eerst een credential";
+                    setCredentialWarning("Selecteer eerst een credential");
                     return false;
                 }
+                setCredentialWarning("");
                 return true;
             }
 
@@ -7228,6 +7263,10 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                         ),
                     ).map((cb) => cb.value);
 
+                    if (selected.length > 0) {
+                        setCredentialWarning("");
+                    }
+
                     if (selected.length === 0) {
                         log(
                             "⚠️ No document types selected - select at least one credential",
@@ -7348,20 +7387,6 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
 
             // Initialize UI
             updateBleRoleUI();
-
-            // ==== UI actions ====
-            window.addEventListener("DOMContentLoaded", () => {
-                // Simple page navigation dropdown in header
-                const navSelect = document.getElementById("pageNavSelect");
-                if (navSelect) {
-                    navSelect.addEventListener("change", () => {
-                        const target = navSelect.value;
-                        if (target) {
-                            window.location.href = target;
-                        }
-                    });
-                }
-            });
 
             // Manual verification helper - call from console: window.manualVerifyDeviceAuth()
             window.manualVerifyDeviceAuth = async function (
