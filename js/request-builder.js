@@ -529,6 +529,7 @@
                 break;
             case "coc_full":
                 fields = {
+                    document_name: false,
                     given_name: false,
                     family_name: false,
                     portrait: false,
