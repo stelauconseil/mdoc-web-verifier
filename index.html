@@ -288,6 +288,55 @@
                 border: 1px solid var(--c-border-strong);
             }
 
+            .verification-progress {
+                position: absolute;
+                inset: 0;
+                display: none;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 0.85rem;
+                padding: 1.5rem;
+                background: linear-gradient(
+                    180deg,
+                    rgba(15, 23, 42, 0.5),
+                    rgba(15, 23, 42, 0.78)
+                );
+                color: #fff;
+                text-align: center;
+                opacity: 0;
+                transition: opacity 0.2s ease;
+                pointer-events: none;
+            }
+
+            .verification-progress.is-visible {
+                display: flex;
+                opacity: 1;
+            }
+
+            .verification-progress__spinner {
+                width: 2.75rem;
+                height: 2.75rem;
+                border-radius: 999px;
+                border: 3px solid rgba(255, 255, 255, 0.25);
+                border-top-color: #fff;
+                animation: verification-spin 0.9s linear infinite;
+            }
+
+            .verification-progress__text {
+                margin: 0;
+                font-family: var(--font-display);
+                font-size: 1rem;
+                font-weight: 600;
+                letter-spacing: 0.01em;
+            }
+
+            @keyframes verification-spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+
             video#video {
                 width: 100%;
                 height: 100%;
@@ -1218,19 +1267,34 @@
             <section class="card" id="startVerificationSection">
                 <h2>2. Start Verification</h2>
                 <p class="muted">
-                    Start de verificatiesessie zodra je credential-selectie is
-                    voltooid.
+                    Start the verification session as soon as your credential selection is complete.
                 </p>
                 <div class="row">
                     <button id="btnScan">Scan QR Code</button>
                 </div>
                 <p id="credentialWarning" class="muted" style="display: none; margin: 0.5rem 0 0.75rem 0; color: #b45309">
-                    Selecteer eerst een credential
+                    First select a credential
                 </p>
                 <div class="scanner">
                     <div class="video-frame">
                         <video id="video" playsinline muted></video>
                         <canvas id="canvas"></canvas>
+                        <div
+                            id="verificationProgress"
+                            class="verification-progress"
+                            aria-live="polite"
+                        >
+                            <div
+                                class="verification-progress__spinner"
+                                aria-hidden="true"
+                            ></div>
+                            <p
+                                id="verificationProgressText"
+                                class="verification-progress__text"
+                            >
+                                Verification in progress.
+                            </p>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -2046,6 +2110,12 @@
             const bleAddrEl = document.getElementById("bleAddr");
             const video = document.getElementById("video");
             const canvas = document.getElementById("canvas");
+            const verificationProgressEl = document.getElementById(
+                "verificationProgress",
+            );
+            const verificationProgressTextEl = document.getElementById(
+                "verificationProgressText",
+            );
             const ctx = canvas.getContext("2d", { willReadFrequently: true });
             const qrInput = document.getElementById("qrInput");
             const btnParseQr = document.getElementById("btnParseQr");
@@ -2221,6 +2291,25 @@
                 Object.assign(replayCapture, patch || {});
             }
 
+            function showVerificationProgress(
+                message = "Verification in progress.",
+            ) {
+                try {
+                    if (!verificationProgressEl) return;
+                    if (verificationProgressTextEl && message) {
+                        verificationProgressTextEl.textContent = message;
+                    }
+                    verificationProgressEl.classList.add("is-visible");
+                } catch {}
+            }
+
+            function hideVerificationProgress() {
+                try {
+                    if (!verificationProgressEl) return;
+                    verificationProgressEl.classList.remove("is-visible");
+                } catch {}
+            }
+
             function saveReplayCapture() {
                 try {
                     localStorage.setItem(
@@ -2378,6 +2467,9 @@
                     if (responseDisplayEl) responseDisplayEl.innerHTML = "";
                 } catch {}
                 try {
+                    hideVerificationProgress();
+                } catch {}
+                try {
                     if (responseSectionEl)
                         responseSectionEl.style.display = "none";
                 } catch {}
@@ -2521,6 +2613,7 @@
                         try {
                             await processSessionResponse(assembled);
                         } catch (processError) {
+                            hideVerificationProgress();
                             console.error(
                                 "Failed to finalize session from response:",
                                 processError,
@@ -2549,6 +2642,7 @@
                             // Decrypt and render the response
                             await decryptAndRenderResponse(assembled);
                         } catch (decryptError) {
+                            hideVerificationProgress();
                             console.error("Decryption failed:", decryptError);
                             log(
                                 "❌ Decryption failed: " + decryptError.message,
@@ -2619,6 +2713,7 @@
             function renderResponseViewModel(model) {
                 try {
                     if (!responseDisplayEl) return;
+                    hideVerificationProgress();
                     const version =
                         model && model.version ? model.version : "1.0";
                     const documents = Array.isArray(model?.documents)
@@ -4635,6 +4730,7 @@
                 } catch (e) {
                     console.error("Render error:", e);
                     try {
+                        hideVerificationProgress();
                         responseDisplayEl.textContent =
                             "Failed to render response: " + (e.message || e);
                         if (typeof showResponseSectionAndScroll === "function")
@@ -6529,7 +6625,7 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                     log(
                         "⚠️ Select at least one credential before scanning or connecting",
                     );
-                    setCredentialWarning("Selecteer eerst een credential");
+                    setCredentialWarning("First select a credential");
                     return false;
                 }
                 setCredentialWarning("");
@@ -6552,6 +6648,7 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                 if (!payload) {
                     log("⚠️ No QR payload provided");
                     statusEl.textContent = "No payload";
+                    hideVerificationProgress();
                     return;
                 }
 
@@ -6628,6 +6725,7 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                         }
                     }
                 } catch (e) {
+                    hideVerificationProgress();
                     log(`❌ ${sourceLabel} QR parse error: ${e.message}`);
                     statusEl.textContent = "Parse failed";
                 }
@@ -6674,6 +6772,8 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                             setTimeout(resolve, 500),
                         ); // Wait for connection to stabilize
                     }
+
+                    showVerificationProgress();
 
                     // Step 2: Start session (state 0x01)
                     log("🎬 Starting session (state 0x01)...");
@@ -6823,6 +6923,7 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                         "ℹ️ You may need to approve data sharing in your wallet app",
                     );
                 } catch (error) {
+                    hideVerificationProgress();
                     console.error("Auto-connect flow error:", error);
                     log(`❌ Auto-connect failed: ${error.message}`);
                 }
