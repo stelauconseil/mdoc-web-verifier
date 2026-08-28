@@ -870,6 +870,28 @@
                     justify-content: center;
                 }
 
+                #requestSection .signer-section > div:first-child {
+                    align-items: flex-start !important;
+                }
+
+                #requestSection .signer-section > div:first-child > div {
+                    min-width: 0;
+                }
+
+                #requestSection .details-toggle {
+                    width: 40px;
+                    min-width: 40px;
+                    height: 40px;
+                    min-height: 40px;
+                    padding: 0 !important;
+                    flex: 0 0 40px;
+                    justify-content: center;
+                }
+
+                #requestSection .details-toggle > span:last-child {
+                    display: none;
+                }
+
                 .button-grid {
                     flex-direction: column;
                 }
@@ -1047,7 +1069,10 @@
                         <div style="font-weight: bold; color: #0f172a;">Identity credentials</div>
                         <button
                             type="button"
+                            class="details-toggle"
                             onclick="toggleDetails('identityCredentialsDetails')"
+                            aria-label="Show identity credentials"
+                            title="Show identity credentials"
                             style="
                                 background: #e2e8f0;
                                 color: #0f172a;
@@ -1212,7 +1237,10 @@
                         <div style="font-weight: bold; color: #0f172a;">Transport credentials</div>
                         <button
                             type="button"
+                            class="details-toggle"
                             onclick="toggleDetails('transportCredentialsDetails')"
+                            aria-label="Show transport credentials"
+                            title="Show transport credentials"
                             style="
                                 background: #e2e8f0;
                                 color: #0f172a;
@@ -1307,7 +1335,10 @@
                         <div style="font-weight: bold; color: #0f172a;">Medical credentials</div>
                         <button
                             type="button"
+                            class="details-toggle"
                             onclick="toggleDetails('medicalCredentialsDetails')"
+                            aria-label="Show medical credentials"
+                            title="Show medical credentials"
                             style="
                                 background: #e2e8f0;
                                 color: #0f172a;
@@ -1353,7 +1384,10 @@
                         <div style="font-weight: bold; color: #0f172a;">Student credentials</div>
                         <button
                             type="button"
+                            class="details-toggle"
                             onclick="toggleDetails('studentCredentialsDetails')"
+                            aria-label="Show student credentials"
+                            title="Show student credentials"
                             style="
                                 background: #e2e8f0;
                                 color: #0f172a;
