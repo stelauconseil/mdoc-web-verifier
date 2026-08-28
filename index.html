@@ -892,6 +892,20 @@
                     display: none;
                 }
 
+                .mobile-details-toggle {
+                    width: 40px;
+                    min-width: 40px;
+                    height: 40px;
+                    min-height: 40px;
+                    padding: 0 !important;
+                    flex: 0 0 40px;
+                    justify-content: center;
+                }
+
+                .mobile-details-toggle .details-toggle-label {
+                    display: none;
+                }
+
                 .button-grid {
                     flex-direction: column;
                 }
@@ -1475,10 +1489,12 @@
                         gap: 8px;
                     "
                 >
-                    <h2 style="margin: 0">4. Device Engagement</h2>
+                    <h2 style="margin: 0">Device Engagement information</h2>
                     <button
                         onclick="toggleDetails('qrDetails')"
-                        class="secondary"
+                        class="secondary mobile-details-toggle"
+                        aria-label="Show device engagement information"
+                        title="Show device engagement information"
                         style="
                             display: inline-flex;
                             align-items: center;
@@ -1487,7 +1503,7 @@
                         "
                     >
                         <span id="qrDetails-icon">▶</span>
-                        Details
+                        <span class="details-toggle-label">Details</span>
                     </button>
                 </div>
 
@@ -1566,7 +1582,9 @@
                     <h2 style="margin: 0">💻 Activity Log</h2>
                     <button
                         onclick="toggleDetails('logsDetails')"
-                        class="secondary"
+                        class="secondary mobile-details-toggle"
+                        aria-label="Show activity log details"
+                        title="Show activity log details"
                         style="
                             display: inline-flex;
                             align-items: center;
@@ -1575,7 +1593,7 @@
                         "
                     >
                         <span id="logsDetails-icon">▶</span>
-                        Details
+                        <span class="details-toggle-label">Details</span>
                     </button>
                 </div>
                 <div
@@ -1690,7 +1708,9 @@
                         </label>
                         <button
                             onclick="toggleDetails('readerAuthDetails')"
-                            class="secondary"
+                            class="secondary mobile-details-toggle"
+                            aria-label="Show reader authentication details"
+                            title="Show reader authentication details"
                             style="
                                 display: inline-flex;
                                 align-items: center;
@@ -1699,7 +1719,7 @@
                             "
                         >
                             <span id="readerAuthDetails-icon">▶</span>
-                            Details
+                            <span class="details-toggle-label">Details</span>
                         </button>
                     </div>
                 </div>
@@ -1851,12 +1871,13 @@
                         <span
                             id="iacaSummaryCounts"
                             class="muted"
-                            style="font-size: 0.9rem"
                             >Installed: Live 0 • Test 0</span
                         >
                         <button
                             onclick="toggleDetails('iacaDetails')"
-                            class="secondary"
+                            class="secondary mobile-details-toggle"
+                            aria-label="Show issuer certificate management details"
+                            title="Show issuer certificate management details"
                             style="
                                 display: inline-flex;
                                 align-items: center;
@@ -1865,7 +1886,7 @@
                             "
                         >
                             <span id="iacaDetails-icon">▶</span>
-                            Details
+                            <span class="details-toggle-label">Details</span>
                         </button>
                     </div>
                 </div>
