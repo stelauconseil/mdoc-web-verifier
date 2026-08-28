@@ -1042,237 +1042,353 @@
                     session.
                 </p>
 
-                <div style="margin-bottom: 10px; margin-top: 0.25rem">
-                    <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">EU PID (Person Identification Data)</strong>
-                </div>
-                <div class="radio-group request-type">
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="pid_basic"
-                        />
-                        EU PID Basic
-                    </label>
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="pid_age"
-                        />
-                        EU PID Age Check
-                    </label>
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="pid_full"
-                        />
-                        EU PID Full
-                    </label>
+                <div class="signer-section" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                        <div style="font-weight: bold; color: #0f172a;">Identity credentials</div>
+                        <button
+                            type="button"
+                            onclick="toggleDetails('identityCredentialsDetails')"
+                            style="
+                                background: #e2e8f0;
+                                color: #0f172a;
+                                border: 1px solid #cbd5e1;
+                                padding: 4px 10px;
+                                border-radius: 6px;
+                                cursor: pointer;
+                                font-size: 0.85rem;
+                                font-weight: 600;
+                                display: inline-flex;
+                                align-items: center;
+                                gap: 6px;
+                            "
+                            onmouseover="this.style.background='#cbd5e1'"
+                            onmouseout="this.style.background='#e2e8f0'"
+                        >
+                            <span id="identityCredentialsDetails-icon">▶</span>
+                            <span>Details</span>
+                        </button>
+                    </div>
+                    <div id="identityCredentialsDetails" style="display: none; margin-top: 10px;">
+                        <div style="margin-bottom: 10px; margin-top: 0.25rem">
+                            <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">EU PID (Person Identification Data)</strong>
+                        </div>
+                        <div class="radio-group request-type">
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="pid_basic"
+                                />
+                                EU PID Basic
+                            </label>
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="pid_age"
+                                />
+                                EU PID Age Check
+                            </label>
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="pid_full"
+                                />
+                                EU PID Full
+                            </label>
+                        </div>
+
+                        <div style="margin: 1.25rem 0 10px 0">
+                            <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">BIDA (Basic Identification Data Attestation)</strong>
+                        </div>
+                        <div class="radio-group request-type">
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="bida_basic"
+                                />
+                                BIDA Basic
+                            </label>
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="bida_full"
+                                />
+                                BIDA Full
+                            </label>
+                        </div>
+
+                        <div style="margin: 1.25rem 0 10px 0">
+                            <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">EU Age Verification (Proof of Age)</strong>
+                        </div>
+                        <div class="radio-group request-type">
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="age_verify_15"
+                                />
+                                15+
+                            </label>
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="age_verify_18"
+                                />
+                                18+
+                            </label>
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="age_verify_21"
+                                />
+                                21+
+                            </label>
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="age_verify_full"
+                                />
+                                Age Full
+                            </label>
+                        </div>
+
+                        <div style="margin: 1.25rem 0 10px 0">
+                            <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">ISO 23220 Photo ID</strong>
+                        </div>
+                        <div class="radio-group request-type">
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="photoid_basic"
+                                />
+                                Photo ID Basic
+                            </label>
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="photoid_full"
+                                />
+                                Photo ID Full
+                            </label>
+                            <span class="muted" style="font-size: 0.78rem; margin-left: 0.25rem; display: inline-flex; align-items: center"
+                                >Default doctype: org.iso.23220.photoid.1</span
+                            >
+                        </div>
+                        <div class="radio-group request-type" style="margin-top: 0.5rem">
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="photoid_basic_upper"
+                                />
+                                Photo ID Basic
+                            </label>
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="photoid_full_upper"
+                                />
+                                Photo ID Full
+                            </label>
+                            <span class="muted" style="font-size: 0.78rem; margin-left: 0.25rem; display: inline-flex; align-items: center"
+                                >Alternate doctype: org.iso.23220.photoID.1</span
+                            >
+                        </div>
+                    </div>
                 </div>
 
-                <div style="margin: 1.25rem 0 10px 0">
-                    <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">BIDA (Basic Identification Data Attestation)</strong>
-                </div>
-                <div class="radio-group request-type">
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="bida_basic"
-                        />
-                        BIDA Basic
-                    </label>
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="bida_full"
-                        />
-                        BIDA Full
-                    </label>
+                <div class="signer-section" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                        <div style="font-weight: bold; color: #0f172a;">Transport credentials</div>
+                        <button
+                            type="button"
+                            onclick="toggleDetails('transportCredentialsDetails')"
+                            style="
+                                background: #e2e8f0;
+                                color: #0f172a;
+                                border: 1px solid #cbd5e1;
+                                padding: 4px 10px;
+                                border-radius: 6px;
+                                cursor: pointer;
+                                font-size: 0.85rem;
+                                font-weight: 600;
+                                display: inline-flex;
+                                align-items: center;
+                                gap: 6px;
+                            "
+                            onmouseover="this.style.background='#cbd5e1'"
+                            onmouseout="this.style.background='#e2e8f0'"
+                        >
+                            <span id="transportCredentialsDetails-icon">▶</span>
+                            <span>Details</span>
+                        </button>
+                    </div>
+                    <div id="transportCredentialsDetails" style="display: none; margin-top: 10px;">
+                        <div style="margin-bottom: 10px; margin-top: 0.25rem">
+                            <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">mDL (mobile Driver's License)</strong>
+                        </div>
+                        <div class="radio-group request-type">
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="mdl_basic"
+                                />
+                                mDL Basic
+                            </label>
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="mdl_age"
+                                />
+                                mDL Age Check
+                            </label>
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="mdl_driving"
+                                />
+                                mDL Driving
+                            </label>
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="mdl_full"
+                                />
+                                mDL Full
+                            </label>
+                        </div>
+
+                        <div style="margin: 1.25rem 0 10px 0">
+                            <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">mVC (mobile Vehicle Certificate)</strong>
+                        </div>
+                        <div class="radio-group request-type">
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="mvc_full"
+                                />
+                                mVC Full
+                            </label>
+                        </div>
+
+                        <div style="margin: 1.25rem 0 10px 0">
+                            <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">Certificate of Competency</strong>
+                        </div>
+                        <div class="radio-group request-type">
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="coc_full"
+                                />
+                                CoC Full
+                            </label>
+                        </div>
+                    </div>
                 </div>
 
-                <div style="margin: 1.25rem 0 10px 0">
-                    <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">mDL (mobile Driver's License)</strong>
-                </div>
-                <div class="radio-group request-type">
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="mdl_basic"
-                        />
-                        mDL Basic
-                    </label>
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="mdl_age"
-                        />
-                        mDL Age Check
-                    </label>
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="mdl_driving"
-                        />
-                        mDL Driving
-                    </label>
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="mdl_full"
-                        />
-                        mDL Full
-                    </label>
-                </div>
-
-                <div style="margin: 1.25rem 0 10px 0">
-                    <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">EU Age Verification (Proof of Age)</strong>
-                </div>
-                <div class="radio-group request-type">
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="age_verify_15"
-                        />
-                        15+
-                    </label>
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="age_verify_18"
-                        />
-                        18+
-                    </label>
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="age_verify_21"
-                        />
-                        21+
-                    </label>
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="age_verify_full"
-                        />
-                        Age Full
-                    </label>
+                <div class="signer-section" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                        <div style="font-weight: bold; color: #0f172a;">Medical credentials</div>
+                        <button
+                            type="button"
+                            onclick="toggleDetails('medicalCredentialsDetails')"
+                            style="
+                                background: #e2e8f0;
+                                color: #0f172a;
+                                border: 1px solid #cbd5e1;
+                                padding: 4px 10px;
+                                border-radius: 6px;
+                                cursor: pointer;
+                                font-size: 0.85rem;
+                                font-weight: 600;
+                                display: inline-flex;
+                                align-items: center;
+                                gap: 6px;
+                            "
+                            onmouseover="this.style.background='#cbd5e1'"
+                            onmouseout="this.style.background='#e2e8f0'"
+                        >
+                            <span id="medicalCredentialsDetails-icon">▶</span>
+                            <span>Details</span>
+                        </button>
+                    </div>
+                    <div id="medicalCredentialsDetails" style="display: none; margin-top: 10px;">
+                        <div style="margin-bottom: 10px; margin-top: 0.25rem">
+                            <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em"
+                                >mICOV (mobile International Certificate of
+                                Vaccination)</strong
+                            >
+                        </div>
+                        <div class="radio-group request-type">
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="micov_full"
+                                />
+                                mICOV Full
+                            </label>
+                        </div>
+                    </div>
                 </div>
 
-                <div style="margin: 1.25rem 0 10px 0">
-                    <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">ISO 23220 Photo ID</strong>
-                </div>
-                <div class="radio-group request-type">
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="photoid_basic"
-                        />
-                        Photo ID Basic
-                    </label>
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="photoid_full"
-                        />
-                        Photo ID Full
-                    </label>
-                    <span class="muted" style="font-size: 0.78rem; margin-left: 0.25rem; display: inline-flex; align-items: center"
-                        >Default doctype: org.iso.23220.photoid.1</span
-                    >
-                </div>
-                <div class="radio-group request-type" style="margin-top: 0.5rem">
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="photoid_basic_upper"
-                        />
-                        Photo ID Basic
-                    </label>
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="photoid_full_upper"
-                        />
-                        Photo ID Full
-                    </label>
-                    <span class="muted" style="font-size: 0.78rem; margin-left: 0.25rem; display: inline-flex; align-items: center"
-                        >Alternate doctype: org.iso.23220.photoID.1</span
-                    >
-                </div>
-
-                <div style="margin: 1.25rem 0 10px 0">
-                    <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em"
-                        >mICOV (mobile International Certificate of
-                        Vaccination)</strong
-                    >
-                </div>
-                <div class="radio-group request-type">
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="micov_full"
-                        />
-                        mICOV Full
-                    </label>
-                </div>
-
-                <div style="margin: 1.25rem 0 10px 0">
-                    <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">mVC (mobile Vehicle Certificate)</strong>
-                </div>
-                <div class="radio-group request-type">
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="mvc_full"
-                        />
-                        mVC Full
-                    </label>
-                </div>
-
-                <div style="margin: 1.25rem 0 10px 0">
-                    <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">FR Student Card</strong>
-                </div>
-                <div class="radio-group request-type">
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="fr_hsc_student"
-                        />
-                        Student Card Full
-                    </label>
-                </div>
-
-                <div style="margin: 1.25rem 0 10px 0">
-                    <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">Certificate of Competency</strong>
-                </div>
-                <div class="radio-group request-type">
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="coc_full"
-                        />
-                        CoC Full
-                    </label>
+                <div class="signer-section" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                        <div style="font-weight: bold; color: #0f172a;">Student credentials</div>
+                        <button
+                            type="button"
+                            onclick="toggleDetails('studentCredentialsDetails')"
+                            style="
+                                background: #e2e8f0;
+                                color: #0f172a;
+                                border: 1px solid #cbd5e1;
+                                padding: 4px 10px;
+                                border-radius: 6px;
+                                cursor: pointer;
+                                font-size: 0.85rem;
+                                font-weight: 600;
+                                display: inline-flex;
+                                align-items: center;
+                                gap: 6px;
+                            "
+                            onmouseover="this.style.background='#cbd5e1'"
+                            onmouseout="this.style.background='#e2e8f0'"
+                        >
+                            <span id="studentCredentialsDetails-icon">▶</span>
+                            <span>Details</span>
+                        </button>
+                    </div>
+                    <div id="studentCredentialsDetails" style="display: none; margin-top: 10px;">
+                        <div style="margin-bottom: 10px; margin-top: 0.25rem">
+                            <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">FR Student Card</strong>
+                        </div>
+                        <div class="radio-group request-type">
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="fr_hsc_student"
+                                />
+                                Student Card Full
+                            </label>
+                        </div>
+                    </div>
                 </div>
             </section>
 
