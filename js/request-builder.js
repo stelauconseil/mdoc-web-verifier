@@ -149,15 +149,6 @@
                     " namespace: " +
                     namespace,
             );
-        } else if (requestType.startsWith("coc_")) {
-            docType = "org.iso.23220.1.eu.europe.emsa.coc";
-            namespace = "org.iso.23220.1.eu.europe.emsa.coc";
-            log(
-                "📜 Building CoC request - docType: " +
-                    docType +
-                    " namespace: " +
-                    namespace,
-            );
         } else {
             docType = "org.iso.18013.5.1.mDL";
             namespace = "org.iso.18013.5.1";
@@ -526,15 +517,6 @@
                     highschool_name: false,
                 };
                 fields = {}; // placeholder, real namespaces set below
-                break;
-            case "coc_full":
-                fields = {
-                    document_name: false,
-                    given_name: false,
-                    family_name: false,
-                    portrait: false,
-                    capacities: false,
-                };
                 break;
             default:
                 console.warn("Unknown request type:", requestType);

@@ -3251,83 +3251,6 @@
                                         return;
                                     }
 
-                                    // Special handling for CoC capacities: render as a readable table
-                                    if (
-                                        label === "capacities" ||
-                                        label === "Capacities" ||
-                                        fmtLabel(label).toLowerCase().includes("capacities")
-                                    ) {
-                                        let capacitySource = null;
-                                        if (Array.isArray(entry?.raw)) {
-                                            capacitySource = entry.raw;
-                                        } else if (Array.isArray(entry?.elementValue)) {
-                                            capacitySource = entry.elementValue;
-                                        } else if (typeof entry?.text === "string") {
-                                            try {
-                                                const parsed = JSON.parse(entry.text);
-                                                if (Array.isArray(parsed)) {
-                                                    capacitySource = parsed;
-                                                }
-                                            } catch {
-                                                capacitySource = null;
-                                            }
-                                        }
-
-                                        const rows = Array.isArray(capacitySource)
-                                            ? capacitySource.map((item, rowIndex) => {
-                                                  const obj =
-                                                      item && typeof item === "object"
-                                                          ? item
-                                                          : {};
-                                                  const codeList = Array.isArray(obj.codes)
-                                                      ? obj.codes
-                                                      : [];
-                                                  const codeValue = codeList
-                                                      .map((codeEntry) => {
-                                                          if (typeof codeEntry === "string") {
-                                                              return codeEntry;
-                                                          }
-                                                          if (
-                                                              codeEntry &&
-                                                              typeof codeEntry === "object"
-                                                          ) {
-                                                              return (
-                                                                  codeEntry.code ??
-                                                                  codeEntry.value ??
-                                                                  ""
-                                                              );
-                                                          }
-                                                          return "";
-                                                      })
-                                                      .filter(Boolean)
-                                                      .join(", ");
-                                                  const capacityCode =
-                                                      obj.capacity_code ??
-                                                      obj.capacityCode ??
-                                                      obj["capacity code"] ??
-                                                      "";
-                                                  const remarks =
-                                                      obj.remarks ?? obj["remarks"] ?? "";
-
-                                                  return `<tr><td>${esc(codeValue || `Row ${rowIndex + 1}`)}</td><td>${esc(String(capacityCode))}</td><td>${esc(String(remarks))}</td></tr>`;
-                                              })
-                                            : [];
-
-                                        const tableHtml = rows.length
-                                            ? `<table style="width:100%; border-collapse: collapse; border: 1px solid rgba(148,163,184,0.35); font-size: 0.88rem;">` +
-                                              `<thead><tr><th style="text-align:left; padding:0.45rem 0.6rem; border-bottom:1px solid rgba(148,163,184,0.35);">code</th><th style="text-align:left; padding:0.45rem 0.6rem; border-bottom:1px solid rgba(148,163,184,0.35);">capacity</th><th style="text-align:left; padding:0.45rem 0.6rem; border-bottom:1px solid rgba(148,163,184,0.35);">remarks</th></tr></thead>` +
-                                              `<tbody>${rows.join("")}</tbody></table>`
-                                            : `<div class="no-data">No capacities available</div>`;
-
-                                        html += `
-              <div class="data-item">
-                <div class="data-label">${esc(fmtLabel(label))}</div>
-                <div class="data-value">${tableHtml}</div>
-              </div>
-            `;
-                                        return;
-                                    }
-
                                     // Special handling for Travel Document Mrz: use same two-line format as DG1/MRZ
                                     if (
                                         label === "travel_document_mrz" ||
@@ -7606,10 +7529,6 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                                 description =
                                     "FR Student Card (fr.ft.hsc.1): issuing authority, identity, education details";
                                 break;
-                            case "coc_full":
-                                description =
-                                    "Certificate of Competency (org.iso.23220.1.eu.europe.emsa.coc): given_name, family_name, portrait, capacities";
-                                break;
                         }
                         log(`Selected request type: ${type} - ${description}`);
                     } else {
@@ -7624,8 +7543,6 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                             if (t.startsWith("mvc_")) return "mVC";
                             if (t.startsWith("fr_hsc_"))
                                 return "FR Student Card";
-                            if (t.startsWith("coc_"))
-                                return "Certificate of Competency";
                             return "mDL";
                         });
                         const uniqueTypes = [...new Set(docTypes)];
