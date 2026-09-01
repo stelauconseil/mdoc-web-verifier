@@ -7,6 +7,18 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <script>
+            if ("scrollRestoration" in history) {
+                history.scrollRestoration = "manual";
+            }
+            function ensureTopOnRefresh() {
+                if (!window.location.hash) {
+                    window.scrollTo(0, 0);
+                }
+            }
+            window.addEventListener("load", ensureTopOnRefresh);
+            window.addEventListener("pageshow", ensureTopOnRefresh);
+        </script>
         <title>
             ISO 18013-5 Mobile Driver's License (mDL) mDoc Reader & Verifier
         </title>
@@ -286,6 +298,55 @@
                 background: var(--c-navy-900);
                 min-height: 150px;
                 border: 1px solid var(--c-border-strong);
+            }
+
+            .verification-progress {
+                position: absolute;
+                inset: 0;
+                display: none;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 0.85rem;
+                padding: 1.5rem;
+                background: linear-gradient(
+                    180deg,
+                    rgba(15, 23, 42, 0.5),
+                    rgba(15, 23, 42, 0.78)
+                );
+                color: #fff;
+                text-align: center;
+                opacity: 0;
+                transition: opacity 0.2s ease;
+                pointer-events: none;
+            }
+
+            .verification-progress.is-visible {
+                display: flex;
+                opacity: 1;
+            }
+
+            .verification-progress__spinner {
+                width: 2.75rem;
+                height: 2.75rem;
+                border-radius: 999px;
+                border: 3px solid rgba(255, 255, 255, 0.25);
+                border-top-color: #fff;
+                animation: verification-spin 0.9s linear infinite;
+            }
+
+            .verification-progress__text {
+                margin: 0;
+                font-family: var(--font-display);
+                font-size: 1rem;
+                font-weight: 600;
+                letter-spacing: 0.01em;
+            }
+
+            @keyframes verification-spin {
+                to {
+                    transform: rotate(360deg);
+                }
             }
 
             video#video {
@@ -809,6 +870,42 @@
                     justify-content: center;
                 }
 
+                #requestSection .signer-section > div:first-child {
+                    align-items: flex-start !important;
+                }
+
+                #requestSection .signer-section > div:first-child > div {
+                    min-width: 0;
+                }
+
+                #requestSection .details-toggle {
+                    width: 40px;
+                    min-width: 40px;
+                    height: 40px;
+                    min-height: 40px;
+                    padding: 0 !important;
+                    flex: 0 0 40px;
+                    justify-content: center;
+                }
+
+                #requestSection .details-toggle > span:last-child {
+                    display: none;
+                }
+
+                .mobile-details-toggle {
+                    width: 40px;
+                    min-width: 40px;
+                    height: 40px;
+                    min-height: 40px;
+                    padding: 0 !important;
+                    flex: 0 0 40px;
+                    justify-content: center;
+                }
+
+                .mobile-details-toggle .details-toggle-label {
+                    display: none;
+                }
+
                 .button-grid {
                     flex-direction: column;
                 }
@@ -953,39 +1050,6 @@
 
     <body>
         <header class="page-header" role="banner">
-            <div style="position: absolute; left: 1.25rem; top: 1.25rem; z-index: 2">
-                <label
-                    class="muted"
-                    style="
-                        font-size: 0.78rem;
-                        display: flex;
-                        align-items: center;
-                        gap: 0.4rem;
-                        color: rgba(248, 250, 252, 0.5);
-                    "
-                >
-                    Go to
-                    <select
-                        id="pageNavSelect"
-                        style="
-                            padding: 0.3rem 0.5rem;
-                            border-radius: 6px;
-                            border: 1px solid rgba(255, 255, 255, 0.15);
-                            font-size: 0.78rem;
-                            background: rgba(255, 255, 255, 0.08);
-                            color: rgba(248, 250, 252, 0.8);
-                            font-family: var(--font-body);
-                            backdrop-filter: blur(8px);
-                        "
-                    >
-                        <option value="">Select...</option>
-                        <option value="visitor.html">Visitor log</option>
-                        <option value="unlikability_test.html">
-                            Unlinkability test
-                        </option>
-                    </select>
-                </label>
-            </div>
             <h1>ISO 18013-5 Web Proximity mDoc Reader</h1>
             <p>
                 Scan an <strong>mDoc / mDL device engagement QR code</strong>,
@@ -1014,242 +1078,399 @@
                     session.
                 </p>
 
-                <div style="margin-bottom: 10px; margin-top: 0.25rem">
-                    <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">EU PID (Person Identification Data)</strong>
-                </div>
-                <div class="radio-group request-type">
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="pid_basic"
-                        />
-                        EU PID Basic
-                    </label>
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="pid_age"
-                        />
-                        EU PID Age Check
-                    </label>
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="pid_full"
-                            checked
-                        />
-                        EU PID Full
-                    </label>
+                <div class="signer-section" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                        <div style="font-weight: bold; color: #0f172a;">Identity credentials</div>
+                        <button
+                            type="button"
+                            class="details-toggle"
+                            onclick="toggleDetails('identityCredentialsDetails')"
+                            aria-label="Show identity credentials"
+                            title="Show identity credentials"
+                            style="
+                                background: #e2e8f0;
+                                color: #0f172a;
+                                border: 1px solid #cbd5e1;
+                                padding: 4px 10px;
+                                border-radius: 6px;
+                                cursor: pointer;
+                                font-size: 0.85rem;
+                                font-weight: 600;
+                                display: inline-flex;
+                                align-items: center;
+                                gap: 6px;
+                            "
+                            onmouseover="this.style.background='#cbd5e1'"
+                            onmouseout="this.style.background='#e2e8f0'"
+                        >
+                            <span id="identityCredentialsDetails-icon">▶</span>
+                            <span>Details</span>
+                        </button>
+                    </div>
+                    <div id="identityCredentialsDetails" style="display: none; margin-top: 10px;">
+                        <div style="margin-bottom: 10px; margin-top: 0.25rem">
+                            <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">EU PID (Person Identification Data)</strong>
+                        </div>
+                        <div class="radio-group request-type">
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="pid_basic"
+                                />
+                                EU PID Basic
+                            </label>
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="pid_age"
+                                />
+                                EU PID Age Check
+                            </label>
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="pid_full"
+                                />
+                                EU PID Full
+                            </label>
+                        </div>
+
+                        <div style="margin: 1.25rem 0 10px 0">
+                            <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">BIDA (Basic Identification Data Attestation)</strong>
+                        </div>
+                        <div class="radio-group request-type">
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="bida_basic"
+                                />
+                                BIDA Basic
+                            </label>
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="bida_full"
+                                />
+                                BIDA Full
+                            </label>
+                        </div>
+
+                        <div style="margin: 1.25rem 0 10px 0">
+                            <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">EU Age Verification (Proof of Age)</strong>
+                        </div>
+                        <div class="radio-group request-type">
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="age_verify_15"
+                                />
+                                15+
+                            </label>
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="age_verify_18"
+                                />
+                                18+
+                            </label>
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="age_verify_21"
+                                />
+                                21+
+                            </label>
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="age_verify_full"
+                                />
+                                Age Full
+                            </label>
+                        </div>
+
+                        <div style="margin: 1.25rem 0 10px 0">
+                            <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">Photo ID</strong>
+                        </div>
+                        <div class="radio-group request-type">
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="photoid_basic"
+                                />
+                                Photo ID Basic
+                            </label>
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="photoid_full"
+                                />
+                                Photo ID Full
+                            </label>
+                        </div>
+                    </div>
                 </div>
 
-                <div style="margin: 1.25rem 0 10px 0">
-                    <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">BIDA (Basic Identification Data Attestation)</strong>
-                </div>
-                <div class="radio-group request-type">
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="bida_basic"
-                        />
-                        BIDA Basic
-                    </label>
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="bida_full"
-                        />
-                        BIDA Full
-                    </label>
+                <div class="signer-section" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                        <div style="font-weight: bold; color: #0f172a;">Transport credentials</div>
+                        <button
+                            type="button"
+                            class="details-toggle"
+                            onclick="toggleDetails('transportCredentialsDetails')"
+                            aria-label="Show transport credentials"
+                            title="Show transport credentials"
+                            style="
+                                background: #e2e8f0;
+                                color: #0f172a;
+                                border: 1px solid #cbd5e1;
+                                padding: 4px 10px;
+                                border-radius: 6px;
+                                cursor: pointer;
+                                font-size: 0.85rem;
+                                font-weight: 600;
+                                display: inline-flex;
+                                align-items: center;
+                                gap: 6px;
+                            "
+                            onmouseover="this.style.background='#cbd5e1'"
+                            onmouseout="this.style.background='#e2e8f0'"
+                        >
+                            <span id="transportCredentialsDetails-icon">▶</span>
+                            <span>Details</span>
+                        </button>
+                    </div>
+                    <div id="transportCredentialsDetails" style="display: none; margin-top: 10px;">
+                        <div style="margin-bottom: 10px; margin-top: 0.25rem">
+                            <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">mDL (mobile Driver's License)</strong>
+                        </div>
+                        <div class="radio-group request-type">
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="mdl_basic"
+                                />
+                                mDL Basic
+                            </label>
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="mdl_age"
+                                />
+                                mDL Age Check
+                            </label>
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="mdl_driving"
+                                />
+                                mDL Driving
+                            </label>
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="mdl_full"
+                                />
+                                mDL Full
+                            </label>
+                        </div>
+
+                        <div style="margin: 1.25rem 0 10px 0">
+                            <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">mVC (mobile Vehicle Certificate)</strong>
+                        </div>
+                        <div class="radio-group request-type">
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="mvc_full"
+                                />
+                                mVC Full
+                            </label>
+                        </div>
+
+                    </div>
                 </div>
 
-                <div style="margin: 1.25rem 0 10px 0">
-                    <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">mDL (mobile Driver's License)</strong>
-                </div>
-                <div class="radio-group request-type">
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="mdl_basic"
-                        />
-                        mDL Basic
-                    </label>
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="mdl_age"
-                        />
-                        mDL Age Check
-                    </label>
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="mdl_driving"
-                        />
-                        mDL Driving
-                    </label>
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="mdl_full"
-                            checked
-                        />
-                        mDL Full
-                    </label>
-                </div>
-
-                <div style="margin: 1.25rem 0 10px 0">
-                    <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">EU Age Verification (Proof of Age)</strong>
-                </div>
-                <div class="radio-group request-type">
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="age_verify_15"
-                        />
-                        15+
-                    </label>
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="age_verify_18"
-                        />
-                        18+
-                    </label>
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="age_verify_21"
-                        />
-                        21+
-                    </label>
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="age_verify_full"
-                        />
-                        Age Full
-                    </label>
+                <div class="signer-section" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                        <div style="font-weight: bold; color: #0f172a;">Medical credentials</div>
+                        <button
+                            type="button"
+                            class="details-toggle"
+                            onclick="toggleDetails('medicalCredentialsDetails')"
+                            aria-label="Show medical credentials"
+                            title="Show medical credentials"
+                            style="
+                                background: #e2e8f0;
+                                color: #0f172a;
+                                border: 1px solid #cbd5e1;
+                                padding: 4px 10px;
+                                border-radius: 6px;
+                                cursor: pointer;
+                                font-size: 0.85rem;
+                                font-weight: 600;
+                                display: inline-flex;
+                                align-items: center;
+                                gap: 6px;
+                            "
+                            onmouseover="this.style.background='#cbd5e1'"
+                            onmouseout="this.style.background='#e2e8f0'"
+                        >
+                            <span id="medicalCredentialsDetails-icon">▶</span>
+                            <span>Details</span>
+                        </button>
+                    </div>
+                    <div id="medicalCredentialsDetails" style="display: none; margin-top: 10px;">
+                        <div style="margin-bottom: 10px; margin-top: 0.25rem">
+                            <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em"
+                                >mICOV (mobile International Certificate of
+                                Vaccination)</strong
+                            >
+                        </div>
+                        <div class="radio-group request-type">
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="micov_full"
+                                />
+                                mICOV Full
+                            </label>
+                        </div>
+                    </div>
                 </div>
 
-                <div style="margin: 1.25rem 0 10px 0">
-                    <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">ISO 23220 Photo ID</strong>
-                </div>
-                <div class="radio-group request-type">
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="photoid_basic"
-                        />
-                        Photo ID Basic
-                    </label>
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="photoid_full"
-                        />
-                        Photo ID Full
-                    </label>
-                    <span class="muted" style="font-size: 0.78rem; margin-left: 0.25rem; display: inline-flex; align-items: center"
-                        >Default doctype: org.iso.23220.photoid.1</span
-                    >
-                </div>
-                <div class="radio-group request-type" style="margin-top: 0.5rem">
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="photoid_basic_upper"
-                        />
-                        Photo ID Basic
-                    </label>
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="photoid_full_upper"
-                        />
-                        Photo ID Full
-                    </label>
-                    <span class="muted" style="font-size: 0.78rem; margin-left: 0.25rem; display: inline-flex; align-items: center"
-                        >Alternate doctype: org.iso.23220.photoID.1</span
-                    >
-                </div>
-
-                <div style="margin: 1.25rem 0 10px 0">
-                    <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em"
-                        >mICOV (mobile International Certificate of
-                        Vaccination)</strong
-                    >
-                </div>
-                <div class="radio-group request-type">
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="micov_full"
-                        />
-                        mICOV Full
-                    </label>
-                </div>
-
-                <div style="margin: 1.25rem 0 10px 0">
-                    <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">mVC (mobile Vehicle Certificate)</strong>
-                </div>
-                <div class="radio-group request-type">
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="mvc_full"
-                        />
-                        mVC Full
-                    </label>
-                </div>
-
-                <div style="margin: 1.25rem 0 10px 0">
-                    <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">FR Student Card</strong>
-                </div>
-                <div class="radio-group request-type">
-                    <label class="radio-chip small">
-                        <input
-                            type="checkbox"
-                            name="requestType"
-                            value="fr_hsc_student"
-                        />
-                        Student Card Full
-                    </label>
+                <div class="signer-section" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                        <div style="font-weight: bold; color: #0f172a;">Student credentials</div>
+                        <button
+                            type="button"
+                            class="details-toggle"
+                            onclick="toggleDetails('studentCredentialsDetails')"
+                            aria-label="Show student credentials"
+                            title="Show student credentials"
+                            style="
+                                background: #e2e8f0;
+                                color: #0f172a;
+                                border: 1px solid #cbd5e1;
+                                padding: 4px 10px;
+                                border-radius: 6px;
+                                cursor: pointer;
+                                font-size: 0.85rem;
+                                font-weight: 600;
+                                display: inline-flex;
+                                align-items: center;
+                                gap: 6px;
+                            "
+                            onmouseover="this.style.background='#cbd5e1'"
+                            onmouseout="this.style.background='#e2e8f0'"
+                        >
+                            <span id="studentCredentialsDetails-icon">▶</span>
+                            <span>Details</span>
+                        </button>
+                    </div>
+                    <div id="studentCredentialsDetails" style="display: none; margin-top: 10px;">
+                        <div style="margin-bottom: 10px; margin-top: 0.25rem">
+                            <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">FR Student Card</strong>
+                        </div>
+                        <div class="radio-group request-type">
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="fr_hsc_student"
+                                />
+                                Student Card Full
+                            </label>
+                        </div>
+                    </div>
                 </div>
             </section>
 
-            <section class="card" id="qrSection">
-                <h2>2. Device Engagement</h2>
+            <section class="card" id="startVerificationSection">
+                <h2>2. QR Code Scan</h2>
                 <p class="muted">
-                    Use your computer camera to capture the wallet's QR code or
-                    paste details manually.
+                    Use your computer camera to capture the wallet's QR code or paste details manually.
                 </p>
                 <div class="row">
                     <button id="btnScan">Scan QR Code</button>
                 </div>
+                <p id="credentialWarning" class="muted" style="display: none; margin: 0.5rem 0 0.75rem 0; color: #b45309">
+                    First select one or more credentials to request
+                </p>
                 <div class="scanner">
                     <div class="video-frame">
                         <video id="video" playsinline muted></video>
                         <canvas id="canvas"></canvas>
+                        <div
+                            id="verificationProgress"
+                            class="verification-progress"
+                            aria-live="polite"
+                        >
+                            <div
+                                class="verification-progress__spinner"
+                                aria-hidden="true"
+                            ></div>
+                            <p
+                                id="verificationProgressText"
+                                class="verification-progress__text"
+                            >
+                                Verification in progress.
+                            </p>
+                        </div>
                     </div>
+                </div>
+            </section>
+
+            <section class="card" id="responseSection" style="display: none">
+                <h2>3. Result</h2>
+                <div id="responseDisplay"></div>
+            </section>
+
+            <section class="card" id="qrSection">
+                <div
+                    style="
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        gap: 8px;
+                    "
+                >
+                    <h2 style="margin: 0">ℹ️ Device Engagement Information</h2>
+                    <button
+                        onclick="toggleDetails('qrDetails')"
+                        class="secondary mobile-details-toggle"
+                        aria-label="Show device engagement information"
+                        title="Show device engagement information"
+                        style="
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 6px;
+                            padding: 6px 10px;
+                        "
+                    >
+                        <span id="qrDetails-icon">▶</span>
+                        <span class="details-toggle-label">Details</span>
+                    </button>
+                </div>
+
+                <div id="qrDetails" style="display: none; margin-top: 0.75rem">
                     <div class="status-panel">
                         <p>
                             <strong>Status:</strong>
@@ -1268,49 +1489,44 @@
                             <span id="bleAddr">—</span>
                         </p>
                     </div>
-                </div>
-                <div class="row">
-                    <label class="inline muted"
-                        >BLE MTU (bytes)
-                        <input
-                            id="chunk"
-                            type="number"
-                            min="20"
-                            max="511"
-                            value="244"
-                        />
-                    </label>
-                    <span
-                        class="muted"
-                        style="font-size: 0.82rem"
-                    >
-                        Packet size for BLE transmission. Default 244 bytes
-                        works with most modern devices. Reduce to 20 if
-                        connection issues occur.
-                    </span>
-                </div>
+                    <div class="row">
+                        <label class="inline muted"
+                            >BLE MTU (bytes)
+                            <input
+                                id="chunk"
+                                type="number"
+                                min="20"
+                                max="511"
+                                value="244"
+                            />
+                        </label>
+                        <span
+                            class="muted"
+                            style="font-size: 0.82rem"
+                        >
+                            Packet size for BLE transmission. Default 244 bytes
+                            works with most modern devices. Reduce to 20 if
+                            connection issues occur.
+                        </span>
+                    </div>
 
-                <div class="manual-entry">
-                    <label class="muted" for="qrInput"
-                        >Manual QR payload (paste from clipboard or laser
-                        scanner)</label
-                    >
-                    <textarea
-                        id="qrInput"
-                        placeholder="Paste the full mdoc: URI here"
-                    ></textarea>
-                    <div class="row" style="margin-top: 0">
-                        <button id="btnParseQr" class="secondary">
-                            Use manual QR payload
-                        </button>
-                        <button id="btnClearQr">Clear</button>
+                    <div class="manual-entry">
+                        <label class="muted" for="qrInput"
+                            >Manual QR payload (paste from clipboard or laser
+                            scanner)</label
+                        >
+                        <textarea
+                            id="qrInput"
+                            placeholder="Paste the full mdoc: URI here"
+                        ></textarea>
+                        <div class="row" style="margin-top: 0">
+                            <button id="btnParseQr" class="secondary">
+                                Use manual QR payload
+                            </button>
+                            <button id="btnClearQr">Clear</button>
+                        </div>
                     </div>
                 </div>
-            </section>
-
-            <section class="card" id="responseSection" style="display: none">
-                <h2>3. Wallet Response</h2>
-                <div id="responseDisplay"></div>
             </section>
 
             <section class="card" id="logsSection">
@@ -1323,6 +1539,26 @@
                     "
                 >
                     <h2 style="margin: 0">💻 Activity Log</h2>
+                    <button
+                        onclick="toggleDetails('logsDetails')"
+                        class="secondary mobile-details-toggle"
+                        aria-label="Show activity log details"
+                        title="Show activity log details"
+                        style="
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 6px;
+                            padding: 6px 10px;
+                        "
+                    >
+                        <span id="logsDetails-icon">▶</span>
+                        <span class="details-toggle-label">Details</span>
+                    </button>
+                </div>
+                <div
+                    id="logsDetails"
+                    style="display: none; margin-top: 0.75rem"
+                >
                     <label
                         style="
                             display: flex;
@@ -1330,6 +1566,7 @@
                             gap: 10px;
                             cursor: pointer;
                             user-select: none;
+                            margin-bottom: 0.75rem;
                         "
                     >
                         <span class="muted">Verbose in console</span>
@@ -1338,14 +1575,14 @@
                             <span class="ra-slider"></span>
                         </span>
                     </label>
+                    <div
+                        class="log"
+                        id="log"
+                        role="log"
+                        aria-live="polite"
+                        aria-label="Session activity log"
+                    ></div>
                 </div>
-                <div
-                    class="log"
-                    id="log"
-                    role="log"
-                    aria-live="polite"
-                    aria-label="Session activity log"
-                ></div>
             </section>
 
             <!-- Reader Authentication Configuration (collapsible) -->
@@ -1430,7 +1667,9 @@
                         </label>
                         <button
                             onclick="toggleDetails('readerAuthDetails')"
-                            class="secondary"
+                            class="secondary mobile-details-toggle"
+                            aria-label="Show reader authentication details"
+                            title="Show reader authentication details"
                             style="
                                 display: inline-flex;
                                 align-items: center;
@@ -1439,7 +1678,7 @@
                             "
                         >
                             <span id="readerAuthDetails-icon">▶</span>
-                            Details
+                            <span class="details-toggle-label">Details</span>
                         </button>
                     </div>
                 </div>
@@ -1591,12 +1830,13 @@
                         <span
                             id="iacaSummaryCounts"
                             class="muted"
-                            style="font-size: 0.9rem"
                             >Installed: Live 0 • Test 0</span
                         >
                         <button
                             onclick="toggleDetails('iacaDetails')"
-                            class="secondary"
+                            class="secondary mobile-details-toggle"
+                            aria-label="Show issuer certificate management details"
+                            title="Show issuer certificate management details"
                             style="
                                 display: inline-flex;
                                 align-items: center;
@@ -1605,7 +1845,7 @@
                             "
                         >
                             <span id="iacaDetails-icon">▶</span>
-                            Details
+                            <span class="details-toggle-label">Details</span>
                         </button>
                     </div>
                 </div>
@@ -2012,10 +2252,18 @@
             const bleAddrEl = document.getElementById("bleAddr");
             const video = document.getElementById("video");
             const canvas = document.getElementById("canvas");
+            const verificationProgressEl = document.getElementById(
+                "verificationProgress",
+            );
+            const verificationProgressTextEl = document.getElementById(
+                "verificationProgressText",
+            );
             const ctx = canvas.getContext("2d", { willReadFrequently: true });
             const qrInput = document.getElementById("qrInput");
             const btnParseQr = document.getElementById("btnParseQr");
             const btnClearQr = document.getElementById("btnClearQr");
+            const credentialWarningEl =
+                document.getElementById("credentialWarning");
 
             // Optional: focus the Manual QR payload textbox without scrolling the page
             window.addEventListener("load", () => {
@@ -2185,6 +2433,25 @@
                 Object.assign(replayCapture, patch || {});
             }
 
+            function showVerificationProgress(
+                message = "Verification in progress.",
+            ) {
+                try {
+                    if (!verificationProgressEl) return;
+                    if (verificationProgressTextEl && message) {
+                        verificationProgressTextEl.textContent = message;
+                    }
+                    verificationProgressEl.classList.add("is-visible");
+                } catch {}
+            }
+
+            function hideVerificationProgress() {
+                try {
+                    if (!verificationProgressEl) return;
+                    verificationProgressEl.classList.remove("is-visible");
+                } catch {}
+            }
+
             function saveReplayCapture() {
                 try {
                     localStorage.setItem(
@@ -2342,6 +2609,9 @@
                     if (responseDisplayEl) responseDisplayEl.innerHTML = "";
                 } catch {}
                 try {
+                    hideVerificationProgress();
+                } catch {}
+                try {
                     if (responseSectionEl)
                         responseSectionEl.style.display = "none";
                 } catch {}
@@ -2485,6 +2755,7 @@
                         try {
                             await processSessionResponse(assembled);
                         } catch (processError) {
+                            hideVerificationProgress();
                             console.error(
                                 "Failed to finalize session from response:",
                                 processError,
@@ -2513,6 +2784,7 @@
                             // Decrypt and render the response
                             await decryptAndRenderResponse(assembled);
                         } catch (decryptError) {
+                            hideVerificationProgress();
                             console.error("Decryption failed:", decryptError);
                             log(
                                 "❌ Decryption failed: " + decryptError.message,
@@ -2597,17 +2869,12 @@
             function renderResponseViewModel(model) {
                 try {
                     if (!responseDisplayEl) return;
-                    const version =
-                        model && model.version ? model.version : "1.0";
+                    hideVerificationProgress();
                     const documents = Array.isArray(model?.documents)
                         ? model.documents
                         : [];
                     if (!documents || documents.length === 0) {
                         responseDisplayEl.innerHTML = `
-        <div class="response-header">
-          <h3>🎉 Response Received</h3>
-          <div class="response-meta">Version: ${escapeHtml(String(version))}</div>
-        </div>
         <div class="no-data">No documents found in response</div>
       `;
                         if (typeof showResponseSectionAndScroll === "function")
@@ -2615,15 +2882,7 @@
                         return;
                     }
 
-                    let html = `
-      <div class="response-header">
-        <h3>🎉 Response Received</h3>
-        <div class="response-meta">Version: ${escapeHtml(String(version))} • ${documents.length} document(s)</div>
-        <button id="btnCopyResponse" class="copy-btn" style="margin-top: 10px; padding: 8px 16px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
-          📋 Copy as JSON
-        </button>
-      </div>
-    `;
+                                        let html = "";
 
                     const fmtLabel = (s) =>
                         typeof formatFieldName === "function"
@@ -2791,7 +3050,6 @@
                         const order = getOrderForDocType(docType);
                         html += `
         <div class="document-card">
-          <div class="document-type">📄 ${esc(docType)}</div>
       `;
 
                         const nsObjRaw = doc?.issuerSigned?.nameSpaces;
@@ -2825,10 +3083,14 @@
                             nsEntries = ordered;
                         }
 
+                        const mdocNamespaces = nsEntries
+                            .map(([nsName]) => String(nsName || ""))
+                            .filter((nsName) => nsName.length > 0)
+                            .join(", ");
+
                         nsEntries.forEach(([nsName, items]) => {
                             html += `
           <div class="namespace-section">
-            <div class="namespace-title">📦 ${esc(nsName)}</div>
         `;
 
                             items = unwrapTaggedOrCbor(items);
@@ -3523,6 +3785,7 @@
                             const detailsId = `issuerDetails-${docIdxLocal}`;
                             const msoViewId = `msoView-${docIdxLocal}`;
                             const certPemViewId = `certPemView-${docIdxLocal}`;
+                            const overallStatusId = `issuerOverallStatus-${docIdxLocal}`;
                             const sigStatusId = `sigStatus-${docIdxLocal}`;
                             const chainStatusId = `chainStatus-${docIdxLocal}`;
                             const revocationStatusId = `revocationStatus-${docIdxLocal}`;
@@ -3548,6 +3811,7 @@
                             };
 
                             html += `
+                    <div class="data-item" style="margin-top: 12px;"><div class="data-label">Verification Summary</div><div class="data-value" id="${overallStatusId}">—</div></div>
           <div class="signer-section" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff;">
             <div style="display:flex; justify-content:space-between; align-items:center; gap: 8px;">
               <div style="font-weight: bold; color: #007bff;">🔐 Issuer Signature Information</div>
@@ -3574,23 +3838,14 @@
               </button>
             </div>
 
-            <div class="verification-section" style="margin-top: 12px; padding: 12px; background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0;">
-              <div style="font-weight: 600; margin-bottom: 8px; color: #0f172a;">✍️ Verification Status</div>
-              <div class="data-item">
-                <div class="data-label">Signature</div>
-                <div class="data-value" id="${sigStatusId}">… verifying</div>
-              </div>
-              <div class="data-item">
-                <div class="data-label">Chain</div>
-                <div class="data-value" id="${chainStatusId}">… validating</div>
-              </div>
-              <div class="data-item">
-                <div class="data-label">Status</div>
-                <div class="data-value" id="${revocationStatusId}">—</div>
-              </div>
-            </div>
-
             <div id="${detailsId}" style="display:none; margin-top: 10px;">
+                            <div class="data-item"><div class="data-label" style="white-space: nowrap;">✍️ Verification Status</div><div class="data-value"></div></div>
+                            <div class="data-item"><div class="data-label">Signature</div><div class="data-value" id="${sigStatusId}">… verifying</div></div>
+                            <div class="data-item"><div class="data-label">Chain</div><div class="data-value" id="${chainStatusId}">… validating</div></div>
+                            <div class="data-item"><div class="data-label">Status</div><div class="data-value" id="${revocationStatusId}">—</div></div>
+              <div class="data-item"><div class="data-label" style="white-space: nowrap;">📄 mDOC information</div><div class="data-value"></div></div>
+              <div class="data-item"><div class="data-label">Doctype</div><div class="data-value">${esc(docType)}</div></div>
+              <div class="data-item"><div class="data-label">Namespace</div><div class="data-value">${esc(mdocNamespaces || "—")}</div></div>
               <div class="data-item"><div class="data-label" style="white-space: nowrap;">📦 MSO (Mobile Security Object)</div><div class="data-value"></div></div>
               ${
                   sig.mso
@@ -3654,30 +3909,6 @@
                     if (typeof showResponseSectionAndScroll === "function")
                         showResponseSectionAndScroll();
 
-                    const copyBtn = document.getElementById("btnCopyResponse");
-                    if (copyBtn) {
-                        copyBtn.addEventListener("click", async () => {
-                            try {
-                                const payload =
-                                    typeof convertToJSON === "function"
-                                        ? convertToJSON(model)
-                                        : model;
-                                const text =
-                                    typeof payload === "string"
-                                        ? payload
-                                        : JSON.stringify(payload, null, 2);
-                                await navigator.clipboard.writeText(text);
-                                copyBtn.textContent = "Copied!";
-                                setTimeout(
-                                    () =>
-                                        (copyBtn.textContent =
-                                            "📋 Copy as JSON"),
-                                    1200,
-                                );
-                            } catch {}
-                        });
-                    }
-
                     // Wire MSO JSON copy buttons
                     const copyMsoButtons = responseDisplayEl.querySelectorAll(
                         '[data-action="copy-mso"]',
@@ -3726,6 +3957,26 @@
                     const verifyButtons = responseDisplayEl.querySelectorAll(
                         '[data-action="verify"][data-doc-index]',
                     );
+
+                    const updateIssuerOverallStatus = (idx, sigOk, chainOk) => {
+                        const overallEl = document.getElementById(
+                            `issuerOverallStatus-${idx}`,
+                        );
+                        if (!overallEl) return;
+                        if (sigOk === true && chainOk === true) {
+                            overallEl.textContent = "✅";
+                            overallEl.style.color = "#065f46";
+                            return;
+                        }
+                        if (sigOk === false || chainOk === false) {
+                            overallEl.textContent = "❌";
+                            overallEl.style.color = "#991b1b";
+                            return;
+                        }
+                        overallEl.textContent = "—";
+                        overallEl.style.color = "#0f172a";
+                    };
+
                     verifyButtons.forEach((btn) => {
                         const idxStr = btn.getAttribute("data-doc-index");
                         const idx = idxStr != null ? parseInt(idxStr, 10) : NaN;
@@ -3836,6 +4087,11 @@
                                         ? "#065f46"
                                         : "#991b1b";
                                 }
+                                updateIssuerOverallStatus(
+                                    idx,
+                                    overallSigOk === true,
+                                    !!res.chainValid,
+                                );
                             } catch (err) {
                                 if (resultEl) {
                                     resultEl.textContent =
@@ -3851,6 +4107,7 @@
                                     chainEl.textContent = "❌ Error";
                                     chainEl.style.color = "#991b1b";
                                 }
+                                updateIssuerOverallStatus(idx, false, false);
                             } finally {
                                 btn.disabled = false;
                                 btn.textContent = prev;
@@ -3925,6 +4182,13 @@
                                             : "#991b1b";
                                     }
                                 }
+                                updateIssuerOverallStatus(
+                                    idx,
+                                    overallSigOk === true,
+                                    res.chainValid == null
+                                        ? null
+                                        : res.chainValid === true,
+                                );
                                 // Trigger MSO status check (revocation) if status list is advertised
                                 try {
                                     if (statusEl && sig) {
@@ -4530,12 +4794,14 @@
                                     statusEl.textContent = "—";
                                     statusEl.style.color = "#0f172a";
                                 }
+                                updateIssuerOverallStatus(idx, false, false);
                             }
                         });
                     }
                 } catch (e) {
                     console.error("Render error:", e);
                     try {
+                        hideVerificationProgress();
                         responseDisplayEl.textContent =
                             "Failed to render response: " + (e.message || e);
                         if (typeof showResponseSectionAndScroll === "function")
@@ -6350,11 +6616,10 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                 transcriptAAD = null;
                 walletEphemeralKey = null;
 
-                // Remove existing connect button if present
-                const existingBtn = document.getElementById("btnAutoConnect");
-                if (existingBtn) {
-                    existingBtn.remove();
-                    console.log("Removed existing connect button");
+                if (btnScan) {
+                    btnScan.dataset.mode = "scan";
+                    btnScan.disabled = false;
+                    btnScan.textContent = "Scan QR Code";
                 }
 
                 console.log("BLE connection state reset");
@@ -6395,7 +6660,56 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                 }
                 requestAnimationFrame(tick);
             }
-            btnScan.addEventListener("click", () => {
+
+            function getSelectedRequestTypes() {
+                return Array.from(
+                    document.querySelectorAll('input[name="requestType"]:checked'),
+                ).map((cb) => cb.value);
+            }
+
+            function setCredentialWarning(message) {
+                if (!credentialWarningEl) return;
+                if (message) {
+                    credentialWarningEl.textContent = message;
+                    credentialWarningEl.style.display = "block";
+                } else {
+                    credentialWarningEl.style.display = "none";
+                }
+            }
+
+            function ensureCredentialSelection() {
+                const selected = getSelectedRequestTypes();
+                if (selected.length === 0) {
+                    log(
+                        "⚠️ Select at least one credential before scanning or connecting",
+                    );
+                    setCredentialWarning("First select a credential");
+                    return false;
+                }
+                setCredentialWarning("");
+                return true;
+            }
+
+            btnScan.addEventListener("click", async () => {
+                if (btnScan.dataset.mode === "connect") {
+                    btnScan.disabled = true;
+                    btnScan.textContent = "Connecting...";
+                    try {
+                        await autoConnectFlow();
+                        btnScan.textContent = "✅ Connected";
+                        btnScan.disabled = true;
+                        btnScan.dataset.mode = "connected";
+                    } catch (error) {
+                        btnScan.disabled = false;
+                        btnScan.textContent =
+                            "🚀 Connect & Request Digital Credentials";
+                        btnScan.dataset.mode = "connect";
+                        log(`❌ Connection failed: ${error.message}`);
+                    }
+                    return;
+                }
+
+                if (!ensureCredentialSelection()) return;
                 // Ensure previous BLE session is fully closed so old notifications won't repopulate UI
                 try {
                     disconnectBLE();
@@ -6410,6 +6724,7 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                 if (!payload) {
                     log("⚠️ No QR payload provided");
                     statusEl.textContent = "No payload";
+                    hideVerificationProgress();
                     return;
                 }
 
@@ -6434,38 +6749,26 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                     );
                     saveReplayCapture();
 
-                    // Show message to user about clicking to connect
-                    log(
-                        '🚀 Ready to connect! Click "Connect & Request Digital Credentials" below to continue...',
-                    );
-
-                    // Enable and show a connect button
-                    if (!document.getElementById("btnAutoConnect")) {
-                        const connectBtn = document.createElement("button");
-                        connectBtn.id = "btnAutoConnect";
-                        connectBtn.textContent =
-                            "🚀 Connect & Request Digital Credentials";
-                        connectBtn.style.cssText =
-                            "margin: 1rem 0; padding: 0.75rem 1.5rem; font-size: 1.1em; background: #4CAF50; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;";
-                        connectBtn.onclick = async () => {
-                            connectBtn.disabled = true;
-                            connectBtn.textContent = "Connecting...";
-                            try {
-                                await autoConnectFlow();
-                                connectBtn.remove(); // Remove button after successful connection
-                            } catch (error) {
-                                connectBtn.disabled = false;
-                                connectBtn.textContent =
-                                    "🚀 Connect & Start Session";
-                                log(`❌ Connection failed: ${error.message}`);
-                            }
-                        };
-
-                        // Insert button after the QR section
-                        const qrSection = document.getElementById("qrSection");
-                        qrSection.appendChild(connectBtn);
+                    // Reuse the existing Scan QR Code control so the post-scan action
+                    // matches the app's native button styling and sits in the same UI
+                    // slot. The actual Bluetooth permission request still starts only
+                    // after a real user click.
+                    if (btnScan) {
+                        btnScan.dataset.mode = "connect";
+                        btnScan.disabled = false;
+                        btnScan.textContent =
+                            "🚀 Wallet found, click to continue";
+                        btnScan.focus();
+                        btnScan.scrollIntoView({
+                            behavior: "smooth",
+                            block: "center",
+                        });
+                        log(
+                            '🚀 QR scan complete. Click the button to start the Bluetooth pairing request.',
+                        );
                     }
                 } catch (e) {
+                    hideVerificationProgress();
                     log(`❌ ${sourceLabel} QR parse error: ${e.message}`);
                     statusEl.textContent = "Parse failed";
                 }
@@ -6476,6 +6779,12 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
             // Automated connection and session establishment flow
             async function autoConnectFlow() {
                 try {
+                    if (!ensureCredentialSelection()) {
+                        throw new Error(
+                            "Select at least one credential before continuing",
+                        );
+                    }
+
                     // Step 1: Connect to wallet
                     const connected = !!(
                         window.BLE &&
@@ -6506,6 +6815,8 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                             setTimeout(resolve, 500),
                         ); // Wait for connection to stabilize
                     }
+
+                    showVerificationProgress();
 
                     // Step 2: Start session (state 0x01)
                     log("🎬 Starting session (state 0x01)...");
@@ -6655,12 +6966,14 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                         "ℹ️ You may need to approve data sharing in your wallet app",
                     );
                 } catch (error) {
+                    hideVerificationProgress();
                     console.error("Auto-connect flow error:", error);
                     log(`❌ Auto-connect failed: ${error.message}`);
                 }
             }
 
             btnParseQr.addEventListener("click", () => {
+                if (!ensureCredentialSelection()) return;
                 resetResponseAndLog();
                 handleQrPayload(qrInput.value, "manual input");
             });
@@ -6672,6 +6985,7 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
 
             qrInput.addEventListener("keydown", (event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
+                    if (!ensureCredentialSelection()) return;
                     event.preventDefault();
                     resetResponseAndLog();
                     handleQrPayload(qrInput.value, "manual input");
@@ -7093,9 +7407,13 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                         ),
                     ).map((cb) => cb.value);
 
+                    if (selected.length > 0) {
+                        setCredentialWarning("");
+                    }
+
                     if (selected.length === 0) {
                         log(
-                            "⚠️ No document types selected - will default to mDL Full",
+                            "⚠️ No document types selected - select at least one credential",
                         );
                     } else if (selected.length === 1) {
                         const type = selected[0];
@@ -7207,20 +7525,6 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
 
             // Initialize UI
             updateBleRoleUI();
-
-            // ==== UI actions ====
-            window.addEventListener("DOMContentLoaded", () => {
-                // Simple page navigation dropdown in header
-                const navSelect = document.getElementById("pageNavSelect");
-                if (navSelect) {
-                    navSelect.addEventListener("change", () => {
-                        const target = navSelect.value;
-                        if (target) {
-                            window.location.href = target;
-                        }
-                    });
-                }
-            });
 
             // Manual verification helper - call from console: window.manualVerifyDeviceAuth()
             window.manualVerifyDeviceAuth = async function (
