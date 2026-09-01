@@ -6423,6 +6423,11 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                     );
                     saveReplayCapture();
 
+                    // Show message to user about clicking to connect
+                    log(
+                        '🚀 Ready to connect! Click "Connect & Request Digital Credentials" below to continue...',
+                    );
+
                     // Enable and show a connect button
                     if (!document.getElementById("btnAutoConnect")) {
                         const connectBtn = document.createElement("button");
@@ -6431,17 +6436,6 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                             "🚀 Connect & Request Digital Credentials";
                         connectBtn.style.cssText =
                             "margin: 1rem 0; padding: 0.75rem 1.5rem; font-size: 1.1em; background: #4CAF50; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;";
-
-                        const showButtonForManualConnect = () => {
-                            const qrSection =
-                                document.getElementById("qrSection");
-                            if (!connectBtn.isConnected)
-                                qrSection.appendChild(connectBtn);
-                            log(
-                                '🚀 Ready to connect! Click "Connect & Request Digital Credentials" below to continue...',
-                            );
-                        };
-
                         connectBtn.onclick = async () => {
                             connectBtn.disabled = true;
                             connectBtn.textContent = "Connecting...";
@@ -6456,23 +6450,9 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                             }
                         };
 
-                        // Compliant mdoc: URIs connect automatically without
-                        // showing the button. Web Bluetooth's requestDevice()
-                        // requires a real user gesture, which a QR scan does
-                        // not provide, so if the browser rejects the
-                        // gesture-less attempt, fall back to the manual
-                        // button instead of failing silently.
-                        if (/^mdoc:/i.test(payload)) {
-                            log("🚀 Compliant mdoc QR detected, connecting…");
-                            autoConnectFlow().catch((error) => {
-                                log(
-                                    `❌ Auto-connect failed (${error.message}); please click to connect manually.`,
-                                );
-                                showButtonForManualConnect();
-                            });
-                        } else {
-                            showButtonForManualConnect();
-                        }
+                        // Insert button after the QR section
+                        const qrSection = document.getElementById("qrSection");
+                        qrSection.appendChild(connectBtn);
                     }
                 } catch (e) {
                     log(`❌ ${sourceLabel} QR parse error: ${e.message}`);
