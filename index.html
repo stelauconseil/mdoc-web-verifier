@@ -1199,7 +1199,7 @@
                         </div>
 
                         <div style="margin: 1.25rem 0 10px 0">
-                            <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">ISO 23220 Photo ID</strong>
+                            <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">Photo ID</strong>
                         </div>
                         <div class="radio-group request-type">
                             <label class="radio-chip small">
@@ -1218,30 +1218,6 @@
                                 />
                                 Photo ID Full
                             </label>
-                            <span class="muted" style="font-size: 0.78rem; margin-left: 0.25rem; display: inline-flex; align-items: center"
-                                >Default doctype: org.iso.23220.photoid.1</span
-                            >
-                        </div>
-                        <div class="radio-group request-type" style="margin-top: 0.5rem">
-                            <label class="radio-chip small">
-                                <input
-                                    type="checkbox"
-                                    name="requestType"
-                                    value="photoid_basic_upper"
-                                />
-                                Photo ID Basic
-                            </label>
-                            <label class="radio-chip small">
-                                <input
-                                    type="checkbox"
-                                    name="requestType"
-                                    value="photoid_full_upper"
-                                />
-                                Photo ID Full
-                            </label>
-                            <span class="muted" style="font-size: 0.78rem; margin-left: 0.25rem; display: inline-flex; align-items: center"
-                                >Alternate doctype: org.iso.23220.photoID.1</span
-                            >
                         </div>
                     </div>
                 </div>
@@ -1328,19 +1304,6 @@
                             </label>
                         </div>
 
-                        <div style="margin: 1.25rem 0 10px 0">
-                            <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">Certificate of Competency</strong>
-                        </div>
-                        <div class="radio-group request-type">
-                            <label class="radio-chip small">
-                                <input
-                                    type="checkbox"
-                                    name="requestType"
-                                    value="coc_full"
-                                />
-                                CoC Full
-                            </label>
-                        </div>
                     </div>
                 </div>
 
@@ -1441,15 +1404,15 @@
             </section>
 
             <section class="card" id="startVerificationSection">
-                <h2>2. Start Verification</h2>
+                <h2>2. QR Code Scan</h2>
                 <p class="muted">
-                    Start the verification session as soon as your credential selection is complete.
+                    Use your computer camera to capture the wallet's QR code or paste details manually.
                 </p>
                 <div class="row">
                     <button id="btnScan">Scan QR Code</button>
                 </div>
                 <p id="credentialWarning" class="muted" style="display: none; margin: 0.5rem 0 0.75rem 0; color: #b45309">
-                    First select a credential
+                    First select one or more credentials to request
                 </p>
                 <div class="scanner">
                     <div class="video-frame">
@@ -1489,7 +1452,7 @@
                         gap: 8px;
                     "
                 >
-                    <h2 style="margin: 0">Device Engagement information</h2>
+                    <h2 style="margin: 0">ℹ️ Device Engagement Information</h2>
                     <button
                         onclick="toggleDetails('qrDetails')"
                         class="secondary mobile-details-toggle"
@@ -1508,10 +1471,6 @@
                 </div>
 
                 <div id="qrDetails" style="display: none; margin-top: 0.75rem">
-                    <p class="muted">
-                        Use your computer camera to capture the wallet's QR code or
-                        paste details manually.
-                    </p>
                     <div class="status-panel">
                         <p>
                             <strong>Status:</strong>
