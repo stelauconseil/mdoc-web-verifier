@@ -2851,6 +2851,20 @@
                 }
             };
 
+            const fetchWithCorsFallback = async (
+                targetUrl,
+                options = {},
+                warnPrefix = null,
+            ) => {
+                try {
+                    return await fetchWithCorsTimeout(targetUrl, options);
+                } catch (directError) {
+                    const proxiedUrl = withCorsProxy(targetUrl, warnPrefix);
+                    if (proxiedUrl === targetUrl) throw directError;
+                    return await fetchWithCorsTimeout(proxiedUrl, options);
+                }
+            };
+
             // New: Render the wallet response view-model into the page
             function renderResponseViewModel(model) {
                 try {
@@ -5303,15 +5317,11 @@
                         }
 
                         const ACCEPT_STATUS =
-                            'application/statuslist+cwt, application/identifierlist+cwt, application/cose; cose-type="cose-sign1", application/cbor, application/json, application/pkix-crl, application/octet-stream, text/plain';
-                        const proxyUri = withCorsProxy(
-                            uri,
-                            "[StatusCheck] Using CORS proxy:",
-                        );
+                            'application/statuslist+jwt, application/statuslist+cwt, application/identifierlist+cwt, application/cose; cose-type="cose-sign1", application/cbor, application/json, application/pkix-crl, application/octet-stream, text/plain';
                         try {
                             if (window.DEBUG_VERBOSE) {
                                 console.log("[StatusCheck] Start", {
-                                    uri: proxyUri,
+                                    uri,
                                     idx,
                                     hasIdentifier,
                                     hasIndex,
@@ -5323,9 +5333,13 @@
                                 `Status: checking ${uri}${typeof idx === "number" ? " @ idx " + idx : ""}`,
                             );
                         } catch {}
-                        const res = await fetchWithCorsTimeout(proxyUri, {
-                            headers: { Accept: ACCEPT_STATUS },
-                        });
+                        const res = await fetchWithCorsFallback(
+                            uri,
+                            {
+                                headers: { Accept: ACCEPT_STATUS },
+                            },
+                            "[StatusCheck] Direct fetch failed; using CORS proxy:",
+                        );
                         try {
                             if (window.DEBUG_VERBOSE) {
                                 console.log(
@@ -5345,7 +5359,7 @@
                         const buf = new Uint8Array(await res.arrayBuffer());
                         let text = null;
                         try {
-                            text = await res.clone().text();
+                            text = textDecoder.decode(buf);
                         } catch {}
 
                         let parsed = tryParseAny(buf, text, contentType);
@@ -5757,17 +5771,16 @@
                                             `Status: fetching page ${pageIndex} (${pageSize})`,
                                         );
                                     } catch {}
-                                    const proxyPageUri = withCorsProxy(
-                                        pageUri,
-                                        "[StatusCheck] Using CORS proxy for paged fetch:",
-                                    );
                                     let pageIndexUsed = pageIndex;
-                                    let pageUriUsed = proxyPageUri;
-                                    let res2 = await fetchWithCorsTimeout(
+                                    let pageUriUsed = pageUri;
+                                    let res2 = await fetchWithCorsFallback(
                                         pageUriUsed,
                                         {
-                                        headers: { Accept: ACCEPT_STATUS },
+                                            headers: {
+                                                Accept: ACCEPT_STATUS,
+                                            },
                                         },
+                                        "[StatusCheck] Direct paged fetch failed; using CORS proxy:",
                                     );
                                     if (
                                         res2.status === 404 &&
@@ -5776,29 +5789,27 @@
                                         // Fallback: provider may use 1-based page numbering
                                         const altIndex = pageIndex + 1;
                                         const altUri = `${uri.replace(/\/$/, "")}/${altIndex}`;
-                                        const proxyAltUri = withCorsProxy(
-                                            altUri,
-                                        );
                                         try {
                                             const resAlt =
-                                                await fetchWithCorsTimeout(
-                                                proxyAltUri,
-                                                {
-                                                    headers: {
-                                                        Accept: ACCEPT_STATUS,
+                                                await fetchWithCorsFallback(
+                                                    altUri,
+                                                    {
+                                                        headers: {
+                                                            Accept: ACCEPT_STATUS,
+                                                        },
                                                     },
-                                                },
-                                            );
+                                                    "[StatusCheck] Direct alternate page fetch failed; using CORS proxy:",
+                                                );
                                             if (resAlt.ok) {
                                                 console.warn(
                                                     "[StatusCheck] 404 on 0-based page; using 1-based page index fallback",
                                                     {
                                                         altIndex,
-                                                        altUri: proxyAltUri,
+                                                        altUri,
                                                     },
                                                 );
                                                 pageIndexUsed = altIndex;
-                                                pageUriUsed = proxyAltUri;
+                                                pageUriUsed = altUri;
                                                 res2 = resAlt;
                                             }
                                         } catch {}
@@ -5811,7 +5822,7 @@
                                     );
                                     let text2 = null;
                                     try {
-                                        text2 = await res2.clone().text();
+                                        text2 = textDecoder.decode(buf2);
                                     } catch {}
                                     let parsed2 = tryParseAny(
                                         buf2,
