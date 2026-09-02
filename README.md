@@ -95,9 +95,10 @@ Depending on your wallet, the main reader and example pages can work with:
 - **EU PID** – `eu.europa.ec.eudi.pid.1` (Person Identification Data)
 - **BIDA** – `eu.europa.ec.eudi.bida.1` (Basic Identification Data Attestation)
 - **EU Age Verification** – `eu.europa.ec.av.1` (age‑only attestations such as `age_over_18`)
-- **Photo ID** – `org.iso.23220.photoID.1` (+ related ISO 23220 namespaces)
+- **Photo ID** – `org.iso.23220.photoid.1` (+ related ISO 23220 namespaces)
 - **mICOV** – `org.micov.1` (vaccination / test attestations)
 - **mVC** – `org.iso.7367.1.mVC` (vehicle card)
+- **Bicycle ID card** – `fr.idak.mbicycle.1` (bicycle owner and identification data)
 - **Studend Card** - `fr.ft.hsc.1` (+ related ISO 23220 namespaces)
 
 Your wallet may not support all of these doctypes; the app will only show data for documents actually returned by the wallet.

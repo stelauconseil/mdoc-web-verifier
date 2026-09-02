@@ -1304,6 +1304,20 @@
                             </label>
                         </div>
 
+                        <div style="margin: 1.25rem 0 10px 0">
+                            <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">Bicycle ID card</strong>
+                        </div>
+                        <div class="radio-group request-type">
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
+                                    value="bicycle_full"
+                                />
+                                Bicycle ID card
+                            </label>
+                        </div>
+
                     </div>
                 </div>
 
@@ -1431,7 +1445,7 @@
                                 id="verificationProgressText"
                                 class="verification-progress__text"
                             >
-                                Verification in progress.
+                                Transmission in progress.
                             </p>
                         </div>
                     </div>
@@ -2434,7 +2448,7 @@
             }
 
             function showVerificationProgress(
-                message = "Verification in progress.",
+                message = "Transmission in progress.",
             ) {
                 try {
                     if (!verificationProgressEl) return;
@@ -7487,6 +7501,10 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                                 description =
                                     "mVC: vehicle registration details, vehicle characteristics, owner";
                                 break;
+                            case "bicycle_full":
+                                description =
+                                    "Bicycle ID card: owner, bicycle details, and optional serial numbers";
+                                break;
                             case "fr_hsc_student":
                                 description =
                                     "FR Student Card (fr.ft.hsc.1): issuing authority, identity, education details";
@@ -7503,6 +7521,8 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                             if (t.startsWith("photoid_")) return "Photo ID";
                             if (t.startsWith("micov_")) return "mICOV";
                             if (t.startsWith("mvc_")) return "mVC";
+                            if (t.startsWith("bicycle_"))
+                                return "Bicycle ID card";
                             if (t.startsWith("fr_hsc_"))
                                 return "FR Student Card";
                             return "mDL";

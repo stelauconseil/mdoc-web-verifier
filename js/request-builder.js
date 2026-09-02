@@ -3,7 +3,7 @@
   Author: Nicolas Chalanset
   
   Request Builder module
-  Builds device requests for mDL, EU PID, BIDA, Age Verification, Photo ID, mICOV, and mVC
+  Builds device requests for mDL, EU PID, BIDA, Age Verification, Photo ID, mICOV, mVC, and Bicycle ID cards
 */
 
 (function () {
@@ -131,6 +131,15 @@
             namespace = "org.iso.7367.1";
             log(
                 "🚗 Building mVC request - docType: " +
+                    docType +
+                    " namespace: " +
+                    namespace,
+            );
+        } else if (requestType.startsWith("bicycle_")) {
+            docType = "fr.idak.mbicycle.1";
+            namespace = "fr.idak.mbicycle.1";
+            log(
+                "🚲 Building Bicycle ID card request - docType: " +
                     docType +
                     " namespace: " +
                     namespace,
@@ -403,6 +412,25 @@
                     engine_info: false,
                     seating_info: false,
                     registered_users: false,
+                };
+                break;
+            case "bicycle_full":
+                fields = {
+                    // Mandatory claims
+                    family_name: false,
+                    given_name: false,
+                    email: false,
+                    phone_number: false,
+                    bike_id: false,
+                    brand: false,
+                    model: false,
+                    color: false,
+                    type: false,
+                    electric: false,
+                    // Optional claims
+                    serial_number_bike: false,
+                    serial_number_battery: false,
+                    serial_number_motor: false,
                 };
                 break;
             case "fr_hsc_student":
