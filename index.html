@@ -475,6 +475,15 @@
                 box-shadow: 0 4px 14px -4px rgba(15, 23, 42, 0.4);
             }
 
+            button.wallet-found {
+                background: #16a34a;
+            }
+
+            button.wallet-found:hover:not(:disabled) {
+                background: #15803d;
+                box-shadow: 0 4px 14px -4px rgba(22, 163, 74, 0.5);
+            }
+
             button:active:not(:disabled) {
                 transform: translateY(0);
             }
@@ -3825,7 +3834,7 @@
                             };
 
                             html += `
-                    <div class="data-item" style="margin-top: 12px;"><div class="data-label">Verification Summary</div><div class="data-value" id="${overallStatusId}">—</div></div>
+                    <div class="data-item" style="margin-top: 12px;"><div class="data-label">Verification Status</div><div class="data-value" id="${overallStatusId}">—</div></div>
           <div class="signer-section" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff;">
             <div style="display:flex; justify-content:space-between; align-items:center; gap: 8px;">
               <div style="font-weight: bold; color: #007bff;">🔐 Issuer Signature Information</div>
@@ -4842,12 +4851,10 @@
                 }
 
                 try {
-                    if (
-                        window.BLE &&
-                        typeof window.BLE.disconnect === "function"
-                    ) {
-                        window.BLE.disconnect();
-                    }
+                    // Use the common teardown path so the BLE/session state and
+                    // the primary action button are reset together after a
+                    // DeviceResponse has been received.
+                    disconnectBLE();
                 } catch (e) {
                     console.warn("Auto-disconnect failed:", e);
                 }
@@ -6632,6 +6639,7 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
 
                 if (btnScan) {
                     btnScan.dataset.mode = "scan";
+                    btnScan.classList.remove("wallet-found");
                     btnScan.disabled = false;
                     btnScan.textContent = "Scan QR Code";
                 }
@@ -6706,6 +6714,7 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
 
             btnScan.addEventListener("click", async () => {
                 if (btnScan.dataset.mode === "connect") {
+                    btnScan.classList.remove("wallet-found");
                     btnScan.disabled = true;
                     btnScan.textContent = "Connecting...";
                     try {
@@ -6769,6 +6778,7 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                     // after a real user click.
                     if (btnScan) {
                         btnScan.dataset.mode = "connect";
+                        btnScan.classList.add("wallet-found");
                         btnScan.disabled = false;
                         btnScan.textContent =
                             "🚀 Wallet found, click to continue";
