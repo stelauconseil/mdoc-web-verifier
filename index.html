@@ -1486,10 +1486,15 @@
                             placeholder='credential-name = {
   displayName: "Credential name",
   docType: "example.doc.type.1",
-  claims: {
-    "example.namespace~required_claim" => tstr,
-    ? "example.namespace~optional_claim" => tstr,
-  },
+  namespaces: [
+    {
+      namespace: "example.namespace",
+      claims: {
+        required_claim: tstr,
+        ? optional_claim: tstr,
+      },
+    }
+  ],
 }'
                         ></textarea>
                         <div class="row" style="margin-top: 0.65rem;">
@@ -2220,8 +2225,8 @@
         <script src="js/reader-authentication.js"></script>
         <script src="js/device-engagement.js"></script>
         <script src="js/wallet-response.js"></script>
-        <script src="js/user-defined-credentials.js"></script>
-        <script src="js/request-builder.js"></script>
+        <script src="js/user-defined-credentials.js?v=20260902-9"></script>
+        <script src="js/request-builder.js?v=20260902-9"></script>
         <script src="js/ble-transport.js"></script>
         <script src="js/session-crypto.js"></script>
         <script src="js/verification.js"></script>

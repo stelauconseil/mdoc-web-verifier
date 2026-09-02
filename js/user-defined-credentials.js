@@ -1,14 +1,20 @@
 /*
+  Copyright (c) 2026 Stelau
+  Author: Nicolas Chalanset
+
   User-defined ISO 18013-5 credential profiles.
 
   Supported CDDL profile shape:
     profile-name = {
       displayName: "Human-readable name",
       docType: "example.doc.type.1",
-      claims: {
-        "example.namespace~mandatory_claim" => tstr,
-        ? "example.namespace~optional_claim" => tstr,
-      },
+      namespaces: [{
+        namespace: "example.namespace",
+        claims: {
+          mandatory_claim: tstr,
+          ? optional_claim: tstr,
+        },
+      }],
     }
 */
 
@@ -24,7 +30,9 @@
 
     function loadAll() {
         try {
-            const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+            const parsed = JSON.parse(
+                localStorage.getItem(STORAGE_KEY) || "[]",
+            );
             return Array.isArray(parsed) ? parsed : [];
         } catch {
             return [];
@@ -49,6 +57,80 @@
         return `${slug}-${suffix}`;
     }
 
+    function findBalancedEnd(source, start, open, close) {
+        let depth = 0;
+        let inString = false;
+        let escaped = false;
+        for (let i = start; i < source.length; i++) {
+            const char = source[i];
+            if (inString) {
+                if (escaped) escaped = false;
+                else if (char === "\\") escaped = true;
+                else if (char === '"') inString = false;
+                continue;
+            }
+            if (char === '"') inString = true;
+            else if (char === open) depth++;
+            else if (char === close && --depth === 0) return i;
+        }
+        return -1;
+    }
+
+    function parseClaimMembers(body, namespace) {
+        const pattern =
+            /^\s*(\?)?\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*:\s*([^,\r\n]+)\s*,?\s*$/gm;
+        const claims = [];
+        let match;
+        while ((match = pattern.exec(body))) {
+            claims.push({
+                namespace,
+                identifier: match[2].trim(),
+                required: !match[1],
+                format: match[3].trim(),
+            });
+        }
+        const unparsed = body.replace(pattern, "").replace(/[\s,]/g, "");
+        if (unparsed) {
+            throw new Error(`Unsupported CDDL near: ${unparsed.slice(0, 40)}`);
+        }
+        return claims;
+    }
+
+    function formatCddl(definition) {
+        const escapeString = (value) =>
+            String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+        const ruleName =
+            String(definition.name || "custom-credential")
+                .toLowerCase()
+                .replace(/[^a-z0-9_-]+/g, "-")
+                .replace(/^-|-$/g, "") || "custom-credential";
+        const grouped = new Map();
+        for (const claim of definition.claims) {
+            if (!grouped.has(claim.namespace)) grouped.set(claim.namespace, []);
+            grouped.get(claim.namespace).push(claim);
+        }
+        const namespaceBlocks = Array.from(grouped.entries()).map(
+            ([namespace, claims]) => `    {
+      namespace: "${escapeString(namespace)}",
+      claims: {
+${claims
+    .map(
+        (claim) =>
+            `        ${claim.required ? "" : "? "}${claim.identifier}: ${claim.format},`,
+    )
+    .join("\n")}
+      },
+    }`,
+        );
+        return `${ruleName} = {
+  displayName: "${escapeString(definition.name)}",
+  docType: "${escapeString(definition.docType)}",
+  namespaces: [
+${namespaceBlocks.join(",\n")}
+  ],
+}`;
+    }
+
     function parseCddl(cddl) {
         if (typeof cddl !== "string" || !cddl.trim()) {
             throw new Error("Paste a CDDL definition first");
@@ -59,67 +141,51 @@
 
         const source = cddl.replace(/;[^\r\n]*/g, "");
         const ruleMatch = source.match(/^\s*([A-Za-z][A-Za-z0-9_-]*)\s*=\s*\{/);
-        const displayNameMatch = source.match(/\bdisplayName\s*:\s*"([^"]+)"\s*,?/);
+        const displayNameMatch = source.match(
+            /\bdisplayName\s*:\s*"([^"]+)"\s*,?/,
+        );
         const docTypeMatch = source.match(/\bdocType\s*:\s*"([^"]+)"\s*,?/);
-        const claimsStart = source.match(/\bclaims\s*:\s*\{/);
+        const namespacesStart = source.match(/\bnamespaces\s*:\s*\[/);
 
         if (!docTypeMatch) throw new Error('Missing docType: "…"');
-        if (!claimsStart || claimsStart.index == null) {
-            throw new Error("Missing claims map");
-        }
 
         const docType = docTypeMatch[1].trim();
         if (!docType || docType.length > 150 || /[~\s]/.test(docType)) {
             throw new Error("Invalid docType");
         }
 
-        const claimsBodyStart = claimsStart.index + claimsStart[0].length;
-        let depth = 1;
-        let inString = false;
-        let escaped = false;
-        let claimsBodyEnd = -1;
-        for (let i = claimsBodyStart; i < source.length; i++) {
-            const char = source[i];
-            if (inString) {
-                if (escaped) escaped = false;
-                else if (char === "\\") escaped = true;
-                else if (char === '"') inString = false;
-                continue;
-            }
-            if (char === '"') inString = true;
-            else if (char === "{") depth++;
-            else if (char === "}" && --depth === 0) {
-                claimsBodyEnd = i;
-                break;
-            }
-        }
-        if (claimsBodyEnd < 0) throw new Error("Unclosed claims map");
-
-        const claimsBody = source.slice(claimsBodyStart, claimsBodyEnd);
-        const memberPattern = /^\s*(\?)?\s*"([^"]+)"\s*=>\s*([A-Za-z][A-Za-z0-9_.-]*)\s*,?\s*$/gm;
         const claims = [];
-        let memberMatch;
-        while ((memberMatch = memberPattern.exec(claimsBody))) {
-            const qualifiedName = memberMatch[2].trim();
-            const separator = qualifiedName.indexOf("~");
-            if (separator <= 0 || separator === qualifiedName.length - 1) {
+        if (!namespacesStart || namespacesStart.index == null) {
+            throw new Error("Missing namespaces array");
+        }
+        const arrayStart = source.indexOf("[", namespacesStart.index);
+        const arrayEnd = findBalancedEnd(source, arrayStart, "[", "]");
+        if (arrayEnd < 0) throw new Error("Unclosed namespaces array");
+        const arrayBody = source.slice(arrayStart + 1, arrayEnd);
+        for (let i = 0; i < arrayBody.length; i++) {
+            if (arrayBody[i] !== "{") continue;
+            const objectEnd = findBalancedEnd(arrayBody, i, "{", "}");
+            if (objectEnd < 0) throw new Error("Unclosed namespace entry");
+            const entry = arrayBody.slice(i + 1, objectEnd);
+            const namespaceMatch = entry.match(
+                /\bnamespace\s*:\s*"([^"]+)"\s*,?/,
+            );
+            const claimsStart = entry.match(/\bclaims\s*:\s*\{/);
+            if (!namespaceMatch || !claimsStart || claimsStart.index == null) {
                 throw new Error(
-                    `Claim key must use "namespace~identifier": ${qualifiedName}`,
+                    "Each namespace entry needs namespace and claims",
                 );
             }
-            claims.push({
-                namespace: qualifiedName.slice(0, separator),
-                identifier: qualifiedName.slice(separator + 1),
-                required: !memberMatch[1],
-                format: memberMatch[3],
-            });
-        }
-
-        const unparsed = claimsBody
-            .replace(memberPattern, "")
-            .replace(/[\s,]/g, "");
-        if (unparsed) {
-            throw new Error(`Unsupported CDDL near: ${unparsed.slice(0, 40)}`);
+            const mapStart = entry.indexOf("{", claimsStart.index);
+            const mapEnd = findBalancedEnd(entry, mapStart, "{", "}");
+            if (mapEnd < 0) throw new Error("Unclosed claims map");
+            claims.push(
+                ...parseClaimMembers(
+                    entry.slice(mapStart + 1, mapEnd),
+                    namespaceMatch[1].trim(),
+                ),
+            );
+            i = objectEnd;
         }
         if (claims.length === 0) throw new Error("No claims found");
         if (claims.length > MAX_CLAIMS) throw new Error("Too many claims");
@@ -131,15 +197,16 @@
             seen.add(key);
         }
 
-        return {
+        const definition = {
             name:
                 (displayNameMatch && displayNameMatch[1].trim()) ||
                 (ruleMatch && ruleMatch[1]) ||
                 docType,
             docType,
             claims,
-            cddl: cddl.trim(),
         };
+        definition.cddl = formatCddl(definition);
+        return definition;
     }
 
     function add(cddl, idToEdit = null) {
@@ -169,7 +236,9 @@
             savedDefinition = duplicate;
         } else {
             if (definitions.length >= MAX_DEFINITIONS) {
-                throw new Error(`Maximum ${MAX_DEFINITIONS} credentials reached`);
+                throw new Error(
+                    `Maximum ${MAX_DEFINITIONS} credentials reached`,
+                );
             }
             definition.id = makeId(definition.docType);
             definitions.push(definition);
@@ -186,7 +255,8 @@
     }
 
     function resolveRequestType(requestType) {
-        if (!requestType || !requestType.startsWith(REQUEST_PREFIX)) return null;
+        if (!requestType || !requestType.startsWith(REQUEST_PREFIX))
+            return null;
         const value = requestType.slice(REQUEST_PREFIX.length);
         const modeMatch = value.match(/:(basic|full)$/);
         const mode = modeMatch ? modeMatch[1] : "full";
@@ -258,7 +328,9 @@
     function initializeUi() {
         const input = document.getElementById("userCredentialCddl");
         const addButton = document.getElementById("btnAddUserCredential");
-        const cancelButton = document.getElementById("btnCancelUserCredentialEdit");
+        const cancelButton = document.getElementById(
+            "btnCancelUserCredentialEdit",
+        );
         const list = document.getElementById("userDefinedCredentialList");
         if (!input || !addButton || !list) return;
 
@@ -293,11 +365,12 @@
             );
             if (editButton) {
                 const definition = loadAll().find(
-                    (item) => item.id === editButton.dataset.editUserCredentialId,
+                    (item) =>
+                        item.id === editButton.dataset.editUserCredentialId,
                 );
                 if (!definition) return;
                 editingId = definition.id;
-                input.value = definition.cddl;
+                input.value = formatCddl(definition);
                 addButton.textContent = "Save changes";
                 if (cancelButton) cancelButton.style.display = "inline-flex";
                 input.focus();
@@ -340,6 +413,7 @@
     window.UserDefinedCredentials = {
         REQUEST_PREFIX,
         parseCddl,
+        formatCddl,
         loadAll,
         add,
         remove,

@@ -129,11 +129,30 @@ This feature accepts the following focused CDDL profile structure rather than an
 
 - `displayName` defines the label shown in the credential selector.
 - `docType` defines the ISO 18013-5 document type.
-- `claims` contains one or more entries using `namespace~identifier` keys.
+- `namespaces` is an array containing one or more namespace definitions.
+- Each namespace definition contains its string identifier and a `claims` map.
+- Claims use standard CDDL group entries such as `family_name: tstr`.
 - A regular member represents a mandatory claim in the source rulebook.
 - A member prefixed with `?` represents an optional claim.
-- The type after `=>` records the claim's CDDL format, such as `tstr` or `bool`.
+- The type after `:` records the claim's CDDL format, such as `tstr` or `bool`.
 - Multiple namespaces may be declared in the same profile.
+
+```cddl
+example-card = {
+  displayName: "Example card",
+  docType: "example.card.1",
+  namespaces: [
+    {
+      namespace: "example.card.1",
+      claims: {
+        family_name: tstr,
+        given_name: tstr,
+        ? portrait: bstr,
+      },
+    }
+  ],
+}
+```
 
 In **Basic** mode, only regular CDDL members (mandatory claims) are placed in the presentation request. In **Full** mode, optional members prefixed with `?` are included as well. Every requested claim uses `intentToRetain: false`. Basic and Full are mutually exclusive for a given user-defined credential.
 
