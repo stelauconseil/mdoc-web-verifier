@@ -3073,6 +3073,7 @@
                         const order = getOrderForDocType(docType);
                         html += `
         <div class="document-card">
+          <div class="document-type">📄 ${esc(docType)}</div>
       `;
 
                         const nsObjRaw = doc?.issuerSigned?.nameSpaces;
@@ -3114,6 +3115,7 @@
                         nsEntries.forEach(([nsName, items]) => {
                             html += `
           <div class="namespace-section">
+            <div class="namespace-title">📦 ${esc(nsName)}</div>
         `;
 
                             items = unwrapTaggedOrCbor(items);
