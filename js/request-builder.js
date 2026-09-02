@@ -89,9 +89,61 @@
         return CBOR.encode(deviceRequest);
     }
 
+    function createDocRequest(docType, nameSpacesObj) {
+        const CBOR = getCBOR();
+        if (!CBOR) throw new Error("CBOR library not available");
+        const itemsRequest = {
+            docType,
+            nameSpaces: nameSpacesObj,
+            requestInfo: {},
+        };
+
+        // Capture the requested display order so the renderer can mirror it.
+        try {
+            const namespaceOrder = Object.keys(nameSpacesObj);
+            const fieldsOrder = {};
+            for (const ns of namespaceOrder) {
+                const obj = nameSpacesObj[ns];
+                fieldsOrder[ns] =
+                    obj && typeof obj === "object" && !Array.isArray(obj)
+                        ? Object.keys(obj)
+                        : [];
+            }
+            const orderSnapshot = { docType, namespaceOrder, fieldsOrder };
+            if (!window.RequestBuilder) window.RequestBuilder = {};
+            window.RequestBuilder.lastOrder = orderSnapshot;
+            window.LAST_REQUEST_ORDER = orderSnapshot;
+            if (!window.REQUEST_ORDERS_BY_DOCTYPE)
+                window.REQUEST_ORDERS_BY_DOCTYPE = {};
+            window.REQUEST_ORDERS_BY_DOCTYPE[docType] = orderSnapshot;
+        } catch (_) {}
+
+        const itemsRequestCbor = CBOR.encode(itemsRequest);
+        return {
+            itemsRequest: new CBOR.Tagged(24, itemsRequestCbor),
+        };
+    }
+
     function buildSingleDocRequest(requestType) {
         const CBOR = getCBOR();
         if (!CBOR) throw new Error("CBOR library not available");
+
+        const userCredentials = window.UserDefinedCredentials;
+        const userRequest = userCredentials?.resolveRequestType(requestType);
+        if (userRequest) {
+            const { definition, mode } = userRequest;
+            const nameSpacesObj = userCredentials.toNameSpaces(definition, mode);
+            log(
+                `🧩 Building user-defined ${mode} request - docType: ${definition.docType}`,
+            );
+            return createDocRequest(definition.docType, nameSpacesObj);
+        }
+        if (requestType?.startsWith("user_defined:")) {
+            throw new Error(
+                `User-defined credential is unavailable or was deleted: ${requestType}`,
+            );
+        }
+
         let docType, namespace, fields;
         // Optional multi-namespace holders for specific doctypes
         let photoIdFields = null; // org.iso.23220.photoid.1
@@ -485,40 +537,7 @@
             nameSpacesObj = { [namespace]: fields };
         }
 
-        const itemsRequest = {
-            docType: docType,
-            nameSpaces: nameSpacesObj,
-            requestInfo: {},
-        };
-
-        // Capture the requested display order so the renderer can mirror it
-        try {
-            const namespaceOrder = Object.keys(nameSpacesObj);
-            const fieldsOrder = {};
-            for (const ns of namespaceOrder) {
-                const obj = nameSpacesObj[ns];
-                if (obj && typeof obj === "object" && !Array.isArray(obj)) {
-                    fieldsOrder[ns] = Object.keys(obj);
-                } else {
-                    fieldsOrder[ns] = [];
-                }
-            }
-            const orderSnapshot = { docType, namespaceOrder, fieldsOrder };
-            // Expose for downstream renderers
-            if (!window.RequestBuilder) window.RequestBuilder = {};
-            window.RequestBuilder.lastOrder = orderSnapshot;
-            window.LAST_REQUEST_ORDER = orderSnapshot; // convenience alias
-            // Also keep a per-docType registry so multi-document requests are preserved
-            try {
-                if (!window.REQUEST_ORDERS_BY_DOCTYPE)
-                    window.REQUEST_ORDERS_BY_DOCTYPE = {};
-                window.REQUEST_ORDERS_BY_DOCTYPE[docType] = orderSnapshot;
-            } catch {}
-        } catch (_) {}
-        const itemsRequestCbor = CBOR.encode(itemsRequest);
-        const taggedItemsRequest = new CBOR.Tagged(24, itemsRequestCbor);
-        const docRequest = { itemsRequest: taggedItemsRequest };
-        return docRequest;
+        return createDocRequest(docType, nameSpacesObj);
     }
 
     window.RequestBuilder = {

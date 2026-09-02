@@ -542,6 +542,40 @@
                 font-size: 0.85rem;
             }
 
+            .user-credential-editor textarea {
+                width: 100%;
+                min-height: 15rem;
+                box-sizing: border-box;
+                resize: vertical;
+                font-family: var(--font-mono);
+                font-size: 0.78rem;
+                line-height: 1.45;
+                padding: 0.75rem;
+                border: 1px solid var(--c-border);
+                border-radius: var(--radius-sm);
+                background: var(--c-surface);
+                color: var(--c-text-primary);
+            }
+
+            .user-credential-row {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                gap: 0.5rem;
+                margin-top: 0.55rem;
+            }
+
+            .user-credential-doctype {
+                font-family: var(--font-mono);
+                font-size: 0.75rem;
+                overflow-wrap: anywhere;
+            }
+
+            .user-credential-action {
+                padding: 0.3rem 0.65rem;
+                font-size: 0.75rem;
+            }
+
             #roleDescription {
                 margin-top: 0.65rem;
             }
@@ -1424,6 +1458,48 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="signer-section user-credential-editor" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #16a34a;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                        <div style="font-weight: bold; color: #0f172a;">User-defined credentials</div>
+                        <button
+                            type="button"
+                            class="details-toggle"
+                            onclick="toggleDetails('userCredentialsDetails')"
+                            aria-label="Show user-defined credentials"
+                            title="Show user-defined credentials"
+                            style="background: #dcfce7; color: #166534; border: 1px solid #86efac; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;"
+                        >
+                            <span id="userCredentialsDetails-icon">▶</span>
+                            <span>Details</span>
+                        </button>
+                    </div>
+                    <div id="userCredentialsDetails" style="display: none; margin-top: 10px;">
+                        <p class="muted" style="font-size: 0.85rem;">
+                            Paste a supported CDDL profile. It is stored only in this browser.
+                            Required claims are regular members; prefix optional claims with <code>?</code>.
+                        </p>
+                        <textarea
+                            id="userCredentialCddl"
+                            spellcheck="false"
+                            aria-label="User-defined credential CDDL"
+                            placeholder='credential-name = {
+  displayName: "Credential name",
+  docType: "example.doc.type.1",
+  claims: {
+    "example.namespace~required_claim" => tstr,
+    ? "example.namespace~optional_claim" => tstr,
+  },
+}'
+                        ></textarea>
+                        <div class="row" style="margin-top: 0.65rem;">
+                            <button type="button" id="btnAddUserCredential">Add credential</button>
+                            <button type="button" id="btnCancelUserCredentialEdit" class="secondary" style="display: none;">Cancel editing</button>
+                        </div>
+                        <p id="userCredentialStatus" class="muted" role="status" aria-live="polite" style="min-height: 1.25rem; margin: 0.5rem 0;"></p>
+                        <div id="userDefinedCredentialList"></div>
+                    </div>
+                </div>
             </section>
 
             <section class="card" id="startVerificationSection">
@@ -2144,7 +2220,8 @@
         <script src="js/reader-authentication.js"></script>
         <script src="js/device-engagement.js"></script>
         <script src="js/wallet-response.js"></script>
-        <script src="js/request-builder.js"></script>
+        <script src="js/user-defined-credentials.js?v=20260902-3"></script>
+        <script src="js/request-builder.js?v=20260902-3"></script>
         <script src="js/ble-transport.js"></script>
         <script src="js/session-crypto.js"></script>
         <script src="js/verification.js"></script>
@@ -7521,6 +7598,16 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                                 description =
                                     "FR Student Card (fr.ft.hsc.1): issuing authority, identity, education details";
                                 break;
+                            default: {
+                                const userRequest =
+                                    window.UserDefinedCredentials?.resolveRequestType(
+                                        type,
+                                    );
+                                if (userRequest) {
+                                    description = `User-defined credential (${userRequest.mode}): ${userRequest.definition.docType}`;
+                                }
+                                break;
+                            }
                         }
                         log(`Selected request type: ${type} - ${description}`);
                     } else {
@@ -7537,6 +7624,11 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                                 return "Bicycle ID card";
                             if (t.startsWith("fr_hsc_"))
                                 return "FR Student Card";
+                            const userDefinition =
+                                window.UserDefinedCredentials?.getByRequestType(
+                                    t,
+                                );
+                            if (userDefinition) return userDefinition.name;
                             return "mDL";
                         });
                         const uniqueTypes = [...new Set(docTypes)];

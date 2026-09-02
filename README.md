@@ -5,6 +5,7 @@ This site lets you try ISO 18013-5 mobile IDs (mDL / mDoc) directly in your brow
 - Scan a wallet’s Device Engagement QR code
 - Connect over Web Bluetooth
 - See the verified data returned by your wallet
+- Add your own ISO 18013-5 credential definitions from CDDL
 
 No account, server, or local install is required. Everything runs in your browser.
 
@@ -29,15 +30,17 @@ The home page (index.html) is a general-purpose ISO 18013-5 reader.
 High‑level flow:
 
 1. Open the site over HTTPS in a Chromium-based browser (Chrome / Edge).
-2. Select the Digital Credentials you want to request
-3. Click **Scan QR** and point the camera at the wallet’s Device Engagement QR, or paste an `mdoc://` URI.
-4. When the browser asks, allow **camera** and **Bluetooth** access.
-5. Select which data to request using the on‑screen options.
-6. Approve the request in your wallet; the page shows the result with a clear, human‑readable layout.
+2. Select one or more digital credentials to request.
+3. Click **Scan QR Code** and point the camera at the wallet’s Device Engagement QR, or paste an `mdoc://` URI.
+4. When the QR code is recognized, the green **Wallet found, click to continue** button appears.
+5. Click that button and allow Bluetooth access when prompted.
+6. Approve the request in your wallet. After receiving the response, the reader disconnects and the button returns to **Scan QR Code**.
+7. Review the returned docType, namespaces, attributes, and verification results.
 
 Notes:
 
 - Works with wallets that support **Server Peripheral over BLE** as defined in ISO 18013‑5.
+- Built-in and user-defined credentials can be selected together in the same request.
 - You can see per‑document verification status and the raw values if you want to inspect them.
 
 ### 2. Visitor Log (visitor.html)
@@ -99,9 +102,42 @@ Depending on your wallet, the main reader and example pages can work with:
 - **mICOV** – `org.micov.1` (vaccination / test attestations)
 - **mVC** – `org.iso.7367.1.mVC` (vehicle card)
 - **Bicycle ID card** – `fr.idak.mbicycle.1` (bicycle owner and identification data)
-- **Studend Card** - `fr.ft.hsc.1` (+ related ISO 23220 namespaces)
+- **Student Card** – `fr.ft.hsc.1` (+ related ISO 23220 namespaces)
 
 Your wallet may not support all of these doctypes; the app will only show data for documents actually returned by the wallet.
+
+### User-defined credentials
+
+The main reader supports custom ISO 18013-5 credential definitions. Definitions
+are validated and stored in the browser's `localStorage`; they are not uploaded
+to a server.
+
+To add and request a credential:
+
+1. Open **User-defined credentials** on the main page.
+2. Paste a supported CDDL profile.
+3. Click **Add credential**.
+4. Select **Basic** to request only mandatory claims, or **Full** to request all
+   declared claims. The credential can be combined with any built-in credential.
+5. Scan the wallet QR code and complete the normal presentation flow.
+
+Saved definitions remain available after a page reload. Use **Edit** to load a definition back into the editor, then **Save changes** to update it. Editing can change the display name, docType, namespaces, claims, and formats. Use **Cancel editing** to discard editor changes or **Delete** to remove the locally stored definition. Clearing the browser's site data also removes these profiles.
+
+#### Supported CDDL profile
+
+This feature accepts the following focused CDDL profile structure rather than an arbitrary CDDL document:
+
+- `displayName` defines the label shown in the credential selector.
+- `docType` defines the ISO 18013-5 document type.
+- `claims` contains one or more entries using `namespace~identifier` keys.
+- A regular member represents a mandatory claim in the source rulebook.
+- A member prefixed with `?` represents an optional claim.
+- The type after `=>` records the claim's CDDL format, such as `tstr` or `bool`.
+- Multiple namespaces may be declared in the same profile.
+
+In **Basic** mode, only regular CDDL members (mandatory claims) are placed in the presentation request. In **Full** mode, optional members prefixed with `?` are included as well. Every requested claim uses `intentToRetain: false`. Basic and Full are mutually exclusive for a given user-defined credential.
+
+When the wallet returns the credential, the normal result viewer displays its docType, each namespace, every returned claim, and the available cryptographic verification results.
 
 ---
 
@@ -145,6 +181,7 @@ This verifier implements comprehensive security controls per ISO 18013-5:
 - Sessions are established using the algorithms defined in ISO 18013‑5
 - Session keys live only in browser memory and are cleared when you reload or close the page
 - The **Visitor Log** and **Unlinkability Test** pages store data only in your browser (local storage) for your own experiments
+- User-defined CDDL credential profiles are stored only in the browser's `localStorage` and can be edited, deleted, or removed by clearing the site's data
 - **No data is sent to any backend by this app**
 
 ### Trust Anchors
