@@ -4378,74 +4378,9 @@
                                                 } catch {}
                                             } catch {}
 
-                                            const cloneStatusInfoWithProxy = (
-                                                si,
-                                            ) => {
-                                                const get = (obj, key) =>
-                                                    obj instanceof Map
-                                                        ? obj.get(key)
-                                                        : obj
-                                                          ? obj[key]
-                                                          : undefined;
-                                                const set = (obj, key, val) => {
-                                                    if (obj instanceof Map)
-                                                        obj.set(key, val);
-                                                    else obj[key] = val;
-                                                };
-                                                const mk = (obj) =>
-                                                    obj instanceof Map
-                                                        ? new Map(obj)
-                                                        : { ...(obj || {}) };
-                                                let out = mk(si);
-                                                const sUri =
-                                                    get(si, "uri") ||
-                                                    get(si, "url") ||
-                                                    get(si, "u");
-                                                if (typeof sUri === "string") {
-                                                    const p = withCorsProxy(
-                                                        sUri,
-                                                        "[StatusCheck] Using CORS proxy for status fetch:",
-                                                    );
-                                                    if (p !== sUri) {
-                                                        try {
-                                                            log(
-                                                                "Status: using CORS proxy",
-                                                            );
-                                                        } catch {}
-                                                    }
-                                                    // Set on common keys to maximize compatibility downstream
-                                                    set(out, "uri", p);
-                                                    set(out, "url", p);
-                                                }
-                                                const pages =
-                                                    get(si, "pages") ||
-                                                    get(si, "pageUris");
-                                                if (Array.isArray(pages)) {
-                                                    const mapped = pages.map(
-                                                        (x) =>
-                                                            typeof x ===
-                                                            "string"
-                                                                ? withCorsProxy(
-                                                                      x,
-                                                                      "[StatusCheck] Using CORS proxy for status fetch:",
-                                                                  )
-                                                                : x,
-                                                    );
-                                                    set(out, "pages", mapped);
-                                                    set(
-                                                        out,
-                                                        "pageUris",
-                                                        mapped,
-                                                    );
-                                                }
-                                                return out;
-                                            };
-
                                             const st =
                                                 await window.checkMsoRevocationStatus(
-                                                    cloneStatusInfoWithProxy(
-                                                        statusInfo,
-                                                    ),
+                                                    statusInfo,
                                                     sig,
                                                 );
                                             if (st && st.result === "revoked") {
@@ -5051,7 +4986,7 @@
                         }
 
                         const ACCEPT_STATUS =
-                            'application/statuslist+jwt, application/statuslist+cwt, application/identifierlist+cwt, application/cose; cose-type="cose-sign1", application/cbor, application/json, application/pkix-crl, application/octet-stream, text/plain';
+                            "application/statuslist+jwt,application/statuslist+cwt,application/identifierlist+cwt,application/pkix-crl,*/*";
                         try {
                             if (window.DEBUG_VERBOSE) {
                                 console.log("[StatusCheck] Start", {
