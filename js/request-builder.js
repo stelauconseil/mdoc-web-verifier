@@ -182,8 +182,8 @@
                     namespace,
             );
         } else if (requestType.startsWith("mvc_")) {
-            docType = "org.iso.7367.1.mVC";
-            namespace = "org.iso.7367.1";
+            docType = "org.iso.7367.2.1.mVC";
+            namespace = "org.iso.7367.2.1";
             log(
                 "🚗 Building mVC request - docType: " +
                     docType +
