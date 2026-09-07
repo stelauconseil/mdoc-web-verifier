@@ -5793,7 +5793,19 @@
                         if (parsed != null) {
                             if (typeof parsed === "string" && isJwt(parsed))
                                 parsed = parseJwtPayload(parsed) || parsed;
-                            bitset = extractBitsetBytes(parsed);
+                            const statusList =
+                                parsed?.status_list || parsed?.statusList;
+                            if (
+                                Number(statusList?.bits) === 1 &&
+                                typeof statusList?.lst === "string"
+                            ) {
+                                const compressed =
+                                    b64uToBytes(statusList.lst) ||
+                                    bytesFromBase64(statusList.lst);
+                                if (compressed)
+                                    bitset = await zlibDecompress(compressed);
+                            }
+                            if (!bitset) bitset = extractBitsetBytes(parsed);
                         }
                         if (!bitset) {
                             if (
