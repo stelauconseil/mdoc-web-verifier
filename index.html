@@ -881,6 +881,38 @@
                 font-size: 0.85rem;
             }
 
+            footer .footer-links {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 0.6rem;
+                font-size: 0.82rem;
+            }
+
+            footer .footer-links a {
+                color: var(--c-accent);
+                text-decoration: none;
+                font-weight: 600;
+            }
+
+            footer .github-link {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.4rem;
+            }
+
+            footer .github-link svg {
+                width: 1rem;
+                height: 1rem;
+                fill: currentColor;
+                flex: none;
+            }
+
+            footer .footer-links a:hover {
+                color: var(--c-accent-hover);
+                text-decoration: underline;
+            }
+
             /* ── Scrollbar (global) ────────────────────────── */
             ::-webkit-scrollbar {
                 width: 8px;
@@ -2185,9 +2217,34 @@
                 <span class="stelau-badge__prefix">Powered by</span>
                 <span>Stelau</span>
             </a>
-            <span style="font-size: 0.82rem; color: var(--c-text-tertiary)"
-                >&copy; 2026 Stelau. All rights reserved.</span
-            >
+            <span class="footer-links">
+                <span
+                    >&copy; 2026
+                    <a
+                        href="https://www.stelau.com"
+                        target="_blank"
+                        rel="noreferrer"
+                        >Stelau</a
+                    >. All rights reserved.</span
+                >
+                <a
+                    href="https://github.com/stelauconseil/mdoc-web-verifier"
+                    target="_blank"
+                    rel="noreferrer"
+                    class="github-link"
+                    aria-label="View the mdoc-web-verifier source code on GitHub"
+                    ><svg
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                        focusable="false"
+                    >
+                        <path
+                            d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.11.79-.25.79-.56v-2.24c-3.22.7-3.9-1.37-3.9-1.37-.52-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.71.08-.71 1.17.08 1.78 1.2 1.78 1.2 1.04 1.78 2.72 1.27 3.38.97.1-.75.41-1.27.74-1.56-2.57-.29-5.27-1.29-5.27-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.47.11-3.05 0 0 .97-.31 3.16 1.18a10.95 10.95 0 0 1 5.76 0c2.2-1.49 3.16-1.18 3.16-1.18.63 1.58.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.71 5.38-5.29 5.67.42.36.79 1.06.79 2.14v3.18c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z"
+                        />
+                    </svg>
+                    <span>GitHub repository</span></a
+                >
+            </span>
         </footer>
 
         <!-- Load libs BEFORE the module -->
