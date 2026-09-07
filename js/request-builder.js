@@ -538,7 +538,6 @@
                     issuing_authority_unicode: false,
                     un_distinguishing_sign: false,
                     date_of_registration: false,
-                    chassis_number_info: false,
                 };
                 break;
             case "mvc_full":
