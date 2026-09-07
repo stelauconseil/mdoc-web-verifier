@@ -530,6 +530,17 @@
                     bd: false,
                 };
                 break;
+            case "mvc_basic":
+                fields = {
+                    registration_number: false,
+                    issue_date: false,
+                    issuing_country: false,
+                    issuing_authority_unicode: false,
+                    un_distinguishing_sign: false,
+                    date_of_registration: false,
+                    chassis_number: false,
+                };
+                break;
             case "mvc_full":
                 fields = {
                     registration_number: false,
