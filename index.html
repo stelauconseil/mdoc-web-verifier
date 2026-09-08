@@ -314,6 +314,35 @@
                 color: var(--c-text);
             }
 
+            button.details-heading {
+                appearance: none;
+                padding: 0;
+                width: auto;
+                background: transparent;
+                border: 0;
+                color: #0f172a;
+                font: inherit;
+                font-weight: bold;
+                text-align: left;
+                cursor: pointer;
+                border-radius: 0;
+                box-shadow: none;
+                transform: none;
+            }
+
+            button.details-heading:hover:not(:disabled) {
+                background: transparent;
+                color: #0f172a;
+                box-shadow: none;
+                transform: none;
+            }
+
+            button.details-heading:focus-visible {
+                outline: none;
+                text-decoration: underline;
+                text-underline-offset: 0.2em;
+            }
+
             /* ── Typography helpers ────────────────────────── */
             .muted {
                 color: var(--c-text-secondary);
@@ -1241,7 +1270,15 @@
 
                 <div class="signer-section" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff;">
                     <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-                        <div style="font-weight: bold; color: #0f172a;">Identity credentials</div>
+                        <button
+                            type="button"
+                            class="details-heading"
+                            aria-controls="identityCredentialsDetails"
+                            aria-expanded="false"
+                            onclick="toggleDetails('identityCredentialsDetails')"
+                        >
+                            Identity credentials
+                        </button>
                         <button
                             type="button"
                             class="details-toggle"
@@ -1385,7 +1422,15 @@
 
                 <div class="signer-section" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff;">
                     <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-                        <div style="font-weight: bold; color: #0f172a;">Transport credentials</div>
+                        <button
+                            type="button"
+                            class="details-heading"
+                            aria-controls="transportCredentialsDetails"
+                            aria-expanded="false"
+                            onclick="toggleDetails('transportCredentialsDetails')"
+                        >
+                            Transport credentials
+                        </button>
                         <button
                             type="button"
                             class="details-toggle"
@@ -1484,7 +1529,15 @@
 
                 <div class="signer-section" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff;">
                     <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-                        <div style="font-weight: bold; color: #0f172a;">Medical credentials</div>
+                        <button
+                            type="button"
+                            class="details-heading"
+                            aria-controls="medicalCredentialsDetails"
+                            aria-expanded="false"
+                            onclick="toggleDetails('medicalCredentialsDetails')"
+                        >
+                            Medical credentials
+                        </button>
                         <button
                             type="button"
                             class="details-toggle"
@@ -1533,7 +1586,15 @@
 
                 <div class="signer-section" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff;">
                     <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-                        <div style="font-weight: bold; color: #0f172a;">Student credentials</div>
+                        <button
+                            type="button"
+                            class="details-heading"
+                            aria-controls="studentCredentialsDetails"
+                            aria-expanded="false"
+                            onclick="toggleDetails('studentCredentialsDetails')"
+                        >
+                            Student credentials
+                        </button>
                         <button
                             type="button"
                             class="details-toggle"
@@ -1579,7 +1640,15 @@
 
                 <div class="signer-section user-credential-editor" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #16a34a;">
                     <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-                        <div style="font-weight: bold; color: #0f172a;">User-defined credentials</div>
+                        <button
+                            type="button"
+                            class="details-heading"
+                            aria-controls="userCredentialsDetails"
+                            aria-expanded="false"
+                            onclick="toggleDetails('userCredentialsDetails')"
+                        >
+                            User-defined credentials
+                        </button>
                         <button
                             type="button"
                             class="details-toggle"
@@ -1674,7 +1743,17 @@
                         gap: 8px;
                     "
                 >
-                    <h2 style="margin: 0">ℹ️ Device Engagement Information</h2>
+                    <h2 style="margin: 0">
+                        <button
+                            type="button"
+                            class="details-heading"
+                            aria-controls="qrDetails"
+                            aria-expanded="false"
+                            onclick="toggleDetails('qrDetails')"
+                        >
+                            ℹ️ Device Engagement Information
+                        </button>
+                    </h2>
                     <button
                         onclick="toggleDetails('qrDetails')"
                         class="secondary mobile-details-toggle"
@@ -1760,7 +1839,17 @@
                         gap: 8px;
                     "
                 >
-                    <h2 style="margin: 0">💻 Activity Log</h2>
+                    <h2 style="margin: 0">
+                        <button
+                            type="button"
+                            class="details-heading"
+                            aria-controls="logsDetails"
+                            aria-expanded="false"
+                            onclick="toggleDetails('logsDetails')"
+                        >
+                            💻 Activity Log
+                        </button>
+                    </h2>
                     <button
                         onclick="toggleDetails('logsDetails')"
                         class="secondary mobile-details-toggle"
@@ -1867,7 +1956,15 @@
                     "
                 >
                     <h2 style="margin: 0">
-                        🔐 Reader Authentication (Optional)
+                        <button
+                            type="button"
+                            class="details-heading"
+                            aria-controls="readerAuthDetails"
+                            aria-expanded="false"
+                            onclick="toggleDetails('readerAuthDetails')"
+                        >
+                            🔐 Reader Authentication (Optional)
+                        </button>
                     </h2>
                     <div style="display: flex; align-items: center; gap: 10px">
                         <label
@@ -2046,7 +2143,15 @@
                     "
                 >
                     <h2 style="margin: 0">
-                        ⚙️ Issuer Certificate Management (IACA)
+                        <button
+                            type="button"
+                            class="details-heading"
+                            aria-controls="iacaDetails"
+                            aria-expanded="false"
+                            onclick="toggleDetails('iacaDetails')"
+                        >
+                            ⚙️ Issuer Certificate Management (IACA)
+                        </button>
                     </h2>
                     <div style="display: flex; align-items: center; gap: 10px">
                         <span
@@ -2395,6 +2500,14 @@
                     el.style.display = visible ? "none" : "block";
                     const icon = document.getElementById(`${id}-icon`);
                     if (icon) icon.textContent = visible ? "▶" : "▼";
+                    document
+                        .querySelectorAll(`[aria-controls="${id}"]`)
+                        .forEach((trigger) => {
+                            trigger.setAttribute(
+                                "aria-expanded",
+                                String(!visible),
+                            );
+                        });
                 } catch {}
             }
             window.toggleDetails = toggleDetails;
@@ -4064,7 +4177,14 @@
                     <div class="data-item" style="margin-top: 12px;"><div class="data-label">Verification Status</div><div class="data-value" id="${overallStatusId}">—</div></div>
           <div class="signer-section" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff;">
             <div style="display:flex; justify-content:space-between; align-items:center; gap: 8px;">
-              <div style="font-weight: bold; color: #007bff;">🔐 Issuer Signature Information</div>
+              <button
+                type="button"
+                class="details-heading"
+                aria-controls="${detailsId}"
+                aria-expanded="false"
+                onclick="toggleDetails('${detailsId}')"
+                style="color: #007bff;"
+              >🔐 Issuer Signature Information</button>
               <button 
                 onclick="toggleDetails('${detailsId}')" 
                 style="
