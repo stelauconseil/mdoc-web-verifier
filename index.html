@@ -230,6 +230,57 @@
                 padding: 0 1.25rem 3rem;
             }
 
+            .browser-support {
+                display: flex;
+                align-items: center;
+                gap: 0.75rem 1rem;
+                flex-wrap: wrap;
+                padding: 0.85rem 1.1rem;
+                margin-top: 0.75rem;
+                background: rgba(255, 255, 255, 0.12);
+                border: 1px solid rgba(255, 255, 255, 0.25);
+                border-radius: var(--radius-md);
+                color: white;
+                font-size: 0.9rem;
+            }
+
+            .browser-support strong {
+                color: white;
+                font-family: var(--font-display);
+                font-weight: 600;
+            }
+
+            .browser-links {
+                display: flex;
+                gap: 0.45rem;
+                flex-wrap: wrap;
+            }
+
+            .browser-links a {
+                display: inline-flex;
+                align-items: center;
+                padding: 0.25rem 0.65rem;
+                color: var(--c-navy-900);
+                background: white;
+                border: 1px solid rgba(255, 255, 255, 0.5);
+                border-radius: var(--radius-pill);
+                font-weight: 600;
+                text-decoration: none;
+                transition:
+                    background 0.2s ease,
+                    border-color 0.2s ease;
+            }
+
+            .browser-links a:hover {
+                background: #fef3c7;
+                border-color: #fef3c7;
+            }
+
+            .browser-links a:focus-visible {
+                outline: 3px solid rgba(37, 99, 235, 0.3);
+                outline-offset: 2px;
+            }
+
             /* ── Cards ─────────────────────────────────────── */
             .card {
                 background: var(--c-surface);
@@ -1082,7 +1133,7 @@
                 "url": "https://mdoc-web-verifier.stelau.com/",
                 "description": "Free web-based ISO 18013-5 mobile Driver's License (mDL) reader and verifier with Web Bluetooth support, QR code scanning, and IACA certificate validation.",
                 "applicationCategory": "UtilityApplication",
-                "operatingSystem": "Web Browser (Chrome, Edge)",
+                "operatingSystem": "Web Browser (Chrome, Edge, Brave, Bluefy on iOS)",
                 "offers": {
                     "@type": "Offer",
                     "price": "0",
@@ -1141,6 +1192,41 @@
             <div id="compatWarning" class="compat-warning">
                 <p><strong>⚠️ Browser Compatibility Issue</strong></p>
                 <p id="compatMessage"></p>
+                <aside
+                    class="browser-support"
+                    aria-labelledby="supportedBrowsersTitle"
+                >
+                    <strong id="supportedBrowsersTitle"
+                        >Supported browsers</strong
+                    >
+                    <nav class="browser-links" aria-label="Browser downloads">
+                        <a
+                            href="https://www.google.com/chrome/download-chrome/"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            >Chrome</a
+                        >
+                        <a
+                            href="https://www.microsoft.com/edge/download"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            >Edge</a
+                        >
+                        <a
+                            href="https://brave.com/download/"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            >Brave</a
+                        >
+                        <a
+                            href="https://apps.apple.com/us/app/bluefy-web-ble-browser/id1492822055"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label="Download Bluefy for iOS from the App Store"
+                            >Bluefy (iOS)</a
+                        >
+                    </nav>
+                </aside>
             </div>
         </div>
 
@@ -2339,7 +2425,7 @@
 
                     if (!isChrome) {
                         issues.push(
-                            "Web Bluetooth is not supported in this browser. Please use a Chromium-based browser (Chrome, Edge, or Brave).",
+                            "Web Bluetooth is not supported in this browser. Please use Chrome, Edge, or Brave on desktop, or Bluefy on iOS.",
                         );
                     } else {
                         issues.push(
