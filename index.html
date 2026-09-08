@@ -256,28 +256,31 @@
                 flex-wrap: wrap;
             }
 
-            .browser-links a {
+            .compat-warning .browser-links a {
                 display: inline-flex;
                 align-items: center;
                 padding: 0.25rem 0.65rem;
-                color: var(--c-navy-900);
-                background: white;
-                border: 1px solid rgba(255, 255, 255, 0.5);
+                color: white;
+                background: var(--c-navy-800);
+                border: 1px solid var(--c-navy-800);
                 border-radius: var(--radius-pill);
                 font-weight: 600;
                 text-decoration: none;
                 transition:
+                    color 0.2s ease,
                     background 0.2s ease,
                     border-color 0.2s ease;
             }
 
-            .browser-links a:hover {
-                background: #fef3c7;
-                border-color: #fef3c7;
+            .compat-warning .browser-links a:hover {
+                color: var(--c-navy-900);
+                background: white;
+                border-color: white;
+                text-decoration: none;
             }
 
-            .browser-links a:focus-visible {
-                outline: 3px solid rgba(37, 99, 235, 0.3);
+            .compat-warning .browser-links a:focus-visible {
+                outline: 3px solid white;
                 outline-offset: 2px;
             }
 
@@ -1162,7 +1165,7 @@
                 "url": "https://mdoc-web-verifier.stelau.com/",
                 "description": "Free web-based ISO 18013-5 mobile Driver's License (mDL) reader and verifier with Web Bluetooth support, QR code scanning, and IACA certificate validation.",
                 "applicationCategory": "UtilityApplication",
-                "operatingSystem": "Web Browser (Chrome, Edge, Brave, Bluefy on iOS)",
+                "operatingSystem": "Web Browser (Chrome on desktop and Android, Edge, Brave, Bluefy on iOS)",
                 "offers": {
                     "@type": "Offer",
                     "price": "0",
@@ -1233,7 +1236,8 @@
                             href="https://www.google.com/chrome/download-chrome/"
                             target="_blank"
                             rel="noopener noreferrer"
-                            >Chrome</a
+                            aria-label="Download Chrome for desktop or Android"
+                            >Chrome (Desktop &amp; Android)</a
                         >
                         <a
                             href="https://www.microsoft.com/edge/download"
@@ -2538,7 +2542,7 @@
 
                     if (!isChrome) {
                         issues.push(
-                            "Web Bluetooth is not supported in this browser. Please use Chrome, Edge, or Brave on desktop, or Bluefy on iOS.",
+                            "Web Bluetooth is not supported in this browser. Please use Chrome on desktop or Android, Edge or Brave on desktop, or Bluefy on iOS.",
                         );
                     } else {
                         issues.push(
