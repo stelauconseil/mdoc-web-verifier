@@ -29,7 +29,8 @@ The home page (index.html) is a general-purpose ISO 18013-5 reader.
 
 High‑level flow:
 
-1. Open the site over HTTPS in a Chromium-based browser (Chrome / Edge).
+1. Open the site over HTTPS in a supported browser (Chrome, Edge, or Brave on
+   desktop; Bluefy on iOS).
 2. Select one or more digital credentials to request.
 3. Click **Scan QR Code** and point the camera at the wallet’s Device Engagement QR, or paste an `mdoc://` URI.
 4. When the QR code is recognized, the green **Wallet found, click to continue** button appears.
@@ -162,7 +163,15 @@ When the wallet returns the credential, the normal result viewer displays its do
 
 ## Requirements
 
-- Chromium browser (Chrome / Edge) over **HTTPS**
+Supported browsers (the site must be served over **HTTPS**):
+
+| Browser | Platform | Download |
+| --- | --- | --- |
+| Google Chrome | Desktop | [Download Chrome](https://www.google.com/chrome/download-chrome/) |
+| Microsoft Edge | Desktop | [Download Edge](https://www.microsoft.com/edge/download) |
+| Brave | Desktop | [Download Brave](https://brave.com/download/) |
+| Bluefy – Web BLE Browser | iOS / iPadOS | [Download from the App Store](https://apps.apple.com/us/app/bluefy-web-ble-browser/id1492822055) |
+
 - Camera permission (for QR scanning)
 - Bluetooth permission (for BLE)
 - A wallet that supports ISO 18013‑5 **Server Peripheral over BLE**
@@ -225,7 +234,8 @@ You can import issuer CA lists either from a file or from a URI. When importing 
 
 ## Troubleshooting
 
-- **Browser says Web Bluetooth not available**: make sure you use Chrome or Edge over HTTPS.
+- **Browser says Web Bluetooth not available**: make sure the page uses HTTPS
+  and open it with Chrome, Edge, or Brave on desktop, or Bluefy on iOS.
 - **No prompt on the wallet**: ensure the requested document type and fields are supported by your wallet.
 - **BLE disconnects often**: some wallets intentionally disconnect between operations; simply scan and reconnect.
 - **Import of issuer lists fails**: download the file and use import‑from‑file on the main page instead of URI import.
