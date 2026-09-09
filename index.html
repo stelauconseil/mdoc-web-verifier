@@ -1508,6 +1508,14 @@
                                 <input
                                     type="checkbox"
                                     name="requestType"
+                                    value="mvc_basic"
+                                />
+                                mVC Basic
+                            </label>
+                            <label class="radio-chip small">
+                                <input
+                                    type="checkbox"
+                                    name="requestType"
                                     value="mvc_full"
                                 />
                                 mVC Full
@@ -2478,7 +2486,7 @@
         <script src="js/device-engagement.js"></script>
         <script src="js/wallet-response.js"></script>
         <script src="js/user-defined-credentials.js?v=20260902-9"></script>
-        <script src="js/request-builder.js?v=20260902-9"></script>
+        <script src="js/request-builder.js?v=20260907-1"></script>
         <script src="js/ble-transport.js"></script>
         <script src="js/session-crypto.js"></script>
         <script src="js/verification.js"></script>
@@ -7804,6 +7812,10 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                             case "micov_full":
                                 description =
                                     "mICOV: identity + vaccination details (vtr) plus attestation namespace";
+                                break;
+                            case "mvc_basic":
+                                description =
+                                    "mVC Basic: core vehicle registration and chassis number details";
                                 break;
                             case "mvc_full":
                                 description =
