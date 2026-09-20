@@ -549,16 +549,16 @@
                     issuing_country: false,
                     issuing_authority_unicode: false,
                     document_number: false,
-                    un_distinguishing_signs: false,
+                    un_distinguishing_sign: false,
                     date_of_registration: false,
                     date_of_first_registration: false,
-                    vehicle_identification_number: false,
+                    chassis_number_info: false,
                     basic_vehicle_info: false,
                     mass_info: false,
-                    trailer_mass_info: false,
+                    towed_trailer_mass_info: false,
                     engine_info: false,
                     seating_info: false,
-                    registered_users: false,
+                    users: false,
                 };
                 break;
             case "bicycle_full":
