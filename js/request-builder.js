@@ -154,6 +154,8 @@
         let micovAttestationFields = null;
         let frHscIsoFields = null;
         let frHscFields = null;
+        let frHpIsoFields = null;
+        let frHpFields = null;
 
         if (requestType.startsWith("pid_")) {
             docType = "eu.europa.ec.eudi.pid.1";
@@ -207,6 +209,14 @@
                     docType +
                     " namespace: " +
                     namespace,
+            );
+        } else if (requestType.startsWith("fr_hp_")) {
+            docType = "fr.ft.hp.1";
+            namespace = "fr.ft.hp.1";
+            log(
+                "🩺 Building French CPS request - docType: " +
+                    docType +
+                    " (multi-namespace)",
             );
         } else {
             docType = "org.iso.18013.5.1.mDL";
@@ -605,6 +615,55 @@
                 };
                 fields = {}; // placeholder, real namespaces set below
                 break;
+            case "fr_hp_basic":
+                // Mandatory ISO 23220 and French profile claims
+                frHpIsoFields = {
+                    issuing_authority: false,
+                    issuing_authority_latin1: false,
+                    issuing_country: false,
+                    name_at_birth: false,
+                    given_name: false,
+                    birth_date: false,
+                    sex: false,
+                };
+                frHpFields = {
+                    numero_rpps: false,
+                    profession: false,
+                    code_profession: false,
+                    categorie_professionnelle: false,
+                    civilité_exercice: false,
+                    nom_exercice: false,
+                    prenom_exercice: false,
+                };
+                fields = {};
+                break;
+            case "fr_hp_full":
+                // Mandatory and optional ISO 23220 and French profile claims
+                frHpIsoFields = {
+                    issuing_authority: false,
+                    issuing_authority_latin1: false,
+                    document_number: false,
+                    issuing_country: false,
+                    issue_date: false,
+                    expiry_date: false,
+                    name_at_birth: false,
+                    given_name: false,
+                    birth_date: false,
+                    sex: false,
+                };
+                frHpFields = {
+                    numero_rpps: false,
+                    profession: false,
+                    code_profession: false,
+                    categorie_professionnelle: false,
+                    civilité_exercice: false,
+                    nom_exercice: false,
+                    prenom_exercice: false,
+                    date_effet_exercice: false,
+                    date_fin_effet_exercice: false,
+                };
+                fields = {};
+                break;
             default:
                 console.warn("Unknown request type:", requestType);
                 return null;
@@ -627,6 +686,11 @@
             nameSpacesObj = {
                 "org.iso.23220.1": frHscIsoFields || {},
                 "fr.ft.hsc.1": frHscFields || {},
+            };
+        } else if (requestType.startsWith("fr_hp_")) {
+            nameSpacesObj = {
+                "org.iso.23220.1": frHpIsoFields || {},
+                "fr.ft.hp.1": frHpFields || {},
             };
         } else {
             nameSpacesObj = { [namespace]: fields };

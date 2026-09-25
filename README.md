@@ -29,8 +29,8 @@ The home page (index.html) is a general-purpose ISO 18013-5 reader.
 
 High‑level flow:
 
-1. Open the site over HTTPS in a supported browser (Chrome, Edge, or Brave on
-   desktop; Bluefy on iOS).
+1. Open the site over HTTPS in a supported browser (Chrome on desktop or
+   Android, Edge or Brave on desktop, or Bluefy on iOS).
 2. Select one or more digital credentials to request.
 3. Click **Scan QR Code** and point the camera at the wallet’s Device Engagement QR, or paste an `mdoc://` URI.
 4. When the QR code is recognized, the green **Wallet found, click to continue** button appears.
@@ -101,6 +101,9 @@ Depending on your wallet, the main reader and example pages can work with:
 - **EU Age Verification** – `eu.europa.ec.av.1` (age‑only attestations such as `age_over_18`)
 - **Photo ID** – `org.iso.23220.photoid.1` (+ related ISO 23220 namespaces)
 - **mICOV** – `org.micov.1` (vaccination / test attestations)
+- **French CPS** – `fr.ft.hp.1` (Carte Professionnelle de Santé), available
+  in Basic and Full modes across the `org.iso.23220.1` and `fr.ft.hp.1`
+  namespaces
 - **mVC** – `org.iso.7367.2.1.mVC` (vehicle card)
 - **Bicycle ID card** – `fr.idak.mbicycle.1` (bicycle owner and identification data)
 - **Student Card** – `fr.ft.hsc.1` (+ related ISO 23220 namespaces)
@@ -167,7 +170,7 @@ Supported browsers (the site must be served over **HTTPS**):
 
 | Browser | Platform | Download |
 | --- | --- | --- |
-| Google Chrome | Desktop | [Download Chrome](https://www.google.com/chrome/download-chrome/) |
+| Google Chrome | Desktop / Android | [Download Chrome](https://www.google.com/chrome/download-chrome/) |
 | Microsoft Edge | Desktop | [Download Edge](https://www.microsoft.com/edge/download) |
 | Brave | Desktop | [Download Brave](https://brave.com/download/) |
 | Bluefy – Web BLE Browser | iOS / iPadOS | [Download from the App Store](https://apps.apple.com/us/app/bluefy-web-ble-browser/id1492822055) |
@@ -235,7 +238,8 @@ You can import issuer CA lists either from a file or from a URI. When importing 
 ## Troubleshooting
 
 - **Browser says Web Bluetooth not available**: make sure the page uses HTTPS
-  and open it with Chrome, Edge, or Brave on desktop, or Bluefy on iOS.
+  and open it with Chrome on desktop or Android, Edge or Brave on desktop, or
+  Bluefy on iOS.
 - **No prompt on the wallet**: ensure the requested document type and fields are supported by your wallet.
 - **BLE disconnects often**: some wallets intentionally disconnect between operations; simply scan and reconnect.
 - **Import of issuer lists fails**: download the file and use import‑from‑file on the main page instead of URI import.
