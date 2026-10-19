@@ -2144,9 +2144,63 @@
                             ></textarea>
                         </div>
 
+                        <div style="margin-bottom: 1rem">
+                            <label>
+                                <input
+                                    type="checkbox"
+                                    id="enableRegistrationCertificate"
+                                />
+                                Include EU registration certificate (WRPRC)
+                            </label>
+                            <div id="registrationCertificateConfig" hidden>
+                                <p class="muted">
+                                    Import the issued registration certificate for
+                                    your intended use. Use its matching reader
+                                    access certificate and private key above.
+                                </p>
+                                <label
+                                    class="muted"
+                                    for="registrationCertificateFile"
+                                >
+                                    Import a binary CWT file (up to 256 KiB)
+                                </label>
+                                <input
+                                    type="file"
+                                    id="registrationCertificateFile"
+                                    accept=".cwt,.cbor,application/cwt,application/cbor"
+                                    style="display: block; margin: 0.5rem 0 1rem"
+                                />
+                                <label
+                                    class="muted"
+                                    for="registrationCertificate"
+                                >
+                                    Registration certificate (base64 or base64url CWT)
+                                </label>
+                                <textarea
+                                    id="registrationCertificate"
+                                    placeholder="Paste the base64-encoded CWT, or import a binary file above"
+                                    spellcheck="false"
+                                    style="
+                                        width: 100%;
+                                        min-height: 100px;
+                                        padding: 0.75rem 0.9rem;
+                                        border-radius: var(--radius-sm);
+                                        border: 1px solid var(--c-border-strong);
+                                        font-family: var(--font-mono);
+                                        font-size: 0.82rem;
+                                        background: var(--c-surface-alt);
+                                        color: var(--c-text);
+                                        resize: vertical;
+                                        margin-top: 0.5rem;
+                                        box-sizing: border-box;
+                                    "
+                                ></textarea>
+                            </div>
+                        </div>
+
                         <div class="row">
                             <button id="btnSaveReaderCert">
-                                💾 Save Reader Certificate
+                                💾 Save reader settings
                             </button>
                             <button id="btnClearReaderCert" class="secondary">
                                 🗑️ Clear
@@ -2739,6 +2793,14 @@
                 document.getElementById("readerCertificate");
             const readerPrivateKey =
                 document.getElementById("readerPrivateKey");
+            const enableRegistrationCertificate =
+                document.getElementById("enableRegistrationCertificate");
+            const registrationCertificateConfig =
+                document.getElementById("registrationCertificateConfig");
+            const registrationCertificate =
+                document.getElementById("registrationCertificate");
+            const registrationCertificateFile =
+                document.getElementById("registrationCertificateFile");
             const btnSaveReaderCert =
                 document.getElementById("btnSaveReaderCert");
             const btnClearReaderCert =
@@ -7549,9 +7611,20 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                         readerCertificate.value = cfg.certsPem || "";
                     if (readerPrivateKey)
                         readerPrivateKey.value = cfg.keyPem || "";
+                    if (enableRegistrationCertificate)
+                        enableRegistrationCertificate.checked =
+                            cfg.registrationCertificateEnabled;
+                    if (registrationCertificateConfig)
+                        registrationCertificateConfig.hidden =
+                            !cfg.registrationCertificateEnabled;
+                    if (registrationCertificate)
+                        registrationCertificate.value =
+                            cfg.registrationCertificateBase64;
                     if (cfg.enabled)
                         setReaderAuthStatus(
-                            "Reader Authentication is enabled. Saved key and certificate will be used to sign requests.",
+                            cfg.registrationCertificateEnabled
+                                ? "Reader authentication and WRPRC are enabled. Save the reader key, access certificate, and registration certificate before making a request."
+                                : "Reader Authentication is enabled. Saved key and certificate will be used to sign requests.",
                             "info",
                         );
                 } catch (e) {
@@ -7562,20 +7635,74 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
             enableReaderAuth?.addEventListener("change", (e) => {
                 const on = !!e.target.checked;
                 try {
-                    window.ReaderAuth?.setEnabled?.(on);
-                } catch {}
+                    window.ReaderAuth.setEnabled(on);
+                } catch (error) {
+                    enableReaderAuth.checked = !on;
+                    setReaderAuthStatus(
+                        "Failed to change reader authentication settings: " + error.message,
+                        "error",
+                    );
+                    return;
+                }
                 if (readerAuthConfig)
                     readerAuthConfig.style.display = on ? "block" : "none";
                 setReaderAuthStatus(
                     on
                         ? "Reader Authentication enabled."
-                        : "Reader Authentication disabled.",
+                        : "Reader authentication and WRPRC inclusion disabled.",
                     "info",
                 );
                 // Refresh CN display when toggling visibility
                 try {
                     updateReaderCommonName();
                 } catch {}
+            });
+
+            enableRegistrationCertificate?.addEventListener("change", (event) => {
+                const enabled = event.target.checked;
+                try {
+                    window.ReaderAuth.setRegistrationCertificateEnabled(enabled);
+                    registrationCertificateConfig.hidden = !enabled;
+                    setReaderAuthStatus(
+                        enabled
+                            ? "WRPRC enabled. Import or paste a registration certificate, then save the reader settings."
+                            : "WRPRC inclusion disabled. Reader authentication remains enabled.",
+                    );
+                } catch (error) {
+                    enableRegistrationCertificate.checked = !enabled;
+                    setReaderAuthStatus(
+                        "Failed to change WRPRC settings: " + error.message,
+                        "error",
+                    );
+                }
+            });
+
+            registrationCertificateFile?.addEventListener("change", async () => {
+                const file = registrationCertificateFile.files?.[0];
+                if (!file) return;
+                try {
+                    if (file.size > window.ReaderAuth.MAX_WRPRC_BYTES) {
+                        throw new Error(
+                            "The registration certificate must not exceed 256 KiB.",
+                        );
+                    }
+                    const bytes = await file.arrayBuffer();
+                    if (registrationCertificateFile.files?.[0] !== file) return;
+                    registrationCertificate.value =
+                        window.ReaderAuth.registrationCertificateToBase64(bytes);
+                    setReaderAuthStatus(
+                        "Registration certificate loaded. Save the reader settings to use it.",
+                    );
+                } catch (error) {
+                    setReaderAuthStatus(
+                        "Failed to import registration certificate: " + error.message,
+                        "error",
+                    );
+                } finally {
+                    if (registrationCertificateFile.files?.[0] === file) {
+                        registrationCertificateFile.value = "";
+                    }
+                }
             });
 
             btnSaveReaderCert?.addEventListener("click", () => {
@@ -7589,10 +7716,21 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                     return;
                 }
                 try {
-                    window.ReaderAuth?.setCertsPem?.(certPem);
-                    window.ReaderAuth?.setKeyPem?.(keyPem);
+                    if (enableRegistrationCertificate.checked) {
+                        const wrprc = registrationCertificate.value.trim();
+                        if (!wrprc) {
+                            throw new Error(
+                                "Provide a registration certificate or disable WRPRC inclusion.",
+                            );
+                        }
+                        window.ReaderAuth.setRegistrationCertificate(wrprc);
+                    }
+                    window.ReaderAuth.setCertsPem(certPem);
+                    window.ReaderAuth.setKeyPem(keyPem);
                     setReaderAuthStatus(
-                        "Saved reader key and certificate. Requests will include a signed ReaderAuthentication COSE_Sign1.",
+                        enableRegistrationCertificate.checked
+                            ? "Saved reader settings. Signed requests will include the registration certificate. Its signature and trust have not been verified here."
+                            : "Saved reader key and certificate. Requests will include a signed ReaderAuthentication COSE_Sign1.",
                         "success",
                     );
                     // Update CN display from the provided certificate
@@ -7613,8 +7751,13 @@ ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
                 try {
                     if (readerCertificate) readerCertificate.value = "";
                     if (readerPrivateKey) readerPrivateKey.value = "";
-                    window.ReaderAuth?.setCertsPem?.("");
-                    window.ReaderAuth?.setKeyPem?.("");
+                    if (registrationCertificate)
+                        registrationCertificate.value = "";
+                    if (registrationCertificateFile)
+                        registrationCertificateFile.value = "";
+                    window.ReaderAuth.setCertsPem("");
+                    window.ReaderAuth.setKeyPem("");
+                    window.ReaderAuth.setRegistrationCertificate("");
                     setReaderAuthStatus(
                         "Cleared reader authentication settings.",
                         "info",

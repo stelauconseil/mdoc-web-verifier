@@ -170,15 +170,27 @@
             result.push(0x40 + encryptedRequest.length);
         else if (encryptedRequest.length < 256)
             result.push(0x58, encryptedRequest.length);
-        else
+        else if (encryptedRequest.length <= 0xffff)
             result.push(
                 0x59,
                 (encryptedRequest.length >> 8) & 0xff,
                 encryptedRequest.length & 0xff,
             );
-        result.push(...encryptedRequest);
+        else if (encryptedRequest.length <= 0xffffffff)
+            result.push(
+                0x5a,
+                encryptedRequest.length >>> 24,
+                (encryptedRequest.length >>> 16) & 0xff,
+                (encryptedRequest.length >>> 8) & 0xff,
+                encryptedRequest.length & 0xff,
+            );
+        else throw new Error("Encrypted request exceeds the supported CBOR size");
 
-        const final = new Uint8Array(result);
+        // A WRPRC is repeated for each document and can make this payload large.
+        // Copy the ciphertext without spreading it into function arguments.
+        const final = new Uint8Array(result.length + encryptedRequest.length);
+        final.set(result);
+        final.set(encryptedRequest, result.length);
 
         // Optional diagnostic decode
         try {

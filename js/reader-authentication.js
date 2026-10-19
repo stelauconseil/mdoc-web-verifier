@@ -4,6 +4,7 @@
 
   Reader Authentication (ISO 18013-5)
   - Manage reader private key (PKCS#8 EC) and certificate chain (PEM)
+  - Import a CWT registration certificate for requestInfo.euWrprc
   - Build ReaderAuthentication structure and COSE_Sign1 with x5chain
   - Expose minimal UI helpers via window.ReaderAuth
 */
@@ -16,6 +17,9 @@
     const LS_KEY_PEM = "mdoc_reader_auth_key_pem";
     const LS_CHAIN_PEM = "mdoc_reader_auth_chain_pem";
     const LS_ORG = "mdoc_reader_auth_org";
+    const LS_WRPRC_ENABLED = "mdoc_reader_auth_wrprc_enabled";
+    const LS_WRPRC = "mdoc_reader_auth_wrprc";
+    const MAX_WRPRC_BYTES = 256 * 1024;
 
     function saveEnabled(enabled) {
         localStorage.setItem(LS_ENABLED, enabled ? "1" : "0");
@@ -41,6 +45,126 @@
     }
     function loadOrg() {
         return localStorage.getItem(LS_ORG) || "";
+    }
+
+    function registrationCertificateToBytes(value) {
+        let bytes;
+        if (typeof value === "string") {
+            const base64 = value.replace(/\s/g, "");
+            if (
+                !base64 ||
+                base64.length > Math.ceil(MAX_WRPRC_BYTES / 3) * 4 ||
+                !/^[A-Za-z0-9+/_-]+={0,2}$/.test(base64)
+            ) {
+                throw new Error(
+                    "Provide a base64-encoded CWT registration certificate (up to 256 KiB).",
+                );
+            }
+            let binary;
+            try {
+                binary = atob(base64.replace(/-/g, "+").replace(/_/g, "/"));
+            } catch {
+                throw new Error(
+                    "The registration certificate is not valid base64.",
+                );
+            }
+            bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+        } else if (value instanceof ArrayBuffer || value instanceof Uint8Array) {
+            bytes = new Uint8Array(value);
+        } else {
+            throw new Error(
+                "Provide a binary CWT or a base64-encoded CWT registration certificate.",
+            );
+        }
+        if (!bytes.length || bytes.length > MAX_WRPRC_BYTES) {
+            throw new Error(
+                "The registration certificate must contain between 1 byte and 256 KiB.",
+            );
+        }
+
+        // Check the envelope only; preserve the provider's original signed bytes.
+        const CBOR = getCBOR();
+        if (!CBOR) throw new Error("CBOR library not available");
+        try {
+            const options = {
+                preferMap: true,
+                preventDuplicateKeys: true,
+                max_depth: 32,
+                highWaterMark: bytes.byteLength + 1,
+            };
+            const values = CBOR.decodeAllSync(bytes, options);
+            if (values.length !== 1) throw new Error("Expected one CWT");
+            let cose = values[0];
+            if (cose instanceof CBOR.Tagged && cose.tag === 61) {
+                cose = cose.value;
+                if (!(cose instanceof CBOR.Tagged) || cose.tag !== 18) {
+                    throw new Error("A CWT tag must contain a COSE_Sign1 tag");
+                }
+            }
+            if (cose instanceof CBOR.Tagged && cose.tag === 18)
+                cose = cose.value;
+            if (
+                !Array.isArray(cose) ||
+                cose.length !== 4 ||
+                !(cose[0] instanceof Uint8Array) ||
+                !(cose[1] instanceof Map) ||
+                !(cose[2] instanceof Uint8Array) ||
+                !cose[2].length ||
+                !(cose[3] instanceof Uint8Array) ||
+                !cose[3].length
+            ) {
+                throw new Error("Expected COSE_Sign1 with an attached payload");
+            }
+            if (
+                cose[0].length &&
+                !(CBOR.decode(cose[0], options) instanceof Map)
+            ) {
+                throw new Error("Expected protected headers");
+            }
+            if (!(CBOR.decode(cose[2], options) instanceof Map)) {
+                throw new Error("Expected CWT claims");
+            }
+        } catch {
+            throw new Error(
+                "The registration certificate must be a CBOR-encoded CWT with a COSE_Sign1 signature.",
+            );
+        }
+        return bytes;
+    }
+
+    function registrationCertificateToBase64(value) {
+        const bytes = registrationCertificateToBytes(value);
+        return btoa(
+            Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""),
+        );
+    }
+
+    function setRegistrationCertificate(value) {
+        if (typeof value === "string" && !value.trim()) {
+            localStorage.removeItem(LS_WRPRC);
+            return;
+        }
+        localStorage.setItem(LS_WRPRC, registrationCertificateToBase64(value));
+    }
+
+    function setRegistrationCertificateEnabled(enabled) {
+        localStorage.setItem(LS_WRPRC_ENABLED, enabled ? "1" : "0");
+    }
+
+    function getRequestInfo() {
+        if (localStorage.getItem(LS_WRPRC_ENABLED) !== "1") return {};
+        if (!loadEnabled()) {
+            throw new Error(
+                "Enable reader authentication to include a registration certificate.",
+            );
+        }
+        const base64 = localStorage.getItem(LS_WRPRC);
+        if (!base64) {
+            throw new Error(
+                "Import and save a registration certificate before requesting credentials.",
+            );
+        }
+        return { euWrprc: toBstrBytes(registrationCertificateToBytes(base64)) };
     }
 
     function parsePemBlocks(allPem) {
@@ -237,9 +361,9 @@
             sessionTranscript,
             itemsBytesTagged,
         ];
-        const raBytes = CBOR.encode(ra);
+        const raBytes = await CBOR.encodeAsync(ra);
         // ReaderAuthenticationBytes = tag(24, bstr .cbor ReaderAuthentication)
-        const raBytesTagged = CBOR.encode(new CBOR.Tagged(24, raBytes));
+        const raBytesTagged = await CBOR.encodeAsync(new CBOR.Tagged(24, raBytes));
         return raBytesTagged; // bytes to use as detached payload
     }
 
@@ -291,7 +415,7 @@
             toBstrBytes(ext),
             toBstrBytes(raDetached),
         ];
-        const tbs = CBOR.encode(sigStructure);
+        const tbs = await CBOR.encodeAsync(sigStructure);
 
         // Sign via WebCrypto; browsers may return DER or raw P1363, normalize to raw r||s
         const sigBytes = new Uint8Array(
@@ -316,7 +440,7 @@
         const cose = [toBstrBytes(prot), unprot, null, toBstrBytes(sig)];
         try {
             if (window.DEBUG_VERBOSE) {
-                const COSE = getCBOR().encode(cose);
+                const COSE = await CBOR.encodeAsync(cose);
                 const hex = (buf) =>
                     [...new Uint8Array(buf)]
                         .map((b) => b.toString(16).padStart(2, "0"))
@@ -348,6 +472,9 @@
             keyPem: loadKeyPem(),
             certsPem: loadChainPem(),
             orgName: loadOrg(),
+            registrationCertificateEnabled:
+                localStorage.getItem(LS_WRPRC_ENABLED) === "1",
+            registrationCertificateBase64: localStorage.getItem(LS_WRPRC) || "",
         };
     }
 
@@ -358,6 +485,11 @@
         setCertsPem,
         setOrgName,
         getConfig,
+        MAX_WRPRC_BYTES,
+        registrationCertificateToBase64,
+        setRegistrationCertificate,
+        setRegistrationCertificateEnabled,
+        getRequestInfo,
         signReaderAuthentication,
     };
 })();

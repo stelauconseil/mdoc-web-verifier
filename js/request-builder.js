@@ -28,74 +28,45 @@
 
         log("Building request for types: " + JSON.stringify(requestTypes));
 
+        const readerAuth = window.ReaderAuth;
+        const authenticate = readerAuth?.isEnabled();
+        const requestInfo = authenticate ? readerAuth.getRequestInfo() : {};
         const deviceRequest = { version: "1.0", docRequests: [] };
         for (const requestType of requestTypes) {
-            const docRequest = buildSingleDocRequest(requestType);
+            const docRequest = buildSingleDocRequest(requestType, requestInfo);
             if (docRequest) deviceRequest.docRequests.push(docRequest);
+        }
+        if (!deviceRequest.docRequests.length) {
+            throw new Error("No supported credentials selected");
         }
 
         log(
             `→ Device Request with ${deviceRequest.docRequests.length} document(s)`,
         );
 
-        // Optionally add Reader Authentication per spec (inside each DocRequest)
-        try {
-            console.log("Checking Reader Authentication status...");
-            const ra = window.ReaderAuth;
-            console.log("ReaderAuth object:", ra);
-            console.log(
-                "ReaderAuth.isEnabled():",
-                ra?.isEnabled ? ra.isEnabled() : undefined,
-            );
-            console.log(
-                "ReaderAuth.signReaderAuthentication:",
-                !!(ra && typeof ra.signReaderAuthentication === "function"),
-            );
-            if (ra && ra.isEnabled && ra.isEnabled()) {
-                let addedCount = 0;
-                for (const dr of deviceRequest.docRequests) {
-                    if (dr && dr.itemsRequest && dr.itemsRequest.tag === 24) {
-                        const itemsCbor = dr.itemsRequest.value; // raw ItemsRequest CBOR
-                        try {
-                            const cose =
-                                await ra.signReaderAuthentication(itemsCbor);
-                            dr.readerAuth = cose; // Per ISO 18013-5: readerAuth is inside DocRequest
-                            addedCount++;
-                        } catch (signErr) {
-                            console.warn(
-                                "ReaderAuth signing failed for a document:",
-                                signErr?.message || signErr,
-                            );
-                        }
-                    }
-                }
-                if (addedCount > 0) {
-                    log(
-                        `🔏 Added Reader Authentication to ${addedCount} document(s)`,
-                    );
-                } else {
-                    log(
-                        "⚠️ ReaderAuth enabled but no itemsRequest found to sign in any DocRequest",
-                    );
-                }
+        // Sign the complete ItemsRequest, including euWrprc when configured.
+        // Authentication failures must stop the request instead of sending it unsigned.
+        if (authenticate) {
+            for (const docRequest of deviceRequest.docRequests) {
+                docRequest.readerAuth = await readerAuth.signReaderAuthentication(
+                    docRequest.itemsRequest.value,
+                );
             }
-        } catch (e) {
-            console.warn(
-                "Reader Authentication processing failed:",
-                e.message || e,
+            log(
+                `🔏 Added Reader Authentication to ${deviceRequest.docRequests.length} document(s)`,
             );
         }
 
-        return CBOR.encode(deviceRequest);
+        return CBOR.encodeAsync(deviceRequest);
     }
 
-    function createDocRequest(docType, nameSpacesObj) {
+    function createDocRequest(docType, nameSpacesObj, requestInfo) {
         const CBOR = getCBOR();
         if (!CBOR) throw new Error("CBOR library not available");
         const itemsRequest = {
             docType,
             nameSpaces: nameSpacesObj,
-            requestInfo: {},
+            requestInfo,
         };
 
         // Capture the requested display order so the renderer can mirror it.
@@ -118,13 +89,18 @@
             window.REQUEST_ORDERS_BY_DOCTYPE[docType] = orderSnapshot;
         } catch (_) {}
 
-        const itemsRequestCbor = CBOR.encode(itemsRequest);
+        // Keep the synchronous builder API while buffering the complete WRPRC.
+        // The default stream threshold can truncate large objects; raising it
+        // does not preallocate memory.
+        const itemsRequestCbor = CBOR.encodeOne(itemsRequest, {
+            highWaterMark: Number.MAX_SAFE_INTEGER,
+        });
         return {
             itemsRequest: new CBOR.Tagged(24, itemsRequestCbor),
         };
     }
 
-    function buildSingleDocRequest(requestType) {
+    function buildSingleDocRequest(requestType, requestInfo = {}) {
         const CBOR = getCBOR();
         if (!CBOR) throw new Error("CBOR library not available");
 
@@ -139,7 +115,7 @@
             log(
                 `🧩 Building user-defined ${mode} request - docType: ${definition.docType}`,
             );
-            return createDocRequest(definition.docType, nameSpacesObj);
+            return createDocRequest(definition.docType, nameSpacesObj, requestInfo);
         }
         if (requestType?.startsWith("user_defined:")) {
             throw new Error(
@@ -696,7 +672,7 @@
             nameSpacesObj = { [namespace]: fields };
         }
 
-        return createDocRequest(docType, nameSpacesObj);
+        return createDocRequest(docType, nameSpacesObj, requestInfo);
     }
 
     window.RequestBuilder = {
