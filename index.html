@@ -2038,9 +2038,10 @@
                     </div>
                 </div>
                 <p class="muted" style="margin-top: 0.5rem">
-                    Configure reader authentication to prove your identity to
-                    the wallet. This adds a digitally signed certificate to
-                    document requests.
+                    Sign your requests so the wallet can show the holder who is
+                    asking for their data. Each request is signed with your
+                    reader private key and carries your reader access
+                    certificate.
                 </p>
 
                 <div
@@ -2061,11 +2062,10 @@
                             class="muted"
                             style="margin-top: 0.5rem; margin-bottom: 0"
                         >
-                            Reader authentication requires storing your
-                            <strong>private key</strong> in browser
-                            localStorage. Only use this feature for testing
-                            purposes. In production, private keys should be
-                            stored in secure hardware (HSM/TPM).
+                            Your <strong>private key</strong> is stored
+                            unencrypted in this browser's localStorage. Use
+                            test keys only: production keys belong in secure
+                            hardware (HSM, TPM).
                         </p>
                     </div>
 
@@ -2075,7 +2075,7 @@
                     >
                         <div style="margin-bottom: 1rem">
                             <label class="muted"
-                                >Reader Common Name (from certificate)</label
+                                >Reader name (certificate Common Name)</label
                             >
                             <div
                                 id="readerCommonName"
@@ -2098,7 +2098,7 @@
 
                         <div style="margin-bottom: 1rem">
                             <label class="muted" for="readerCertificate"
-                                >Reader Certificate (PEM format)</label
+                                >Reader access certificate (PEM)</label
                             >
                             <textarea
                                 id="readerCertificate"
@@ -2122,7 +2122,7 @@
 
                         <div style="margin-bottom: 1rem">
                             <label class="muted" for="readerPrivateKey"
-                                >Reader Private Key (PKCS#8 PEM format)</label
+                                >Reader private key (PKCS#8 PEM)</label
                             >
                             <textarea
                                 id="readerPrivateKey"
@@ -2144,25 +2144,58 @@
                             ></textarea>
                         </div>
 
+                        <hr
+                            style="
+                                border: none;
+                                border-top: 1px solid var(--c-border);
+                                margin: 1.25rem 0;
+                            "
+                        />
+
                         <div style="margin-bottom: 1rem">
-                            <label>
-                                <input
-                                    type="checkbox"
-                                    id="enableRegistrationCertificate"
-                                />
-                                Include EU registration certificate (WRPRC)
-                            </label>
+                            <div
+                                style="
+                                    display: flex;
+                                    justify-content: space-between;
+                                    align-items: center;
+                                    gap: 10px;
+                                "
+                            >
+                                <strong>Registration certificate (WRPRC)</strong>
+                                <label
+                                    style="
+                                        display: flex;
+                                        align-items: center;
+                                        gap: 10px;
+                                        cursor: pointer;
+                                        user-select: none;
+                                    "
+                                >
+                                    <span class="muted" style="font-size: 0.9rem"
+                                        >Include in requests</span
+                                    >
+                                    <span class="ra-switch">
+                                        <input
+                                            type="checkbox"
+                                            id="enableRegistrationCertificate"
+                                        />
+                                        <span class="ra-slider"></span>
+                                    </span>
+                                </label>
+                            </div>
+                            <p class="muted" style="margin-top: 0.5rem">
+                                Optional. The EU wallet-relying party
+                                registration certificate tells the wallet which
+                                data you are registered to request, and why. It
+                                must be issued for the reader access certificate
+                                above.
+                            </p>
                             <div id="registrationCertificateConfig" hidden>
-                                <p class="muted">
-                                    Import the issued registration certificate for
-                                    your intended use. Use its matching reader
-                                    access certificate and private key above.
-                                </p>
                                 <label
                                     class="muted"
                                     for="registrationCertificateFile"
                                 >
-                                    Import a binary CWT file (up to 256 KiB)
+                                    Import from a file (binary CWT, up to 256 KiB)
                                 </label>
                                 <input
                                     type="file"
@@ -2174,11 +2207,11 @@
                                     class="muted"
                                     for="registrationCertificate"
                                 >
-                                    Registration certificate (base64 or base64url CWT)
+                                    Or paste it (base64 or base64url)
                                 </label>
                                 <textarea
                                     id="registrationCertificate"
-                                    placeholder="Paste the base64-encoded CWT, or import a binary file above"
+                                    placeholder="Base64-encoded CWT"
                                     spellcheck="false"
                                     style="
                                         width: 100%;
@@ -2198,12 +2231,38 @@
                             </div>
                         </div>
 
-                        <div class="row">
+                        <hr
+                            style="
+                                border: none;
+                                border-top: 1px solid var(--c-border);
+                                margin: 1.25rem 0;
+                            "
+                        />
+
+                        <div
+                            style="
+                                display: flex;
+                                justify-content: space-between;
+                                align-items: center;
+                                flex-wrap: wrap;
+                                gap: 10px;
+                            "
+                        >
                             <button id="btnSaveReaderCert">
                                 💾 Save reader settings
                             </button>
-                            <button id="btnClearReaderCert" class="secondary">
-                                🗑️ Clear
+                            <button
+                                id="btnClearReaderCert"
+                                class="secondary"
+                                title="Remove the reader access certificate, private key and registration certificate saved in this browser"
+                                style="
+                                    display: inline-flex;
+                                    align-items: center;
+                                    gap: 6px;
+                                    padding: 6px 10px;
+                                "
+                            >
+                                🗑️ Remove saved key and certificates
                             </button>
                         </div>
 
@@ -2655,11 +2714,11 @@
         <script src="js/activity-log.js"></script>
         <script src="js/iaca-defaults.js"></script>
         <script src="js/iaca-management.js"></script>
-        <script src="js/reader-authentication.js"></script>
+        <script src="js/reader-authentication.js?v=20261030-1"></script>
         <script src="js/device-engagement.js"></script>
         <script src="js/wallet-response.js"></script>
         <script src="js/user-defined-credentials.js?v=20260902-9"></script>
-        <script src="js/request-builder.js?v=20260907-1"></script>
+        <script src="js/request-builder.js?v=20261030-1"></script>
         <script src="js/ble-transport.js"></script>
         <script src="js/session-crypto.js"></script>
         <script src="js/verification.js"></script>
@@ -2696,7 +2755,7 @@
                 refresh();
             })();
         </script>
-        <script src="js/session-establishment.js"></script>
+        <script src="js/session-establishment.js?v=20261030-1"></script>
 
         <script type="module">
             // ==== CBOR bootstrap (works even if global isn't set) ====
@@ -7653,8 +7712,8 @@
                     if (cfg.enabled)
                         setReaderAuthStatus(
                             cfg.registrationCertificateEnabled
-                                ? "Reader authentication and WRPRC are enabled. Save the reader key, access certificate, and registration certificate before making a request."
-                                : "Reader Authentication is enabled. Saved key and certificate will be used to sign requests.",
+                                ? "Reader authentication is on. Requests are signed with the saved key and carry the saved access and registration certificates."
+                                : "Reader authentication is on. Requests are signed with the saved key and access certificate.",
                             "info",
                         );
                 } catch (e) {
@@ -7669,7 +7728,7 @@
                 } catch (error) {
                     enableReaderAuth.checked = !on;
                     setReaderAuthStatus(
-                        "Failed to change reader authentication settings: " + error.message,
+                        "Couldn't change reader authentication: " + error.message,
                         "error",
                     );
                     return;
@@ -7678,8 +7737,8 @@
                     readerAuthConfig.style.display = on ? "block" : "none";
                 setReaderAuthStatus(
                     on
-                        ? "Reader Authentication enabled."
-                        : "Reader authentication and WRPRC inclusion disabled.",
+                        ? "Reader authentication on. Save a private key and access certificate to sign requests."
+                        : "Reader authentication off. Requests are sent unsigned.",
                     "info",
                 );
                 // Refresh CN display when toggling visibility
@@ -7695,13 +7754,13 @@
                     registrationCertificateConfig.hidden = !enabled;
                     setReaderAuthStatus(
                         enabled
-                            ? "WRPRC enabled. Import or paste a registration certificate, then save the reader settings."
-                            : "WRPRC inclusion disabled. Reader authentication remains enabled.",
+                            ? "Registration certificate on. Import or paste it, then save the reader settings."
+                            : "Registration certificate off. Requests are still signed, without it.",
                     );
                 } catch (error) {
                     enableRegistrationCertificate.checked = !enabled;
                     setReaderAuthStatus(
-                        "Failed to change WRPRC settings: " + error.message,
+                        "Couldn't change the registration certificate setting: " + error.message,
                         "error",
                     );
                 }
@@ -7721,11 +7780,11 @@
                     registrationCertificate.value =
                         window.ReaderAuth.registrationCertificateToBase64(bytes);
                     setReaderAuthStatus(
-                        "Registration certificate loaded. Save the reader settings to use it.",
+                        "Registration certificate imported. Save the reader settings to use it.",
                     );
                 } catch (error) {
                     setReaderAuthStatus(
-                        "Failed to import registration certificate: " + error.message,
+                        "Couldn't import the registration certificate: " + error.message,
                         "error",
                     );
                 } finally {
@@ -7740,7 +7799,7 @@
                 const keyPem = (readerPrivateKey?.value || "").trim();
                 if (!certPem || !keyPem) {
                     setReaderAuthStatus(
-                        "Please provide both a certificate (PEM) and a private key (PKCS#8 PEM).",
+                        "Provide both the reader access certificate (PEM) and the private key (PKCS#8 PEM).",
                         "error",
                     );
                     return;
@@ -7750,7 +7809,7 @@
                         const wrprc = registrationCertificate.value.trim();
                         if (!wrprc) {
                             throw new Error(
-                                "Provide a registration certificate or disable WRPRC inclusion.",
+                                "Import or paste the registration certificate, or turn off \"Include in requests\".",
                             );
                         }
                         window.ReaderAuth.setRegistrationCertificate(wrprc);
@@ -7759,8 +7818,8 @@
                     window.ReaderAuth.setKeyPem(keyPem);
                     setReaderAuthStatus(
                         enableRegistrationCertificate.checked
-                            ? "Saved reader settings. Signed requests will include the registration certificate. Its signature and trust have not been verified here."
-                            : "Saved reader key and certificate. Requests will include a signed ReaderAuthentication COSE_Sign1.",
+                            ? "Reader settings saved. Requests will be signed and carry the registration certificate. This page doesn't verify the registration certificate's signature or trust."
+                            : "Reader settings saved. Requests will be signed with this key and access certificate.",
                         "success",
                     );
                     // Update CN display from the provided certificate
@@ -7770,7 +7829,7 @@
                 } catch (e) {
                     console.error("Failed to save reader auth config:", e);
                     setReaderAuthStatus(
-                        "Failed to save reader authentication settings: " +
+                        "Couldn't save the reader settings: " +
                             (e.message || e),
                         "error",
                     );
@@ -7778,6 +7837,12 @@
             });
 
             btnClearReaderCert?.addEventListener("click", () => {
+                if (
+                    !confirm(
+                        "Remove the reader access certificate, private key and registration certificate saved in this browser?",
+                    )
+                )
+                    return;
                 try {
                     if (readerCertificate) readerCertificate.value = "";
                     if (readerPrivateKey) readerPrivateKey.value = "";
@@ -7789,14 +7854,14 @@
                     window.ReaderAuth.setKeyPem("");
                     window.ReaderAuth.setRegistrationCertificate("");
                     setReaderAuthStatus(
-                        "Cleared reader authentication settings.",
+                        "Reader key and certificates removed from this browser.",
                         "info",
                     );
                     if (readerCommonNameEl)
                         readerCommonNameEl.textContent = "—";
                 } catch (e) {
                     setReaderAuthStatus(
-                        "Failed to clear settings: " + (e.message || e),
+                        "Couldn't remove the saved settings: " + (e.message || e),
                         "error",
                     );
                 }
