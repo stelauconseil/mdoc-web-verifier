@@ -2486,6 +2486,100 @@
                     </div>
                 </div>
             </section>
+
+            <section class="card" id="cscaSection">
+                <div
+                    style="
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        gap: 8px;
+                    "
+                >
+                    <h2 style="margin: 0">
+                        <button
+                            type="button"
+                            class="details-heading"
+                            aria-controls="cscaDetails"
+                            aria-expanded="false"
+                            onclick="toggleDetails('cscaDetails')"
+                        >
+                            🛂 Passport Trust List (CSCA)
+                        </button>
+                    </h2>
+                    <div style="display: flex; align-items: center; gap: 10px">
+                        <span id="cscaSummaryCount" class="muted"></span>
+                        <button
+                            onclick="toggleDetails('cscaDetails')"
+                            class="secondary mobile-details-toggle"
+                            aria-label="Show passport trust list details"
+                            title="Show passport trust list details"
+                            style="
+                                display: inline-flex;
+                                align-items: center;
+                                gap: 6px;
+                                padding: 6px 10px;
+                            "
+                        >
+                            <span id="cscaDetails-icon">▶</span>
+                            <span class="details-toggle-label">Details</span>
+                        </button>
+                    </div>
+                </div>
+                <p class="muted" style="margin-top: 0.5rem">
+                    Country Signing CA certificates used for ICAO passive
+                    authentication of travel document data groups (DG1, DG2,
+                    EF.SOD). Import PEM, DER/CER/CRT files or ICAO CSCA master
+                    lists (.ml).
+                </p>
+
+                <div
+                    id="cscaDetails"
+                    style="display: none; margin-top: 0.75rem"
+                >
+                    <div
+                        class="row"
+                        style="
+                            gap: 0.5rem;
+                            align-items: center;
+                            margin-top: 0.5rem;
+                            flex-wrap: wrap;
+                        "
+                    >
+                        <input
+                            id="cscaFileInput"
+                            type="file"
+                            multiple
+                            accept=".pem,.cer,.crt,.der,.ml,.bin"
+                        />
+                        <button id="cscaImportBtn">Import from File</button>
+                    </div>
+                    <div
+                        style="
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                            gap: 10px;
+                            margin-top: 1rem;
+                        "
+                    >
+                        <strong id="cscaCount"></strong>
+                        <button
+                            id="cscaClearBtn"
+                            class="secondary"
+                            title="Remove all CSCA certificates"
+                            style="
+                                display: inline-flex;
+                                align-items: center;
+                                gap: 6px;
+                                padding: 6px 10px;
+                            "
+                        >
+                            🗑️ Remove All
+                        </button>
+                    </div>
+                </div>
+            </section>
         </main>
         <footer>
             <a
@@ -2559,6 +2653,7 @@
         </script>
         <!-- Feature modules (globals) -->
         <script src="js/activity-log.js"></script>
+        <script src="js/iaca-defaults.js"></script>
         <script src="js/iaca-management.js"></script>
         <script src="js/reader-authentication.js"></script>
         <script src="js/device-engagement.js"></script>
@@ -2568,6 +2663,39 @@
         <script src="js/ble-transport.js"></script>
         <script src="js/session-crypto.js"></script>
         <script src="js/verification.js"></script>
+        <script src="js/icao-passive-auth.js"></script>
+        <script>
+            (() => {
+                const count = document.getElementById("cscaCount");
+                const refresh = () => {
+                    const n = IcaoPassiveAuth.trustStore.list().length;
+                    count.textContent = `Installed CSCAs: ${n}`;
+                    document.getElementById("cscaSummaryCount").textContent = `Installed: ${n}`;
+                };
+                const input = document.getElementById("cscaFileInput");
+                document.getElementById("cscaImportBtn").addEventListener("click", async () => {
+                    if (!input.files.length) return input.focus();
+                    const errors = [];
+                    for (const file of input.files) {
+                        try {
+                            IcaoPassiveAuth.trustStore.add(IcaoPassiveAuth.readTrustFile(new Uint8Array(await file.arrayBuffer())));
+                        } catch (err) {
+                            errors.push(`${file.name}: ${err.message || err}`);
+                        }
+                    }
+                    input.value = "";
+                    refresh();
+                    if (errors.length) alert("Some files could not be imported:\n" + errors.join("\n"));
+                });
+                document.getElementById("cscaClearBtn").addEventListener("click", () => {
+                    if (confirm("Remove all CSCA certificates?")) {
+                        IcaoPassiveAuth.trustStore.clear();
+                        refresh();
+                    }
+                });
+                refresh();
+            })();
+        </script>
         <script src="js/session-establishment.js"></script>
 
         <script type="module">
@@ -4273,6 +4401,15 @@
 
                             html += `
                     <div class="data-item" style="margin-top: 12px;"><div class="data-label">Verification Status</div><div class="data-value" id="${overallStatusId}">—</div></div>
+                    ${
+                        window.IcaoPassiveAuth?.extractFromDocument(doc)
+                            ? `
+                    <div class="data-item"><div class="data-label" style="white-space: nowrap;">🛂 ICAO Passive Authentication</div><div class="data-value"></div></div>
+                    <div class="data-item"><div class="data-label">Data group integrity</div><div class="data-value" id="paIntegrity-${docIdxLocal}">… verifying</div></div>
+                    <div class="data-item"><div class="data-label">Document Signer (SOD)</div><div class="data-value" id="paDsc-${docIdxLocal}">… verifying</div></div>
+                    <div class="data-item"><div class="data-label">CSCA</div><div class="data-value" id="paCsca-${docIdxLocal}">… verifying</div></div>`
+                            : ""
+                    }
           <div class="signer-section" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff;">
             <div style="display:flex; justify-content:space-between; align-items:center; gap: 8px;">
               <button
@@ -4594,6 +4731,48 @@
                             const visible = el.style.display !== "none";
                             el.style.display = visible ? "none" : "block";
                         });
+                    });
+
+                    // ICAO passive authentication (SOD → Document Signer → CSCA) for travel document data groups
+                    documents.forEach(async (doc, idx) => {
+                        const groups =
+                            window.IcaoPassiveAuth?.extractFromDocument(doc);
+                        if (!groups) return;
+                        const set = (id, ok, label) => {
+                            const el = document.getElementById(`${id}-${idx}`);
+                            if (!el) return;
+                            el.textContent = label;
+                            el.style.color =
+                                ok === true ? "#065f46" : ok === false ? "#991b1b" : "#92400e";
+                        };
+                        const r = await window.IcaoPassiveAuth.passiveAuth(
+                            groups,
+                            window.IcaoPassiveAuth.trustStore.list(),
+                        );
+                        const dgs = r.dataGroups
+                            .map((d) => `DG${d.number} ${d.ok ? "✔" : "✗"}`)
+                            .join(" · ");
+                        set(
+                            "paIntegrity",
+                            r.integrity === "ok",
+                            `${r.integrity === "ok" ? "✅ Valid" : "❌ Invalid"}${dgs ? ` (${dgs}${r.hashAlgorithm ? `, ${r.hashAlgorithm}` : ""})` : ""}`,
+                        );
+                        set(
+                            "paDsc",
+                            r.documentSigner === "ok",
+                            r.documentSigner === "ok"
+                                ? `✅ Valid — ${r.dsc.subject}`
+                                : `❌ ${r.error || "Invalid"}`,
+                        );
+                        set(
+                            "paCsca",
+                            r.csca === "ok" ? true : r.csca === "unknown" ? null : false,
+                            r.csca === "ok"
+                                ? `✅ Trusted — ${r.cscaCert.subject}`
+                                : r.csca === "unknown"
+                                  ? `⚠️ Issuer not in the CSCA trust list${r.dsc?.country ? ` (${r.dsc.country})` : ""}`
+                                  : "❌ Not verified (invalid SOD signature)",
+                        );
                     });
 
                     // Auto-verify signature and chain if verifier is available
@@ -6475,156 +6654,7 @@
             // ===== IACA CERTIFICATE MANAGEMENT =====
 
             // Default IACA certificates (exposed globally for IACA module)
-            const DEFAULT_IACA_CERTIFICATES = [
-                {
-                    name: "Autorité de Certification France Identité IACA",
-                    pem: `-----BEGIN CERTIFICATE-----
-MIIDHTCCAsSgAwIBAgISESEhmoph1P1OOjDCLJAgGdBbMAoGCCqGSM49BAMCMIGf
-MQswCQYDVQQGEwJGUjEwMC4GA1UECgwnQWdlbmNlIE5hdGlvbmFsZSBkZXMgVGl0
-cmVzIFPDqWN1cmlzw6lzMRcwFQYDVQQLDA4wMDAyIDEzMDAwMzI2MjE5MDcGA1UE
-AwwwQXV0b3JpdMOpIGRlIENlcnRpZmljYXRpb24gRnJhbmNlIElkZW50aXTDqSBJ
-QUNBMQowCAYDVQQFEwExMB4XDTI1MTAxNzAwMDAwMFoXDTM0MTAxNzAwMDAwMFow
-gZ8xCzAJBgNVBAYTAkZSMTAwLgYDVQQKDCdBZ2VuY2UgTmF0aW9uYWxlIGRlcyBU
-aXRyZXMgU8OpY3VyaXPDqXMxFzAVBgNVBAsMDjAwMDIgMTMwMDAzMjYyMTkwNwYD
-VQQDDDBBdXRvcml0w6kgZGUgQ2VydGlmaWNhdGlvbiBGcmFuY2UgSWRlbnRpdMOp
-IElBQ0ExCjAIBgNVBAUTATEwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQqfRW/
-7OTJS4K0IPMa/c8UicIUq62jTccQtGnHAYk6UnvXyRO3PC4/2pdq5QjhwIKwJVqC
-FOr4fbGboMKLX+L/o4HdMIHaMA4GA1UdDwEB/wQEAwIBBjASBgNVHRMBAf8ECDAG
-AQH/AgEAMCwGA1UdEgQlMCOBIWZyYW5jZS1pZGVudGl0ZUBpbnRlcmlldXIuZ291
-di5mcjBGBgNVHR8EPzA9MDugOaA3hjVodHRwOi8vY3JsLmFudHMuZ291di5mci9h
-Y19mcmFuY2VfaWRlbnRpdGVfaWFjYV8xLmNybDAdBgNVHQ4EFgQUAQ1+Rjq9mU0k
-AyKKyTwFdgjmwA4wHwYDVR0jBBgwFoAUAQ1+Rjq9mU0kAyKKyTwFdgjmwA4wCgYI
-KoZIzj0EAwIDRwAwRAIgSNKCT8z4zaZLfdOd/rHevKYDbvjqylK723wjd4g4s0EC
-IDnoWVWyJHwlO31z3QmK7QapM00sOCJnsTIvEGi1Fz/I
------END CERTIFICATE-----`,
-                    issuer: "CN=Autorité de Certification France Identité IACA, C=FR",
-                    test: false,
-                    active: true,
-                },
-                {
-                    name: "Autorité de Certification France Attestations IACA",
-                    pem: `-----BEGIN CERTIFICATE-----
-MIIDLTCCAtKgAwIBAgISESEFJUbpBJovlg7lg3Eb5YTCMAoGCCqGSM49BAMCMIGi
-MQswCQYDVQQGEwJGUjEwMC4GA1UECgwnQWdlbmNlIE5hdGlvbmFsZSBkZXMgVGl0
-cmVzIFPDqWN1cmlzw6lzMRcwFQYDVQQLDA4wMDAyIDEzMDAwMzI2MjE8MDoGA1UE
-AwwzQXV0b3JpdMOpIGRlIENlcnRpZmljYXRpb24gRnJhbmNlIEF0dGVzdGF0aW9u
-cyBJQUNBMQowCAYDVQQFEwExMB4XDTI1MTAxNzAwMDAwMFoXDTM0MTAxNzAwMDAw
-MFowgaIxCzAJBgNVBAYTAkZSMTAwLgYDVQQKDCdBZ2VuY2UgTmF0aW9uYWxlIGRl
-cyBUaXRyZXMgU8OpY3VyaXPDqXMxFzAVBgNVBAsMDjAwMDIgMTMwMDAzMjYyMTww
-OgYDVQQDDDNBdXRvcml0w6kgZGUgQ2VydGlmaWNhdGlvbiBGcmFuY2UgQXR0ZXN0
-YXRpb25zIElBQ0ExCjAIBgNVBAUTATEwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNC
-AASa4ZI0w4Mn4FW6kYdKPUlYYgVbwFf1A6lBDnurRsoPJxM3+dVupbkGl9O+QnJ3
-6wc8ngoXE3oH1hP11flDmWsIo4HlMIHiMA4GA1UdDwEB/wQEAwIBBjASBgNVHRMB
-Af8ECDAGAQH/AgEAMDAGA1UdEgQpMCeBJWZyYW5jZS1hdHRlc3RhdGlvbnNAaW50
-ZXJpZXVyLmdvdXYuZnIwSgYDVR0fBEMwQTA/oD2gO4Y5aHR0cDovL2NybC5hbnRz
-LmdvdXYuZnIvYWNfZnJhbmNlX2F0dGVzdGF0aW9uc19pYWNhXzEuY3JsMB0GA1Ud
-DgQWBBT/dscZoX+tou0+F2dDsFrTPfsMpzAfBgNVHSMEGDAWgBT/dscZoX+tou0+
-F2dDsFrTPfsMpzAKBggqhkjOPQQDAgNJADBGAiEAmMD8Kpgnctmx12gCBYrj98kn
-oKDSPlO5SucThy1EEqwCIQDsYM80Ere4Yw0fHNJQQHl6D1rAITDV3qFKP62Uq7xt
-sQ==
------END CERTIFICATE-----`,
-                    issuer: "CN=Autorité de Certification France Attestations IACA, C=FR",
-                    test: false,
-                    active: true,
-                },
-                {
-                    name: "Autorité de Certification France Identité IACA",
-                    pem: `-----BEGIN CERTIFICATE-----
-MIIDdjCCAxugAwIBAgISESHseuWkt7eIRNVD2TUo+Bu2MAoGCCqGSM49BAMCMIHH
-MQswCQYDVQQGEwJGUjEwMC4GA1UECgwnQWdlbmNlIE5hdGlvbmFsZSBkZXMgVGl0
-cmVzIFPDqWN1cmlzw6lzMRcwFQYDVQQLDA4wMDAyIDEzMDAwMzI2MjEmMCQGA1UE
-CwwdUE9VUiBRVUFMSUZJQ0FUSU9OIFVOSVFVRU1FTlQxOTA3BgNVBAMMMEF1dG9y
-aXTDqSBkZSBDZXJ0aWZpY2F0aW9uIEZyYW5jZSBJZGVudGl0w6kgSUFDQTEKMAgG
-A1UEBRMBMTAeFw0yNTAxMjkwMDAwMDBaFw0zNDAxMjkwMDAwMDBaMIHHMQswCQYD
-VQQGEwJGUjEwMC4GA1UECgwnQWdlbmNlIE5hdGlvbmFsZSBkZXMgVGl0cmVzIFPD
-qWN1cmlzw6lzMRcwFQYDVQQLDA4wMDAyIDEzMDAwMzI2MjEmMCQGA1UECwwdUE9V
-UiBRVUFMSUZJQ0FUSU9OIFVOSVFVRU1FTlQxOTA3BgNVBAMMMEF1dG9yaXTDqSBk
-ZSBDZXJ0aWZpY2F0aW9uIEZyYW5jZSBJZGVudGl0w6kgSUFDQTEKMAgGA1UEBRMB
-MTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABEWDSW7a1G6Ebbydwncvqx1JXjcL
-p0Uk/OKc5IWXEJCiejLWd3brmKVIrnJNi3GtLPOsokA7Y8I0XJpqQrROvYSjgeQw
-geEwDgYDVR0PAQH/BAQDAgEGMBIGA1UdEwEB/wQIMAYBAf8CAQAwLAYDVR0SBCUw
-I4EhZnJhbmNlLWlkZW50aXRlQGludGVyaWV1ci5nb3V2LmZyME0GA1UdHwRGMEQw
-QqBAoD6GPGh0dHA6Ly9jcmwucXVhbGlmLmFudHMuZ291di5mci9hY19mcmFuY2Vf
-aWRlbnRpdGVfaWFjYV8xLmNybDAdBgNVHQ4EFgQU6qGsPka6CBXTy3qGlF/2yRr2
-8aUwHwYDVR0jBBgwFoAU6qGsPka6CBXTy3qGlF/2yRr28aUwCgYIKoZIzj0EAwID
-SQAwRgIhAIWippsk9geJFGe/WInhC6IQpWgBfscynyMb4B2fKcbXAiEA9CFvazbn
-ATTWeV9JY4z4xiazYY5QeBH8Ug8RmFU0zVM=
------END CERTIFICATE-----`,
-                    issuer: "CN=Autorité de Certification France Identité IACA, C=FR",
-                    test: true,
-                    active: true,
-                },
-                {
-                    name: "France Attestations - Test IACA",
-                    pem: `-----BEGIN CERTIFICATE-----
-MIIDUzCCAvmgAwIBAgISESHtNjf+2KAQ0ttWtR9EhAAPMAoGCCqGSM49BAMCMIHF
-MQswCQYDVQQGEwJGUjEwMC4GA1UECgwnQWdlbmNlIE5hdGlvbmFsZSBkZXMgVGl0
-cmVzIFPDqWN1cmlzw6lzMRcwFQYDVQQLDA4wMDAyIDEzMDAwMzI2MjEmMCQGA1UE
-CwwdUE9VUiBRVUFMSUZJQ0FUSU9OIFVOSVFVRU1FTlQxNzA1BgNVBAMMLkF1dG9y
-aXTDqSBkZSBDZXJ0aWZpY2F0aW9uIEZyYW5jZSBBdHRlc3RhdGlvbnMxCjAIBgNV
-BAUTATEwHhcNMjUwMTI5MDAwMDAwWhcNMzAwMTI5MDAwMDAwWjCBxTELMAkGA1UE
-BhMCRlIxMDAuBgNVBAoMJ0FnZW5jZSBOYXRpb25hbGUgZGVzIFRpdHJlcyBTw6lj
-dXJpc8OpczEXMBUGA1UECwwOMDAwMiAxMzAwMDMyNjIxJjAkBgNVBAsMHVBPVVIg
-UVVBTElGSUNBVElPTiBVTklRVUVNRU5UMTcwNQYDVQQDDC5BdXRvcml0w6kgZGUg
-Q2VydGlmaWNhdGlvbiBGcmFuY2UgQXR0ZXN0YXRpb25zMQowCAYDVQQFEwExMFkw
-EwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEoCYCM9LYS8zUk8I1xL2B2G9voa4yFsko
-qohrsEQkpNEeKb59J3VDHausTqFWCOfwEGUzi6yocLIbE+gfz59pnaOBxjCBwzAO
-BgNVHQ8BAf8EBAMCAQYwMAYDVR0SBCkwJ4ElZnJhbmNlLWF0dGVzdGF0aW9uc0Bp
-bnRlcmlldXIuZ291di5mcjASBgNVHRMBAf8ECDAGAQH/AgEAMEwGA1UdHwRFMEMw
-QaA/oD2GO2h0dHA6Ly9jcmwucXVhbGlmLmFudHMuZ291di5mci9hY19mcmFuY2Vf
-YXR0ZXN0YXRpb25zXzEuY3JsMB0GA1UdDgQWBBR3bIy6PB3fPAlYHOvqk7nftps4
-sDAKBggqhkjOPQQDAgNIADBFAiBrI2HGG1SZNRfEoaIwk3bjAjLBcE9tcKPi1gu0
-oah58AIhAL+KWRF8FwT4JBblyZdmuoVVXJ36LMmAUcs5YwJpMiQW
------END CERTIFICATE-----`,
-                    issuer: "CN=Autorité de Certification France Attestations, C=FR",
-                    test: true,
-                    active: true,
-                },
-                {
-                    name: "IACA NL mDL",
-                    pem: `-----BEGIN CERTIFICATE-----
-MIIChzCCAg6gAwIBAgIUNKLqlwyPhbMOSD0kBpBVr/8nR3wwCgYIKoZIzj0EAwMw
-PjELMAkGA1UEBhMCTkwxDDAKBgNVBAoMA1JEVzELMAkGA1UEBRMCMDExFDASBgNV
-BAMMC0lBQ0EgTkwgbURMMB4XDTIxMTIxNDEzMTMxMFoXDTI5MTIxNDEzMTMwOVow
-PjELMAkGA1UEBhMCTkwxDDAKBgNVBAoMA1JEVzELMAkGA1UEBRMCMDExFDASBgNV
-BAMMC0lBQ0EgTkwgbURMMHowFAYHKoZIzj0CAQYJKyQDAwIIAQELA2IABD0oIkWG
-2SCr1imaAe1b41erTis67NlSA60xehE8IsYPVEzcn6FW5+gWrQ1p8+4ZizqdHFd3
-v84WWSe7W19tjqUurnTFMKG5NxZ2KFxpDc1YZCmB128PgeyJ2KzC2aFZ16OByDCB
-xTASBgNVHRMBAf8ECDAGAQH/AgEAMB8GA1UdIwQYMBaAFNLoPEtlzS8edYK61ZVE
-b0WqBUlAMEAGA1UdHwQ5MDcwNaAzoDGGL2h0dHA6Ly93d3ctZGllbnN0ZW4ucmR3
-Lm5sL2NybC9JQUNBTkxtREwtMDEuY3JsMB0GA1UdDgQWBBTS6DxLZc0vHnWCutWV
-RG9FqgVJQDAOBgNVHQ8BAf8EBAMCAQYwHQYDVR0SBBYwFIYSaHR0cHM6Ly93d3cu
-cmR3Lm5sMAoGCCqGSM49BAMDA2cAMGQCMCG8ctJf3PUfSB2LoYqgoy2iWe1Nqzjo
-0FJxc9ePVPVeFfI2t2Mqe2mo50hJ9EKMqwIwBtek1Tpw/SRjLjI+L0PMBtiE9Tse
-C6oqwQPIIuSJLgUWByKywFFlK+i8EqosLCVT
------END CERTIFICATE-----`,
-                    issuer: "C=NL, O=RDW, serialNumber=01, CN=IACA NL mDL",
-                    test: false,
-                    active: true,
-                },
-                {
-                    name: "IACA NL mVR",
-                    pem: `-----BEGIN CERTIFICATE-----
-MIIChzCCAg6gAwIBAgIUApUuBv6PnHuN+DFrHMXDPCD1eSswCgYIKoZIzj0EAwMw
-PjELMAkGA1UEBhMCTkwxDDAKBgNVBAoMA1JEVzELMAkGA1UEBRMCMDIxFDASBgNV
-BAMMC0lBQ0EgTkwgbVZSMB4XDTIzMTAxMDExMzA1MFoXDTMxMTAxMDExMzA0OVow
-PjELMAkGA1UEBhMCTkwxDDAKBgNVBAoMA1JEVzELMAkGA1UEBRMCMDIxFDASBgNV
-BAMMC0lBQ0EgTkwgbVZSMHowFAYHKoZIzj0CAQYJKyQDAwIIAQELA2IABB9T038B
-YLJ8EEA3WU23Y8uYShK9zvEB7zO6CcyvtpzDZLhefHc7qfibWATbI2Pa7EAtHAmb
-z8HkLqgBNfFg2aDtyfr9fs892dA6yJ9zbVv2Pna7+77rriOjND5doNnhxaOByDCB
-xTASBgNVHRMBAf8ECDAGAQH/AgEAMB8GA1UdIwQYMBaAFEOPFj/6DqRZUGdQH2Ir
-/0wtL/+qMEAGA1UdHwQ5MDcwNaAzoDGGL2h0dHA6Ly93d3ctZGllbnN0ZW4ucmR3
-Lm5sL2NybC9JQUNBTkxtVlItMDEuY3JsMB0GA1UdDgQWBBRDjxY/+g6kWVBnUB9i
-K/9MLS//qjAOBgNVHQ8BAf8EBAMCAQYwHQYDVR0SBBYwFIYSaHR0cHM6Ly93d3cu
-cmR3Lm5sMAoGCCqGSM49BAMDA2cAMGQCMEQf7RWdfWBY3SlgyW75xdZNuUmJPaDZ
-/mji/fMCSePodYkY/tg0uLUw/p6dFLytgQIwE4zKx4iQNBFW4jAgHdvfvS9qh0h6
-ryXFc+YMxyMOmThPKdcIKg1FMQZ6ZSaTOxEM
------END CERTIFICATE-----`,
-                    issuer: "C=NL, O=RDW, serialNumber=02, CN=IACA NL mVR",
-                    test: false,
-                    active: true,
-                },
-            ];
+            const DEFAULT_IACA_CERTIFICATES = window.DEFAULT_IACA_CERTIFICATES;
 
             // Make defaults available to the IACA module
             window.DEFAULT_IACA_CERTIFICATES = DEFAULT_IACA_CERTIFICATES;
