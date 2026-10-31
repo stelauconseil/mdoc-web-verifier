@@ -20,13 +20,13 @@
             window.addEventListener("pageshow", ensureTopOnRefresh);
         </script>
         <title>
-            ISO 18013-5 Mobile Driver's License (mDL) mDoc Reader & Verifier
+            mDoc Web Verifier: EUDI Wallet and ISO 18013-5 mDL Reader
         </title>
 
         <!-- SEO Meta Tags -->
         <meta
             name="description"
-            content="Free web-based ISO 18013-5 mobile Driver's License (mDL) and mDoc reader & verifier. Scan QR codes, connect via Web Bluetooth, verify digital credentials, and validate IACA certificates."
+            content="Free web-based reader and verifier for EUDI Wallets and ISO 18013-5 wallets (PID, mDL, Photo ID, age verification). Scan the wallet's QR code, connect over Web Bluetooth, and check issuer signature, trust chain, device authentication and data integrity."
         />
         <meta
             name="keywords"
@@ -49,43 +49,43 @@
         <meta property="og:locale" content="en_US" />
         <meta
             property="og:title"
-            content="ISO 18013-5 Mobile Driver's License (mDL) and mDoc Reader"
+            content="mDoc Web Verifier: EUDI Wallet and ISO 18013-5 Reader"
         />
         <meta
             property="og:description"
-            content="Free web-based mDL and mDoc reader. Scan, connect, and verify digital driver's licenses (mDL) and mDoc ISO 18013-5 digital credentials."
+            content="Test EUDI Wallets and ISO 18013-5 wallets from your browser, and see exactly what is verified. Free, open source, nothing leaves your browser."
         />
         <meta
             property="og:image"
-            content="https://mdoc-web-verifier.stelau.com/assets/mdoc-web-verifier.jpg"
+            content="https://mdoc-web-verifier.stelau.com/assets/og-image.png"
         />
         <meta
             property="og:image:secure_url"
-            content="https://mdoc-web-verifier.stelau.com/assets/mdoc-web-verifier.jpg"
+            content="https://mdoc-web-verifier.stelau.com/assets/og-image.png"
         />
         <meta property="og:image:type" content="image/png" />
         <meta property="og:image:width" content="1200" />
         <meta property="og:image:height" content="630" />
         <meta
             property="og:image:alt"
-            content="ISO 18013-5 mDL / mDoc Web Reader & Verifier"
+            content="mDoc Web Verifier: a verified EUDI PID credential with its issuer signature, trust chain, device authentication and data integrity checks"
         />
 
         <!-- Twitter -->
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:url" content="https://mdoc-web-verifier.stelau.com/" />
-        <meta name="twitter:title" content="ISO 18013-5 mDL Reader & Verifier" />
+        <meta name="twitter:title" content="mDoc Web Verifier: EUDI Wallet and ISO 18013-5 Reader" />
         <meta
             name="twitter:description"
-            content="Free web-based mobile Driver's License mDoc reader with Web Bluetooth. Verify ISO 18013-5 digital credentials instantly."
+            content="Test EUDI Wallets and ISO 18013-5 wallets from your browser, and see exactly what is verified."
         />
         <meta
             name="twitter:image"
-            content="https://mdoc-web-verifier.stelau.com/assets/mdoc-web-verifier.jpg"
+            content="https://mdoc-web-verifier.stelau.com/assets/og-image.png"
         />
         <meta
             name="twitter:image:alt"
-            content="ISO 18013-5 mDL / mDoc Web Reader & Verifier"
+            content="mDoc Web Verifier: a verified EUDI PID credential with its issuer signature, trust chain, device authentication and data integrity checks"
         />
 
         <!-- Theme Color -->
@@ -95,9 +95,9 @@
         <link rel="canonical" href="https://mdoc-web-verifier.stelau.com/" />
 
         <!-- Icons -->
-        <link rel="icon" href="assets/icon-192.png" />
+        <link rel="icon" href="assets/logo.svg" type="image/svg+xml" />
+        <link rel="icon" href="assets/icon-192.png" type="image/png" sizes="192x192" />
         <link rel="apple-touch-icon" href="assets/icon-192.png" />
-        <link rel="mask-icon" href="assets/icon-192.png" color="#0f172a" />
 
         <style>
             /* ── Design tokens ─────────────────────────────── */
@@ -1232,6 +1232,310 @@
                 }
 
             }
+            /* ── Top bar ───────────────────────────────────── */
+            .topbar {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 1rem;
+                max-width: 960px;
+                margin: 0 auto;
+                padding: 1.25rem 1.25rem 1.5rem;
+            }
+            .topbar h1 {
+                margin: 0;
+                font-family: var(--font-display);
+                font-size: 1.35rem;
+                font-weight: 700;
+                letter-spacing: -0.01em;
+                line-height: 1.25;
+            }
+            .topbar p {
+                margin: 0.3rem 0 0;
+                max-width: 36rem;
+                color: var(--c-text-secondary);
+                font-size: 0.9rem;
+                line-height: 1.5;
+            }
+            .topbar__actions {
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: flex-end;
+                gap: 0.5rem;
+            }
+            .toolbar-btn,
+            button.toolbar-btn {
+                display: inline-flex;
+                align-items: center;
+                min-height: 36px;
+                padding: 0.4rem 0.9rem;
+                border-radius: var(--radius-pill);
+                border: 1px solid var(--c-border-strong);
+                background: var(--c-surface);
+                color: var(--c-text);
+                font: inherit;
+                font-size: 0.875rem;
+                font-weight: 600;
+                text-decoration: none;
+                cursor: pointer;
+            }
+            button.toolbar-btn:hover:not(:disabled),
+            a.toolbar-btn:hover {
+                background: var(--c-surface-alt);
+                box-shadow: none;
+                transform: none;
+            }
+            .toolbar-btn[aria-expanded="true"] {
+                background: var(--c-accent-subtle);
+                border-color: var(--c-accent-border);
+                color: var(--c-accent);
+            }
+            @media (max-width: 640px) {
+                .topbar {
+                    flex-direction: column;
+                    align-items: flex-start;
+                }
+                .topbar__actions {
+                    justify-content: flex-start;
+                }
+                .toolbar-btn,
+                button.toolbar-btn {
+                    min-height: 44px;
+                }
+            }
+
+            /* ── Side panels (Session Log, Settings) ───────── */
+            dialog.side-panel {
+                position: fixed;
+                inset: 0 0 0 auto;
+                width: min(560px, 100vw);
+                max-width: 100vw;
+                height: 100dvh;
+                max-height: 100dvh;
+                margin: 0;
+                padding: 0;
+                border: 0;
+                border-left: 1px solid var(--c-border-strong);
+                background: var(--c-bg);
+                color: var(--c-text);
+                box-shadow: -12px 0 40px rgba(0, 0, 0, 0.18);
+                overflow: hidden;
+                z-index: 100;
+            }
+            dialog.side-panel[open] {
+                display: flex;
+                flex-direction: column;
+            }
+            dialog.side-panel::backdrop {
+                background: rgba(0, 0, 0, 0.3);
+            }
+            .side-panel__head {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 1rem;
+                padding: 1rem 1.25rem;
+                border-bottom: 1px solid var(--c-border);
+                background: var(--c-surface);
+            }
+            .side-panel__head h2 {
+                margin: 0;
+                font-size: 1.1rem;
+            }
+            .side-panel__body {
+                overflow-y: auto;
+                padding: 1rem;
+            }
+            .side-panel__body .card {
+                margin-bottom: 1rem;
+                animation: none;
+            }
+
+            /* ── Disclosure: the title row toggles, a chevron shows state ── */
+            .mobile-details-toggle,
+            .details-toggle {
+                display: none !important;
+            }
+            button.details-heading {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+                min-height: 36px;
+            }
+            @media (max-width: 640px) {
+                button.details-heading {
+                    min-height: 44px;
+                }
+            }
+            /* Credential family rows: compact list, inline styles predate the tokens */
+            #requestSection > .signer-section {
+                margin-top: 0.5rem !important;
+                padding: 0.2rem 0.9rem !important;
+            }
+            #requestSection > .signer-section > div[id$="Details"] {
+                margin-top: 0.25rem !important;
+                padding-bottom: 0.6rem;
+            }
+            button.details-heading::before {
+                content: "";
+                flex: none;
+                width: 0.45em;
+                height: 0.45em;
+                border-right: 2px solid currentColor;
+                border-bottom: 2px solid currentColor;
+                transform: rotate(-45deg);
+                transition: transform 0.2s var(--ease-out);
+                opacity: 0.7;
+            }
+            button.details-heading[aria-expanded="true"]::before {
+                transform: rotate(45deg);
+            }
+
+            /* ── Compatibility notice (amber, beside the Scan button) ── */
+            .compat-warning {
+                background: var(--c-warning-bg);
+                color: var(--c-text);
+                border: 1px solid var(--c-warning-border);
+                box-shadow: none;
+                margin: 0.75rem 0 1rem;
+                padding: 0.9rem 1.1rem;
+            }
+            .compat-warning strong:first-child {
+                color: var(--c-warning-text);
+            }
+            .compat-warning a {
+                color: var(--c-accent);
+            }
+            .compat-warning .browser-support {
+                background: transparent;
+                border-color: var(--c-warning-border);
+            }
+
+            /* ── Result: one card per credential ───────────── */
+            .document-head .document-title {
+                margin: 0;
+                font-family: var(--font-display);
+                font-size: 1.1rem;
+                font-weight: 700;
+            }
+            .document-head .document-type {
+                margin: 0.15rem 0 0;
+                color: var(--c-text-tertiary);
+            }
+            .doc-verdict {
+                margin: 1rem 0 1.25rem;
+                padding: 0.9rem 1rem;
+                border-radius: var(--radius-md);
+                background: var(--c-surface-alt);
+                border: 1px solid var(--c-border);
+            }
+            .doc-verdict[data-state="ok"] {
+                background: var(--c-success-bg);
+                border-color: var(--c-success-border);
+            }
+            .doc-verdict[data-state="warn"] {
+                background: var(--c-warning-bg);
+                border-color: var(--c-warning-border);
+            }
+            .doc-verdict[data-state="fail"] {
+                background: var(--c-danger-bg);
+                border-color: var(--c-danger-border);
+            }
+            .doc-verdict__title {
+                margin: 0 0 0.6rem;
+                font-weight: 700;
+                font-size: 1rem;
+            }
+            .doc-verdict[data-state="ok"] .doc-verdict__title { color: var(--c-success-text); }
+            .doc-verdict[data-state="warn"] .doc-verdict__title { color: var(--c-warning-text); }
+            .doc-verdict[data-state="fail"] .doc-verdict__title { color: var(--c-danger-text); }
+            .checks {
+                list-style: none;
+                margin: 0;
+                padding: 0;
+                display: grid;
+                gap: 0.45rem;
+            }
+            .checks li {
+                display: flex;
+                align-items: flex-start;
+                gap: 0.6rem;
+                font-size: 0.9rem;
+            }
+            .checks li::before {
+                flex: none;
+                display: inline-grid;
+                place-items: center;
+                width: 1.25rem;
+                height: 1.25rem;
+                margin-top: 0.05rem;
+                border-radius: 50%;
+                font-size: 0.75rem;
+                font-weight: 800;
+                color: #fff;
+                background: var(--c-text-tertiary);
+                content: "…";
+            }
+            .checks li[data-state="ok"]::before { content: "✓"; background: var(--c-green); }
+            .checks li[data-state="warn"]::before { content: "!"; background: var(--c-warning-text); color: var(--c-surface); }
+            .checks li[data-state="fail"]::before { content: "✕"; background: var(--c-red); }
+            .check-note {
+                display: block;
+                color: var(--c-text-secondary);
+                font-size: 0.82rem;
+            }
+            .sr-only {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                overflow: hidden;
+                clip: rect(0 0 0 0);
+                white-space: nowrap;
+            }
+
+            /* Camera frame only while the camera runs or a transfer is in progress */
+            .video-frame:not(:has(video[data-live])):not(:has(.verification-progress.is-visible)) {
+                display: none;
+            }
+            .log:empty::before {
+                content: "Nothing logged yet. Activity appears here once you scan a wallet's QR code.";
+                color: rgba(248, 250, 252, 0.6);
+            }
+            @media (max-width: 640px) {
+                .topbar__actions .toolbar-btn {
+                    width: auto;
+                    background: var(--c-surface);
+                    color: var(--c-text);
+                }
+            }
+
+            /* Shared data, grouped by namespace (inset grouped list) */
+            .namespace-section {
+                margin-top: 1.1rem;
+            }
+            .namespace-title {
+                display: block;
+                background: none;
+                border: 0;
+                padding: 0 0.25rem 0.35rem;
+                margin: 0;
+                color: var(--c-text-tertiary);
+                font-size: 0.75rem;
+            }
+            .namespace-section > .data-item {
+                padding-left: 0.9rem;
+                padding-right: 0.9rem;
+                background: var(--c-surface-alt);
+            }
+            .namespace-section > .namespace-title + .data-item {
+                border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+            }
+            .namespace-section > .data-item:last-child {
+                border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+            }
+            .namespace-section > .namespace-title + .data-item:last-child {
+                border-radius: var(--radius-sm);
+            }
         </style>
 
         <!-- Structured Data (JSON-LD) for SEO -->
@@ -1262,7 +1566,7 @@
                     "Device Engagement Processing"
                 ],
                 "browserRequirements": "Requires HTTPS, Web Bluetooth API, Camera permission",
-                "screenshot": "/assets/icon-512.png",
+                "screenshot": "/assets/og-image.png",
                 "softwareVersion": "2.0",
                 "datePublished": "2025-01-01",
                 "dateModified": "2026-01-07",
@@ -1286,69 +1590,50 @@
     </head>
 
     <body>
-        <header class="page-header" role="banner">
-            <h1>ISO 18013-5 Web Proximity mDoc Reader</h1>
-            <p>
-                Scan an <strong>mDoc / mDL device engagement QR code</strong>,
-                connect over <strong>Web Bluetooth</strong>, and request
-                <strong>digital credentials</strong>. Verify mobile Driver's
-                Licenses compliant with <strong>ISO 18013-5 standard</strong>.
-                Data is processed locally in the browser. No data is sent to
-                external servers.
-            </p>
-        </header>
-
-        <div style="max-width: 960px; margin: 0 auto; padding: 0 1.25rem">
-            <!-- Compatibility Warning Banner -->
-            <div id="compatWarning" class="compat-warning">
-                <p><strong>⚠️ Browser Compatibility Issue</strong></p>
-                <p id="compatMessage"></p>
-                <aside
-                    class="browser-support"
-                    aria-labelledby="supportedBrowsersTitle"
-                >
-                    <strong id="supportedBrowsersTitle"
-                        >Supported browsers</strong
-                    >
-                    <nav class="browser-links" aria-label="Browser downloads">
-                        <a
-                            href="https://www.google.com/chrome/download-chrome/"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            aria-label="Download Chrome for desktop or Android"
-                            >Chrome (Desktop &amp; Android)</a
-                        >
-                        <a
-                            href="https://www.microsoft.com/edge/download"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            >Edge</a
-                        >
-                        <a
-                            href="https://brave.com/download/"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            >Brave</a
-                        >
-                        <a
-                            href="https://apps.apple.com/us/app/bluefy-web-ble-browser/id1492822055"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            aria-label="Download Bluefy for iOS from the App Store"
-                            >Bluefy (iOS)</a
-                        >
-                    </nav>
-                </aside>
+        <header class="topbar" role="banner">
+            <div class="topbar__brand">
+                <h1>ISO 18013-5 Web Proximity mDoc Reader</h1>
+                <p>
+                    Test an EUDI Wallet or any ISO 18013-5 wallet from your
+                    computer: scan its QR code, share a credential, and see what
+                    is verified. Everything stays in your browser.
+                </p>
             </div>
-        </div>
+            <nav class="topbar__actions" aria-label="Tools">
+                <button
+                    type="button"
+                    class="toolbar-btn"
+                    id="btnOpenLog"
+                    aria-controls="logPanel"
+                    aria-expanded="false"
+                >
+                    Session Log
+                </button>
+                <button
+                    type="button"
+                    class="toolbar-btn"
+                    id="btnOpenSettings"
+                    aria-controls="settingsPanel"
+                    aria-expanded="false"
+                >
+                    Settings
+                </button>
+                <a
+                    class="toolbar-btn"
+                    href="https://github.com/stelauconseil/mdoc-web-verifier"
+                    target="_blank"
+                    rel="noreferrer"
+                    >GitHub</a
+                >
+            </nav>
+        </header>
 
         <main>
             <section class="card" id="requestSection">
-                <h2>1. Request Digital Credentials</h2>
+                <h2>1. Choose Credentials</h2>
                 <p class="muted">
-                    Select one or more digital credential. You can request
-                    multiple digital credentials (e.g., PID + mDL) in a single
-                    session.
+                    Choose the credentials to request from the wallet. You can
+                    ask for several in one session, for example PID and mDL.
                 </p>
 
                 <div class="signer-section" style="margin-top: 20px; padding: 15px; background: var(--c-surface-alt); border-radius: 8px; border-left: 4px solid var(--c-accent);">
@@ -1800,8 +2085,8 @@
 }'
                         ></textarea>
                         <div class="row" style="margin-top: 0.65rem;">
-                            <button type="button" id="btnAddUserCredential">Add credential</button>
-                            <button type="button" id="btnCancelUserCredentialEdit" class="secondary" style="display: none;">Cancel editing</button>
+                            <button type="button" id="btnAddUserCredential">Add Credential</button>
+                            <button type="button" id="btnCancelUserCredentialEdit" class="secondary" style="display: none;">Cancel Editing</button>
                         </div>
                         <p id="userCredentialStatus" class="muted" role="status" aria-live="polite" style="min-height: 1.25rem; margin: 0.5rem 0;"></p>
                         <div id="userDefinedCredentialList"></div>
@@ -1810,10 +2095,50 @@
             </section>
 
             <section class="card" id="startVerificationSection">
-                <h2>2. Scan QR Code</h2>
+                <h2>2. Scan the Wallet’s QR Code</h2>
                 <p class="muted">
-                    Use your computer camera to capture the wallet's QR code or paste details manually.
+                    On your phone, open the wallet and show its QR code for in-person sharing, then scan it with this computer’s camera.
                 </p>
+                    <div id="compatWarning" class="compat-warning">
+                        <p><strong>This browser can't connect to a wallet</strong></p>
+                        <p id="compatMessage"></p>
+                        <aside
+                            class="browser-support"
+                            aria-labelledby="supportedBrowsersTitle"
+                        >
+                            <strong id="supportedBrowsersTitle"
+                                >Supported browsers</strong
+                            >
+                            <nav class="browser-links" aria-label="Browser downloads">
+                                <a
+                                    href="https://www.google.com/chrome/download-chrome/"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    aria-label="Download Chrome for desktop or Android"
+                                    >Chrome (Desktop &amp; Android)</a
+                                >
+                                <a
+                                    href="https://www.microsoft.com/edge/download"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    >Edge</a
+                                >
+                                <a
+                                    href="https://brave.com/download/"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    >Brave</a
+                                >
+                                <a
+                                    href="https://apps.apple.com/us/app/bluefy-web-ble-browser/id1492822055"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    aria-label="Download Bluefy for iOS from the App Store"
+                                    >Bluefy (iOS)</a
+                                >
+                            </nav>
+                        </aside>
+                    </div>
                 <div class="row">
                     <button id="btnScan">Scan QR Code</button>
                 </div>
@@ -1845,10 +2170,139 @@
             </section>
 
             <section class="card" id="responseSection" style="display: none">
-                <h2>3. Result</h2>
+                <h2>3. Results</h2>
                 <div id="responseDisplay"></div>
             </section>
 
+
+
+            <!-- Reader Authentication Configuration (collapsible) -->
+            <style>
+                /* Toggle switch */
+                .ra-switch {
+                    position: relative;
+                    display: inline-block;
+                    width: 40px;
+                    height: 22px;
+                }
+
+                .ra-switch input {
+                    opacity: 0;
+                    width: 0;
+                    height: 0;
+                }
+
+                .ra-slider {
+                    position: absolute;
+                    cursor: pointer;
+                    inset: 0;
+                    background: var(--c-border-strong);
+                    transition: background 0.25s ease, box-shadow 0.2s ease;
+                    border-radius: var(--radius-pill);
+                }
+
+                .ra-slider:before {
+                    position: absolute;
+                    content: "";
+                    height: 16px;
+                    width: 16px;
+                    left: 3px;
+                    top: 3px;
+                    background: #ffffff;
+                    transition: transform 0.25s var(--ease-spring);
+                    border-radius: 50%;
+                    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+                }
+
+                .ra-switch input:checked + .ra-slider {
+                    background: var(--c-green);
+                }
+
+                .ra-switch input:focus + .ra-slider {
+                    box-shadow: 0 0 0 3px var(--c-green-subtle);
+                }
+
+                .ra-switch input:checked + .ra-slider:before {
+                    transform: translateX(18px);
+                }
+            </style>
+
+
+        </main>
+
+        <dialog id="logPanel" class="side-panel" aria-labelledby="logPanelTitle">
+            <div class="side-panel__head">
+                <h2 id="logPanelTitle">Session Log</h2>
+                <button type="button" class="secondary side-panel__close" data-close-panel>
+                    Close
+                </button>
+            </div>
+            <div class="side-panel__body">
+            <section class="card" id="logsSection">
+                <div
+                    style="
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        gap: 8px;
+                    "
+                >
+                    <h2 style="margin: 0">
+                        <button
+                            type="button"
+                            class="details-heading"
+                            aria-controls="logsDetails"
+                            aria-expanded="false"
+                            onclick="toggleDetails('logsDetails')"
+                        >
+                            Activity Log
+                        </button>
+                    </h2>
+                    <button
+                        onclick="toggleDetails('logsDetails')"
+                        class="secondary mobile-details-toggle"
+                        aria-label="Show activity log details"
+                        title="Show activity log details"
+                        style="
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 6px;
+                            padding: 6px 10px;
+                        "
+                    >
+                        <span id="logsDetails-icon">▶</span>
+                        <span class="details-toggle-label">Details</span>
+                    </button>
+                </div>
+                <div
+                    id="logsDetails"
+                    style="display: none; margin-top: 0.75rem"
+                >
+                    <label
+                        style="
+                            display: flex;
+                            align-items: center;
+                            gap: 10px;
+                            cursor: pointer;
+                            user-select: none;
+                            margin-bottom: 0.75rem;
+                        "
+                    >
+                        <span class="muted">Verbose in console</span>
+                        <span class="ra-switch">
+                            <input type="checkbox" id="toggleDebugCert" />
+                            <span class="ra-slider"></span>
+                        </span>
+                    </label>
+                    <div
+                        class="log"
+                        id="log"
+                        role="log"
+                        aria-live="polite"
+                        aria-label="Session activity log"
+                    ></div>
+                </div>
+            </section>
             <section class="card" id="qrSection">
                 <div
                     style="
@@ -1866,7 +2320,7 @@
                             aria-expanded="false"
                             onclick="toggleDetails('qrDetails')"
                         >
-                            ℹ️ Device Engagement Information
+                            Device Engagement
                         </button>
                     </h2>
                     <button
@@ -1937,130 +2391,23 @@
                         ></textarea>
                         <div class="row" style="margin-top: 0">
                             <button id="btnParseQr" class="secondary">
-                                Use manual QR payload
+                                Use Manual QR Payload
                             </button>
                             <button id="btnClearQr">Clear</button>
                         </div>
                     </div>
                 </div>
             </section>
-
-            <section class="card" id="logsSection">
-                <div
-                    style="
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: center;
-                        gap: 8px;
-                    "
-                >
-                    <h2 style="margin: 0">
-                        <button
-                            type="button"
-                            class="details-heading"
-                            aria-controls="logsDetails"
-                            aria-expanded="false"
-                            onclick="toggleDetails('logsDetails')"
-                        >
-                            💻 Activity Log
-                        </button>
-                    </h2>
-                    <button
-                        onclick="toggleDetails('logsDetails')"
-                        class="secondary mobile-details-toggle"
-                        aria-label="Show activity log details"
-                        title="Show activity log details"
-                        style="
-                            display: inline-flex;
-                            align-items: center;
-                            gap: 6px;
-                            padding: 6px 10px;
-                        "
-                    >
-                        <span id="logsDetails-icon">▶</span>
-                        <span class="details-toggle-label">Details</span>
-                    </button>
-                </div>
-                <div
-                    id="logsDetails"
-                    style="display: none; margin-top: 0.75rem"
-                >
-                    <label
-                        style="
-                            display: flex;
-                            align-items: center;
-                            gap: 10px;
-                            cursor: pointer;
-                            user-select: none;
-                            margin-bottom: 0.75rem;
-                        "
-                    >
-                        <span class="muted">Verbose in console</span>
-                        <span class="ra-switch">
-                            <input type="checkbox" id="toggleDebugCert" />
-                            <span class="ra-slider"></span>
-                        </span>
-                    </label>
-                    <div
-                        class="log"
-                        id="log"
-                        role="log"
-                        aria-live="polite"
-                        aria-label="Session activity log"
-                    ></div>
-                </div>
-            </section>
-
-            <!-- Reader Authentication Configuration (collapsible) -->
-            <style>
-                /* Toggle switch */
-                .ra-switch {
-                    position: relative;
-                    display: inline-block;
-                    width: 40px;
-                    height: 22px;
-                }
-
-                .ra-switch input {
-                    opacity: 0;
-                    width: 0;
-                    height: 0;
-                }
-
-                .ra-slider {
-                    position: absolute;
-                    cursor: pointer;
-                    inset: 0;
-                    background: var(--c-border-strong);
-                    transition: background 0.25s ease, box-shadow 0.2s ease;
-                    border-radius: var(--radius-pill);
-                }
-
-                .ra-slider:before {
-                    position: absolute;
-                    content: "";
-                    height: 16px;
-                    width: 16px;
-                    left: 3px;
-                    top: 3px;
-                    background: #ffffff;
-                    transition: transform 0.25s var(--ease-spring);
-                    border-radius: 50%;
-                    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
-                }
-
-                .ra-switch input:checked + .ra-slider {
-                    background: var(--c-green);
-                }
-
-                .ra-switch input:focus + .ra-slider {
-                    box-shadow: 0 0 0 3px var(--c-green-subtle);
-                }
-
-                .ra-switch input:checked + .ra-slider:before {
-                    transform: translateX(18px);
-                }
-            </style>
+            </div>
+        </dialog>
+        <dialog id="settingsPanel" class="side-panel" aria-labelledby="settingsPanelTitle">
+            <div class="side-panel__head">
+                <h2 id="settingsPanelTitle">Settings</h2>
+                <button type="button" class="secondary side-panel__close" data-close-panel>
+                    Close
+                </button>
+            </div>
+            <div class="side-panel__body">
             <section class="card" id="readerAuthSection">
                 <div
                     style="
@@ -2078,7 +2425,7 @@
                             aria-expanded="false"
                             onclick="toggleDetails('readerAuthDetails')"
                         >
-                            🔐 Reader Authentication (Optional)
+                            Reader Authentication
                         </button>
                     </h2>
                     <div style="display: flex; align-items: center; gap: 10px">
@@ -2328,7 +2675,7 @@
                             "
                         >
                             <button id="btnSaveReaderCert">
-                                💾 Save reader settings
+                                Save Reader Settings
                             </button>
                             <button
                                 id="btnClearReaderCert"
@@ -2341,7 +2688,7 @@
                                     padding: 6px 10px;
                                 "
                             >
-                                🗑️ Remove saved key and certificates
+                                Remove Saved Key and Certificates
                             </button>
                         </div>
 
@@ -2360,7 +2707,6 @@
                     </div>
                 </div>
             </section>
-
             <section class="card" id="iacaSection">
                 <div
                     style="
@@ -2378,7 +2724,7 @@
                             aria-expanded="false"
                             onclick="toggleDetails('iacaDetails')"
                         >
-                            ⚙️ Issuer Certificate Management (IACA)
+                            Issuer Certificates (IACA)
                         </button>
                     </h2>
                     <div style="display: flex; align-items: center; gap: 10px">
@@ -2610,7 +2956,7 @@
                                     padding: 6px 10px;
                                 "
                             >
-                                ♻️ Reset to Defaults
+                                Reset to Defaults
                             </button>
                         </div>
                         <div
@@ -2624,7 +2970,6 @@
                     </div>
                 </div>
             </section>
-
             <section class="card" id="cscaSection">
                 <div
                     style="
@@ -2642,7 +2987,7 @@
                             aria-expanded="false"
                             onclick="toggleDetails('cscaDetails')"
                         >
-                            🛂 Passport Trust List (CSCA)
+                            Passport Trust List (CSCA)
                         </button>
                     </h2>
                     <div style="display: flex; align-items: center; gap: 10px">
@@ -2713,12 +3058,13 @@
                                 padding: 6px 10px;
                             "
                         >
-                            🗑️ Remove All
+                            Remove All
                         </button>
                     </div>
                 </div>
             </section>
-        </main>
+            </div>
+        </dialog>
         <footer>
             <a
                 href="https://www.stelau.com"
@@ -2792,11 +3138,11 @@
         <!-- Feature modules (globals) -->
         <script src="js/activity-log.js"></script>
         <script src="js/iaca-defaults.js"></script>
-        <script src="js/iaca-management.js?v=20261031-1"></script>
+        <script src="js/iaca-management.js?v=20261031-2"></script>
         <script src="js/reader-authentication.js?v=20261031-1"></script>
         <script src="js/device-engagement.js"></script>
         <script src="js/wallet-response.js"></script>
-        <script src="js/user-defined-credentials.js?v=20261031-1"></script>
+        <script src="js/user-defined-credentials.js?v=20261031-2"></script>
         <script src="js/request-builder.js?v=20261030-1"></script>
         <script src="js/ble-transport.js"></script>
         <script src="js/session-crypto.js"></script>
@@ -2867,6 +3213,41 @@
                 } catch {}
             }
             window.toggleDetails = toggleDetails;
+
+            // ==== Side panels ====
+            // Session Log stays non-modal so it can stay open during a test; Settings is modal.
+            function openPanel(id, modal) {
+                const panel = document.getElementById(id);
+                if (!panel || panel.open) return;
+                if (modal) panel.showModal();
+                else panel.show();
+                document
+                    .querySelectorAll(`[aria-controls="${id}"].toolbar-btn`)
+                    .forEach((b) => b.setAttribute("aria-expanded", "true"));
+            }
+            document.querySelectorAll("dialog.side-panel").forEach((panel) => {
+                panel.addEventListener("close", () =>
+                    document
+                        .querySelectorAll(`[aria-controls="${panel.id}"].toolbar-btn`)
+                        .forEach((b) => b.setAttribute("aria-expanded", "false")),
+                );
+                panel
+                    .querySelector("[data-close-panel]")
+                    ?.addEventListener("click", () => panel.close());
+                panel.addEventListener("keydown", (e) => {
+                    if (e.key === "Escape") panel.close();
+                });
+            });
+            document.getElementById("btnOpenLog")?.addEventListener("click", () => {
+                const panel = document.getElementById("logPanel");
+                if (panel.open) return panel.close();
+                openPanel("logPanel", false);
+                const log = document.getElementById("logsDetails");
+                if (log && log.style.display === "none") toggleDetails("logsDetails");
+            });
+            document
+                .getElementById("btnOpenSettings")
+                ?.addEventListener("click", () => openPanel("settingsPanel", true));
 
             // ==== Browser Compatibility Check ====
             function checkBrowserCompatibility() {
@@ -3591,6 +3972,78 @@
             };
 
             // New: Render the wallet response view-model into the page
+            // ==== Per-credential verdict ====
+            const DOC_TITLES = {
+                "eu.europa.ec.eudi.pid.1": "Person Identification Data (PID)",
+                "org.iso.18013.5.1.mDL": "Mobile Driving Licence (mDL)",
+                "eu.europa.ec.av.1": "Age Verification",
+                "eu.europa.ec.eudi.bida.1": "Basic Identification Data (BIDA)",
+                "org.iso.23220.photoid.1": "Photo ID",
+                "org.iso.7367.2.1.mVC": "Mobile Vehicle Registration (mVC)",
+                "org.micov.1": "Vaccination Certificate (mICOV)",
+                "fr.idak.mbicycle.1": "Bicycle ID",
+            };
+            const docTitle = (docType) => DOC_TITLES[docType] || docType;
+            const CHECK_SR = { ok: "Passed", warn: "Warning", fail: "Failed", pending: "Checking" };
+            const checkItem = (idx, key, label) =>
+                `<li id="chk-${key}-${idx}" data-state="pending"><span><span class="check-label">${label}</span><span class="sr-only" id="chk-${key}-${idx}-sr">: Checking</span><span class="check-note" id="chk-${key}-${idx}-note"></span></span></li>`;
+
+            function refreshDocVerdict(idx) {
+                const box = document.getElementById(`docVerdict-${idx}`);
+                if (!box) return;
+                const states = [...box.querySelectorAll(".checks li")].map((li) => li.dataset.state);
+                const state = states.includes("pending")
+                    ? "pending"
+                    : states.includes("fail")
+                      ? "fail"
+                      : states.includes("warn")
+                        ? "warn"
+                        : "ok";
+                box.dataset.state = state;
+                document.getElementById(`docVerdictTitle-${idx}`).textContent = {
+                    pending: "Verifying…",
+                    ok: "Credential verified",
+                    warn: "Verified, with warnings",
+                    fail: "Verification failed",
+                }[state];
+            }
+
+            function setDocCheck(idx, key, state, note = "") {
+                const li = document.getElementById(`chk-${key}-${idx}`);
+                if (!li) return;
+                li.dataset.state = state;
+                document.getElementById(`chk-${key}-${idx}-sr`).textContent = `: ${CHECK_SR[state]}`;
+                document.getElementById(`chk-${key}-${idx}-note`).textContent = note;
+                refreshDocVerdict(idx);
+            }
+
+            // res: Verification.verifyCredentialSignature() result, or null with an error
+            function applyVerificationChecks(idx, res, error) {
+                if (!res) {
+                    const note = `Verification error: ${error?.message || error}`;
+                    ["sig", "chain", "device", "integrity"].forEach((k) => setDocCheck(idx, k, "fail", note));
+                    return;
+                }
+                setDocCheck(idx, "sig", res.signatureValid === true ? "ok" : "fail",
+                    res.signatureValid === true ? "" : "The issuer signature doesn't match the signed data.");
+                setDocCheck(idx, "chain",
+                    res.chainValid === true ? "ok" : res.chainValid === false ? "fail" : "warn",
+                    res.chainValid === true ? ""
+                        : res.chainValid === false ? "The document signer doesn't chain to a trusted IACA."
+                        : "No matching IACA certificate in Settings.");
+                setDocCheck(idx, "device",
+                    res.mdocAuthValid === true ? "ok" : res.mdocAuthValid === false ? "fail" : "warn",
+                    res.mdocAuthValid === true ? ""
+                        : res.mdocAuthValid === false ? "The device signature is invalid: the credential may have been copied."
+                        : "The wallet didn't provide a device signature.");
+                const claims = res.claims;
+                setDocCheck(idx, "integrity",
+                    claims?.allMatched === true ? "ok" : claims?.allMatched === false ? "fail" : "warn",
+                    claims?.allMatched === true ? ""
+                        : claims?.allMatched === false ? `${claims.mismatched} of ${claims.checked} values don't match their signed digests.`
+                        : "Values weren't checked against their digests.");
+            }
+
             function renderResponseViewModel(model) {
                 try {
                     if (!responseDisplayEl) return;
@@ -3773,9 +4226,24 @@
                     documents.forEach((doc) => {
                         const docType = doc?.docType || "Unknown";
                         const order = getOrderForDocType(docType);
+                        const docIdx = documents.indexOf(doc);
+                        const hasIcao = !!window.IcaoPassiveAuth?.extractFromDocument(doc);
                         html += `
         <div class="document-card">
-          <div class="document-type">📄 ${esc(docType)}</div>
+          <div class="document-head">
+            <h3 class="document-title">${esc(docTitle(docType))}</h3>
+            <div class="document-type">${esc(docType)}</div>
+          </div>
+          <div class="doc-verdict" id="docVerdict-${docIdx}" data-state="pending" aria-live="polite">
+            <p class="doc-verdict__title" id="docVerdictTitle-${docIdx}">Verifying…</p>
+            <ul class="checks">
+              ${checkItem(docIdx, "sig", "Issuer signature")}
+              ${checkItem(docIdx, "chain", "Trust chain (IACA)")}
+              ${checkItem(docIdx, "device", "Device authentication")}
+              ${checkItem(docIdx, "integrity", "Data integrity")}
+              ${hasIcao ? checkItem(docIdx, "pa", "ICAO passive authentication") : ""}
+            </ul>
+          </div>
       `;
 
                         const nsObjRaw = doc?.issuerSigned?.nameSpaces;
@@ -3817,7 +4285,7 @@
                         nsEntries.forEach(([nsName, items]) => {
                             html += `
           <div class="namespace-section">
-            <div class="namespace-title">📦 ${esc(nsName)}</div>
+            <div class="namespace-title">${esc(nsName)}</div>
         `;
 
                             items = unwrapTaggedOrCbor(items);
@@ -4141,7 +4609,15 @@
                                         // If this is a long JSON-looking string, pretty-print it into a block
                                         let rendered = String(entry.text ?? "");
                                         let usedPre = false;
-                                        if (
+                                        let plainList = null;
+                                        try {
+                                            const parsed = rendered.trim().startsWith("[") ? JSON.parse(rendered) : null;
+                                            if (Array.isArray(parsed) && parsed.every((v) => v === null || typeof v !== "object"))
+                                                plainList = parsed.join(", ");
+                                        } catch {}
+                                        if (plainList !== null) {
+                                            rendered = plainList;
+                                        } else if (
                                             rendered.trim().startsWith("{") ||
                                             rendered.trim().startsWith("[")
                                         ) {
@@ -4538,16 +5014,7 @@
                             };
 
                             html += `
-                    <div class="data-item" style="margin-top: 12px;"><div class="data-label">Verification Status</div><div class="data-value" id="${overallStatusId}">—</div></div>
-                    ${
-                        window.IcaoPassiveAuth?.extractFromDocument(doc)
-                            ? `
-                    <div class="data-item"><div class="data-label" style="white-space: nowrap;">🛂 ICAO Passive Authentication</div><div class="data-value"></div></div>
-                    <div class="data-item"><div class="data-label">Data group integrity</div><div class="data-value" id="paIntegrity-${docIdxLocal}">… verifying</div></div>
-                    <div class="data-item"><div class="data-label">Document Signer (SOD)</div><div class="data-value" id="paDsc-${docIdxLocal}">… verifying</div></div>
-                    <div class="data-item"><div class="data-label">CSCA</div><div class="data-value" id="paCsca-${docIdxLocal}">… verifying</div></div>`
-                            : ""
-                    }
+                    <div id="${overallStatusId}" hidden></div>
           <div class="signer-section" style="margin-top: 20px; padding: 15px; background: var(--c-surface-alt); border-radius: 8px; border-left: 4px solid var(--c-accent);">
             <div style="display:flex; justify-content:space-between; align-items:center; gap: 8px;">
               <button
@@ -4557,39 +5024,27 @@
                 aria-expanded="false"
                 onclick="toggleDetails('${detailsId}')"
                 style="color: var(--c-accent);"
-              >🔐 Issuer Signature Information</button>
-              <button 
-                onclick="toggleDetails('${detailsId}')" 
-                style="
-                  background: var(--c-chip);
-                  color: var(--c-text);
-                  border: 1px solid var(--c-chip-border);
-                  padding: 4px 10px;
-                  border-radius: 6px;
-                  cursor: pointer;
-                  font-size: 0.85rem;
-                  font-weight: 600;
-                  display: inline-flex;
-                  align-items: center;
-                  gap: 6px;
-                "
-                onmouseover="this.style.background='var(--c-chip-hover)'"
-                onmouseout="this.style.background='var(--c-chip)'"
-              >
-                <span id="${detailsId}-icon">▶</span>
-                <span>Details</span>
-              </button>
+              >Technical Details</button>
             </div>
 
             <div id="${detailsId}" style="display:none; margin-top: 10px;">
-                            <div class="data-item"><div class="data-label" style="white-space: nowrap;">✍️ Verification Status</div><div class="data-value"></div></div>
+                            <div class="data-item"><div class="data-label" style="white-space: nowrap;">Issuer Signature</div><div class="data-value"></div></div>
                             <div class="data-item"><div class="data-label">Signature</div><div class="data-value" id="${sigStatusId}">… verifying</div></div>
                             <div class="data-item"><div class="data-label">Chain</div><div class="data-value" id="${chainStatusId}">… validating</div></div>
                             <div class="data-item"><div class="data-label">Status</div><div class="data-value" id="${revocationStatusId}">—</div></div>
-              <div class="data-item"><div class="data-label" style="white-space: nowrap;">📄 mDOC information</div><div class="data-value"></div></div>
+              ${
+                  window.IcaoPassiveAuth?.extractFromDocument(doc)
+                      ? `
+              <div class="data-item"><div class="data-label" style="white-space: nowrap;">ICAO Passive Authentication</div><div class="data-value"></div></div>
+              <div class="data-item"><div class="data-label">Data group integrity</div><div class="data-value" id="paIntegrity-${docIdxLocal}">… verifying</div></div>
+              <div class="data-item"><div class="data-label">Document Signer (SOD)</div><div class="data-value" id="paDsc-${docIdxLocal}">… verifying</div></div>
+              <div class="data-item"><div class="data-label">CSCA</div><div class="data-value" id="paCsca-${docIdxLocal}">… verifying</div></div>`
+                      : ""
+              }
+              <div class="data-item"><div class="data-label" style="white-space: nowrap;">mdoc</div><div class="data-value"></div></div>
               <div class="data-item"><div class="data-label">Doctype</div><div class="data-value">${esc(docType)}</div></div>
-              <div class="data-item"><div class="data-label">Namespace</div><div class="data-value">${esc(mdocNamespaces || "—")}</div></div>
-              <div class="data-item"><div class="data-label" style="white-space: nowrap;">📦 MSO (Mobile Security Object)</div><div class="data-value"></div></div>
+              <div class="data-item"><div class="data-label">Namespaces</div><div class="data-value">${esc(mdocNamespaces || "—")}</div></div>
+              <div class="data-item"><div class="data-label" style="white-space: nowrap;">MSO (Mobile Security Object)</div><div class="data-value"></div></div>
               ${
                   sig.mso
                       ? `
@@ -4623,9 +5078,9 @@
 
               <hr style="border: none; border-top: 1px solid var(--c-border); margin: 12px 0;" />
 
-              <div class="data-item"><div class="data-label">🧾 Document signer</div><div class="data-value" style="margin-left: auto; display: flex; justify-content: flex-end; width: 100%;">${
+              <div class="data-item"><div class="data-label">Document Signer</div><div class="data-value" style="margin-left: auto; display: flex; justify-content: flex-end; width: 100%;">${
                   sig.certificate?.pem
-                      ? `<button type="button" data-action="copy-cert-pem" data-target="${certPemViewId}" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: var(--c-green);">📋 Copy PEM</button><pre id="${certPemViewId}" style="display:none;">${esc(sig.certificate.pem)}</pre>`
+                      ? `<button type="button" data-action="copy-cert-pem" data-target="${certPemViewId}" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: var(--c-green);">Copy PEM</button><pre id="${certPemViewId}" style="display:none;">${esc(sig.certificate.pem)}</pre>`
                       : ""
               }</div></div>
               <div class="data-item"><div class="data-label">Signature Algorithm</div><div class="data-value">${esc(sig.algorithm || "—")}${curveLabel}</div></div>
@@ -4887,6 +5342,22 @@
                             groups,
                             window.IcaoPassiveAuth.trustStore.list(),
                         );
+                        setDocCheck(
+                            idx,
+                            "pa",
+                            r.integrity !== "ok" || r.documentSigner !== "ok" || r.csca === "fail"
+                                ? "fail"
+                                : r.csca === "unknown"
+                                  ? "warn"
+                                  : "ok",
+                            r.integrity !== "ok"
+                                ? "The data groups don't match the passport's security object (SOD)."
+                                : r.documentSigner !== "ok"
+                                  ? r.error || "The SOD signature is invalid."
+                                  : r.csca === "unknown"
+                                    ? `The issuing state's CSCA${r.dsc?.country ? ` (${r.dsc.country})` : ""} isn't in the passport trust list.`
+                                    : "",
+                        );
                         const dgs = r.dataGroups
                             .map((d) => `DG${d.number} ${d.ok ? "✔" : "✗"}`)
                             .join(" · ");
@@ -4921,7 +5392,8 @@
                         documents.forEach(async (doc, idx) => {
                             try {
                                 const sig = doc?.signature;
-                                if (!sig || !sig.coseSign1) return;
+                                if (!sig || !sig.coseSign1)
+                                    return applyVerificationChecks(idx, null, "the credential has no issuer signature");
                                 const sigEl = document.getElementById(
                                     `sigStatus-${idx}`,
                                 );
@@ -4940,6 +5412,7 @@
                                         : await window.verifyCOSESign1SignatureWithChain(
                                               sig.coseSign1,
                                           );
+                                applyVerificationChecks(idx, res);
                                 const claimsOk = res.claims
                                     ? res.claims.allMatched !== false
                                     : true;
@@ -5515,6 +5988,7 @@
                                     statusEl.style.color = "var(--c-text)";
                                 }
                                 updateIssuerOverallStatus(idx, false, false);
+                                applyVerificationChecks(idx, null, e);
                             }
                         });
                     }
@@ -7171,6 +7645,7 @@
                         console.log("Camera track stopped:", track.kind);
                     });
                     video.srcObject = null;
+                    delete video.dataset.live;
                     log("📹 Camera stopped");
                 }
             }
@@ -7212,6 +7687,7 @@
                     video: { facingMode: "environment" },
                 });
                 video.srcObject = stream;
+                video.dataset.live = "";
                 await video.play();
                 canvas.width = video.videoWidth || 1280;
                 canvas.height = video.videoHeight || 720;
@@ -7276,10 +7752,10 @@
                 if (btnScan.dataset.mode === "connect") {
                     btnScan.classList.remove("wallet-found");
                     btnScan.disabled = true;
-                    btnScan.textContent = "Connecting...";
+                    btnScan.textContent = "Connecting…";
                     try {
                         await autoConnectFlow();
-                        btnScan.textContent = "✅ Connected";
+                        btnScan.textContent = "Connected";
                         btnScan.disabled = true;
                         btnScan.dataset.mode = "connected";
                     } catch (error) {
@@ -7287,7 +7763,7 @@
                         disconnectBLE();
                         btnScan.disabled = false;
                         btnScan.textContent =
-                            "🚀 Connect & Request Digital Credentials";
+                            "Connect to Wallet";
                         btnScan.dataset.mode = "connect";
                         btnScan.classList.add("wallet-found");
                         setCredentialWarning(`Connection failed: ${error.message}`);
@@ -7345,7 +7821,7 @@
                         btnScan.classList.add("wallet-found");
                         btnScan.disabled = false;
                         btnScan.textContent =
-                            "🚀 Wallet found, click to continue";
+                            "Connect to Wallet";
                         btnScan.focus();
                         btnScan.scrollIntoView({
                             behavior: "smooth",

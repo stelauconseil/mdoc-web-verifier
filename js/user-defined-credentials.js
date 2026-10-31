@@ -337,7 +337,7 @@ ${namespaceBlocks.join(",\n")}
         renderList();
         const leaveEditMode = () => {
             editingId = null;
-            addButton.textContent = "Add credential";
+            addButton.textContent = "Add Credential";
             if (cancelButton) cancelButton.style.display = "none";
         };
         addButton.addEventListener("click", () => {
@@ -371,7 +371,7 @@ ${namespaceBlocks.join(",\n")}
                 if (!definition) return;
                 editingId = definition.id;
                 input.value = formatCddl(definition);
-                addButton.textContent = "Save changes";
+                addButton.textContent = "Save Changes";
                 if (cancelButton) cancelButton.style.display = "inline-flex";
                 input.focus();
                 input.scrollIntoView({ behavior: "smooth", block: "center" });

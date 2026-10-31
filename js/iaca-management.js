@@ -1034,10 +1034,10 @@
                 </div>
                 <div style="margin-top: 0.75rem;">
                   <button onclick="viewIACAPEM(${index})" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: var(--c-accent, #0284c7);">
-                    📄 View PEM
+                    View PEM
                   </button>
                   <button onclick="copyIACAPEM(${index})" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: var(--c-green, #059669);">
-                    📋 Copy PEM
+                    Copy PEM
                   </button>
                 </div>
               </div>
@@ -1170,7 +1170,7 @@
             window.escapeHtml ? window.escapeHtml(iaca.pem) : iaca.pem
         }</pre>
         <div style="margin-top: 1rem;">
-          <button onclick="copyIACAPEM(${index}); this.textContent='✅ Copied!'; setTimeout(() => this.textContent='📋 Copy to Clipboard', 2000);" style="background: var(--c-green, #059669); padding: 0.5rem 1rem; border-radius: 6px; border: none; color: white; cursor: pointer;">📋 Copy to Clipboard</button>
+          <button onclick="copyIACAPEM(${index}); this.textContent='Copied'; setTimeout(() => this.textContent='Copy to Clipboard', 2000);" style="background: var(--c-green, #059669); padding: 0.5rem 1rem; border-radius: 6px; border: none; color: white; cursor: pointer;">Copy to Clipboard</button>
         </div>
       `;
             modal.appendChild(content);
