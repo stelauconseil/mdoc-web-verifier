@@ -206,7 +206,7 @@ This verifier implements comprehensive security controls per ISO 18013-5:
 - **Value digests integrity checks** – Validates SHA-256 digests with tag(24) encoding for all data elements per ISO 18013-5 specification
 - **DeviceAuth verification** – Confirms holder authentication using device signatures and session transcript matching
 - **SessionTranscript validation** – Ensures session context integrity between reader and wallet
-- **ICAO passive authentication** – For Photo ID / DTC documents carrying ICAO data groups (`org.iso.23220.datagroups.1`): DG hashes against EF.SOD, SOD signature by the Document Signer, Document Signer signature by a trusted CSCA (RSA, RSA-PSS, ECDSA incl. Brainpool and explicit curve parameters). Self-check: `node test/icao-passive-auth.test.js`
+- **ICAO passive authentication** – For Photo ID / DTC documents carrying ICAO data groups (`org.iso.23220.datagroups.1`): DG hashes against EF.SOD, SOD signature by the Document Signer, Document Signer signature by a trusted CSCA (RSA incl. SHA-224, RSA-PSS, ECDSA on P-256/384/521 and brainpoolP256/320/384/512r1, or any curve given by explicit parameters). Self-check: `node test/icao-passive-auth.test.js`
 
 ### Privacy & Data Handling
 

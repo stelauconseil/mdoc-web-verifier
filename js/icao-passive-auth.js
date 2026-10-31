@@ -129,6 +129,7 @@
         "1.2.840.113549.1.1.11": ["rsa", "SHA-256"],
         "1.2.840.113549.1.1.12": ["rsa", "SHA-384"],
         "1.2.840.113549.1.1.13": ["rsa", "SHA-512"],
+        "1.2.840.113549.1.1.14": ["rsa", "SHA-224"],
         "1.2.840.113549.1.1.10": ["pss", null],
     };
     const NAMED_CURVES = {
@@ -139,17 +140,109 @@
         "1.3.36.3.3.2.8.1.1.11": "brainpoolP384r1",
         "1.3.36.3.3.2.8.1.1.13": "brainpoolP512r1",
     };
+    // Curves missing from noble-curves, as [p, a, b, Gx, Gy, n] (RFC 5639)
+    const EXTRA_CURVES = {
+        "1.3.36.3.3.2.8.1.1.9": [
+            "d35e472036bc4fb7e13c785ed201e065f98fcfa6f6f40def4f92b9ec7893ec28fcd412b1f1b32e27",
+            "3ee30b568fbab0f883ccebd46d3f3bb8a2a73513f5eb79da66190eb085ffa9f492f375a97d860eb4",
+            "520883949dfdbc42d3ad198640688a6fe13f41349554b49acc31dccd884539816f5eb4ac8fb1f1a6",
+            "43bd7e9afb53d8b85289bcc48ee5bfe6f20137d10a087eb6e7871e2a10a599c710af8d0d39e20611",
+            "14fdd05545ec1cc8ab4093247f77275e0743ffed117182eaa9c77877aaac6ac7d35245d1692e8ee1",
+            "d35e472036bc4fb7e13c785ed201e065f98fcfa5b68f12a32d482ec7ee8658e98691555b44c59311",
+        ].map((h) => BigInt("0x" + h)), // brainpoolP320r1
+    };
     const RSA_SPKI_ALG = Uint8Array.from([0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00]);
 
     function ecCurve(paramsNode) {
-        if (paramsNode.tag === 0x06) return curves()[NAMED_CURVES[oid(paramsNode)]];
+        if (paramsNode.tag === 0x06) {
+            const params = EXTRA_CURVES[oid(paramsNode)];
+            return curves()[NAMED_CURVES[oid(paramsNode)]] ?? (params && genericCurve(...params));
+        }
         // Explicit domain parameters (common in passport PKI): match on the prime and generator
-        const [, fieldId, , base] = kids(paramsNode);
+        const [, fieldId, curve, base, order] = kids(paramsNode);
         const p = big(kids(fieldId)[1].body);
-        const gx = big(base.body.subarray(1, 1 + (base.body.length - 1) / 2));
-        return Object.values(NAMED_CURVES)
-            .map((n) => curves()[n])
-            .find((c) => c.Point.CURVE().p === p && c.Point.CURVE().Gx === gx);
+        const [a, b] = kids(curve).map((n) => big(n.body));
+        const G = decodePoint(base.body, p, a, b);
+        if (!G) return undefined;
+        return (
+            Object.values(NAMED_CURVES)
+                .map((n) => curves()[n])
+                .find((c) => c.Point.CURVE().p === p && c.Point.CURVE().Gx === G[0]) ??
+            genericCurve(p, a, b, G[0], G[1], big(order.body))
+        );
+    }
+
+    // ── Generic ECDSA verification (curves noble-curves doesn't ship) ──
+    // Verification only handles public data, so plain BigInt (not constant time) is fine.
+    const mod = (x, m) => ((x % m) + m) % m;
+    function modPow(b, e, m) {
+        let r = 1n;
+        for (b = mod(b, m); e > 0n; e >>= 1n, b = (b * b) % m) if (e & 1n) r = (r * b) % m;
+        return r;
+    }
+    function modInv(x, m) {
+        let [a, b, u, v] = [mod(x, m), m, 1n, 0n];
+        while (a) [a, b, u, v] = [b % a, a, v - (b / a) * u, u];
+        return mod(v, m);
+    }
+    // SEC1 point (uncompressed, or compressed when p ≡ 3 mod 4) → [x, y], checked to be on the curve
+    function decodePoint(u8, p, a, b) {
+        const n = (u8.length - 1) / (u8[0] === 4 ? 2 : 1);
+        const x = big(u8.subarray(1, 1 + n));
+        const rhs = mod(x * x * x + a * x + b, p);
+        let y;
+        if (u8[0] === 4) y = big(u8.subarray(1 + n));
+        else if ((u8[0] === 2 || u8[0] === 3) && p % 4n === 3n) {
+            y = modPow(rhs, (p + 1n) / 4n, p);
+            if ((y & 1n) !== BigInt(u8[0] & 1)) y = p - y;
+        } else return null;
+        return mod(y * y, p) === rhs ? [x, y] : null;
+    }
+    function genericCurve(p, a, b, gx, gy, n) {
+        const add = (P, Q) => {
+            if (!P) return Q;
+            if (!Q) return P;
+            if (P[0] === Q[0] && mod(P[1] + Q[1], p) === 0n) return null;
+            const l = P[0] === Q[0] ? mod((3n * P[0] * P[0] + a) * modInv(2n * P[1], p), p) : mod((Q[1] - P[1]) * modInv(Q[0] - P[0], p), p);
+            const x = mod(l * l - P[0] - Q[0], p);
+            return [x, mod(l * (P[0] - x) - P[1], p)];
+        };
+        const mul = (k, P) => {
+            let R = null;
+            for (; k > 0n; k >>= 1n, P = add(P, P)) if (k & 1n) R = add(R, P);
+            return R;
+        };
+        return {
+            verify(signature, hash, pubKey, { format }) {
+                let r, s;
+                if (format === "compact") {
+                    const h = signature.length / 2;
+                    [r, s] = [big(signature.subarray(0, h)), big(signature.subarray(h))];
+                } else [r, s] = kids(tlv(signature)).map((i) => big(i.body));
+                const Q = decodePoint(pubKey, p, a, b);
+                if (!Q || r <= 0n || r >= n || s <= 0n || s >= n) return false;
+                // Leftmost bits of the hash, as many as the order has
+                let z = big(hash);
+                const excess = hash.length * 8 - n.toString(2).length;
+                if (excess > 0) z >>= BigInt(excess);
+                const w = modInv(s, n);
+                const X = add(mul(mod(z * w, n), [gx, gy]), mul(mod(r * w, n), Q));
+                return !!X && mod(X[0], n) === r;
+            },
+        };
+    }
+
+    // RSASSA-PKCS1-v1_5 by hand, for SHA-224 (WebCrypto has no SHA-224)
+    const SHA224_DIGEST_INFO = Uint8Array.from([0x30, 0x2d, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x04, 0x05, 0x00, 0x04, 0x1c]);
+    async function verifyRsaSha224(keyBits, data, signature) {
+        const [nNode, eNode] = kids(tlv(keyBits.body.subarray(1)));
+        const n = big(nNode.body);
+        const k = (n.toString(16).length + 1) >> 1;
+        const s = big(signature);
+        if (signature.length !== k || s >= n) return false;
+        const em = modPow(s, big(eNode.body), n).toString(16).padStart(k * 2, "0");
+        const t = hex(concat(SHA224_DIGEST_INFO, await digest("SHA-224", data)));
+        return em === "0001" + "f".repeat(k * 2 - t.length - 6) + "00" + t;
     }
 
     // spki: SubjectPublicKeyInfo node; sigAlg: AlgorithmIdentifier node
@@ -167,6 +260,7 @@
                 const opts = { prehash: false, lowS: false, format: encoding };
                 return curve.verify(signature, await digest(hash, data), keyBits.body.subarray(1), opts);
             }
+            if (type === "rsa" && hash === "SHA-224") return await verifyRsaSha224(keyBits, data, signature);
             let algorithm = { name: "RSASSA-PKCS1-v1_5" };
             if (type === "pss") {
                 // RSASSA-PSS-params: [0] hash, [1] MGF, [2] salt length (defaults SHA-1, 20)

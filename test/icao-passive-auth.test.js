@@ -35,14 +35,14 @@ const lds = (hash) =>
     der(0x30, ...[[1, dg1], [2, dg2]].map(([n, v]) => der(0x30, int(n), der(0x04, crypto.createHash(hash).update(v).digest())))),
   );
 
-function pki(name, keyArgs, { hash = "sha256", signOpts = [] } = {}) {
+function pki(name, keyArgs, { hash = "sha256", md = "sha256", signOpts = [] } = {}) {
   fs.writeFileSync(f(`${name}-lds.der`), lds(hash));
   ssl("genpkey", ...keyArgs, "-out", f(`${name}-csca.key`));
-  ssl("req", "-x509", "-new", "-key", f(`${name}-csca.key`), "-subj", "/C=FR/O=Test/CN=CSCA", "-days", "30", "-out", f(`${name}-csca.pem`));
+  ssl("req", "-x509", "-new", "-key", f(`${name}-csca.key`), `-${md}`, "-subj", "/C=FR/O=Test/CN=CSCA", "-days", "30", "-out", f(`${name}-csca.pem`));
   ssl("genpkey", ...keyArgs, "-out", f(`${name}-dsc.key`));
   ssl("req", "-new", "-key", f(`${name}-dsc.key`), "-subj", "/C=FR/O=Test/CN=DSC", "-out", f(`${name}-dsc.csr`));
-  ssl("x509", "-req", "-in", f(`${name}-dsc.csr`), "-CA", f(`${name}-csca.pem`), "-CAkey", f(`${name}-csca.key`), "-days", "30", "-out", f(`${name}-dsc.pem`));
-  ssl("cms", "-sign", "-binary", "-nodetach", "-nosmimecap", "-md", "sha256", "-econtent_type", "2.23.136.1.1.1", "-in", f(`${name}-lds.der`), "-signer", f(`${name}-dsc.pem`), "-inkey", f(`${name}-dsc.key`), "-outform", "DER", "-out", f(`${name}.sod`), ...signOpts);
+  ssl("x509", "-req", "-in", f(`${name}-dsc.csr`), "-CA", f(`${name}-csca.pem`), "-CAkey", f(`${name}-csca.key`), `-${md}`, "-days", "30", "-out", f(`${name}-dsc.pem`));
+  ssl("cms", "-sign", "-binary", "-nodetach", "-nosmimecap", "-md", md, "-econtent_type", "2.23.136.1.1.1", "-in", f(`${name}-lds.der`), "-signer", f(`${name}-dsc.pem`), "-inkey", f(`${name}-dsc.key`), "-outform", "DER", "-out", f(`${name}.sod`), ...signOpts);
   return {
     sod: der(0x77, fs.readFileSync(f(`${name}.sod`))),
     cscas: icao.readTrustFile(fs.readFileSync(f(`${name}-csca.pem`))),
@@ -53,7 +53,10 @@ const rsa = ["-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048"];
 const cases = {
   brainpool_explicit: [["-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:brainpoolP256r1", "-pkeyopt", "ec_param_enc:explicit"]],
   p384_sha224_dgs: [["-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-384"], { hash: "sha224" }],
+  brainpool_p320: [["-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:brainpoolP320r1"]],
+  brainpool_p320_explicit: [["-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:brainpoolP320r1", "-pkeyopt", "ec_param_enc:explicit"], { md: "sha224" }],
   rsa: [rsa],
+  rsa_sha224: [rsa, { hash: "sha224", md: "sha224" }],
   rsa_pss: [rsa, { signOpts: ["-keyopt", "rsa_padding_mode:pss"] }],
 };
 
