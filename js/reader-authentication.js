@@ -193,19 +193,61 @@
         return blocks;
     }
 
+    // DER length prefix for a body of n bytes
+    function derLen(n) {
+        if (n < 0x80) return [n];
+        if (n < 0x100) return [0x81, n];
+        return [0x82, n >> 8, n & 0xff];
+    }
+
+    // WebCrypto only imports PKCS#8: wrap a SEC1 "EC PRIVATE KEY" (as written by
+    // `openssl ecparam -genkey`) in a PrivateKeyInfo for the given curve.
+    const CURVE_OIDS = {
+        "P-256": [0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07],
+        "P-384": [0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x22],
+        "P-521": [0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x23],
+    };
+    function sec1ToPkcs8(sec1, namedCurve) {
+        const curveOid = CURVE_OIDS[namedCurve];
+        if (!curveOid) throw new Error(`Unsupported curve ${namedCurve}`);
+        const ecPublicKey = [0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01];
+        const alg = [0x30, ...derLen(ecPublicKey.length + curveOid.length), ...ecPublicKey, ...curveOid];
+        const key = [0x04, ...derLen(sec1.length), ...sec1];
+        const body = [0x02, 0x01, 0x00, ...alg, ...key];
+        return new Uint8Array([0x30, ...derLen(body.length), ...body]);
+    }
+
     async function importPkcs8EcPrivateKey(pem, namedCurve) {
         const blocks = parsePemBlocks(pem);
-        const pkcs8 = blocks.find((b) => b.type.includes("PRIVATE KEY"));
-        if (!pkcs8) throw new Error("No PKCS#8 private key found");
+        const block =
+            blocks.find((b) => b.type === "PRIVATE KEY") ||
+            blocks.find((b) => b.type === "EC PRIVATE KEY");
+        if (!block) {
+            throw new Error(
+                blocks.some((b) => b.type === "ENCRYPTED PRIVATE KEY")
+                    ? "The private key is encrypted. Export it without a password (openssl pkcs8 -topk8 -nocrypt)."
+                    : "No private key found. Paste a PEM block starting with -----BEGIN PRIVATE KEY-----.",
+            );
+        }
         if (!namedCurve)
             throw new Error("namedCurve required (P-256 or P-384)");
-        return await crypto.subtle.importKey(
-            "pkcs8",
-            pkcs8.bytes,
-            { name: "ECDSA", namedCurve },
-            false,
-            ["sign"],
-        );
+        const pkcs8 =
+            block.type === "EC PRIVATE KEY"
+                ? sec1ToPkcs8(block.bytes, namedCurve)
+                : block.bytes;
+        try {
+            return await crypto.subtle.importKey(
+                "pkcs8",
+                pkcs8,
+                { name: "ECDSA", namedCurve },
+                false,
+                ["sign"],
+            );
+        } catch (e) {
+            throw new Error(
+                `The private key can't be used as a ${namedCurve} ECDSA key: check that it matches the reader access certificate.`,
+            );
+        }
     }
 
     // Try importing the key by auto-detecting the curve (P-256 or P-384)
@@ -460,6 +502,17 @@
     function setKeyPem(pem) {
         saveKeyPem(pem || "");
     }
+    // Checks the key against the certificate's curve before saving, so a bad
+    // key fails here rather than in the middle of a wallet session.
+    async function validateKeyPem(keyPem, certPem) {
+        const curveHint = detectCurveFromCertPem(certPem);
+        if (curveHint) {
+            const { namedCurve } = webcryptoParamsForAlg(coseAlgForCurve(curveHint));
+            await importPkcs8EcPrivateKey(keyPem, namedCurve);
+            return namedCurve;
+        }
+        return (await importPkcs8EcPrivateKeyAuto(keyPem)).namedCurve;
+    }
     function setCertsPem(pem) {
         saveChainPem(pem || "");
     }
@@ -482,6 +535,7 @@
         isEnabled,
         setEnabled,
         setKeyPem,
+        validateKeyPem,
         setCertsPem,
         setOrgName,
         getConfig,

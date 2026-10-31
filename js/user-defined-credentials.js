@@ -322,7 +322,7 @@ ${namespaceBlocks.join(",\n")}
         const status = document.getElementById("userCredentialStatus");
         if (!status) return;
         status.textContent = message || "";
-        status.style.color = isError ? "#b91c1c" : "#15803d";
+        status.style.color = isError ? "var(--c-danger-text, #b91c1c)" : "var(--c-success-text, #15803d)";
     }
 
     function initializeUi() {

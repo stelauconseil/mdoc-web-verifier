@@ -928,11 +928,11 @@
                 index < window.DEFAULT_IACA_CERTIFICATES.length;
             const isActive = iaca.active !== false;
             const isTest = iaca.test === true;
-            const statusColor = isActive ? "#059669" : "#94a3b8";
+            const statusColor = isActive ? "var(--c-success-text, #047857)" : "var(--c-text-tertiary, #94a3b8)";
             const statusText = isActive ? "● Active" : "○ Inactive";
             const bgOpacity = isActive ? "1" : "0.6";
             const testBadge = isTest
-                ? '<div style="font-size: 0.8rem; color: #f59e0b; margin-top: 0.25rem; font-weight: 500;">⚠️ Test/Development Certificate</div>'
+                ? '<div style="font-size: 0.8rem; color: var(--c-warning-text, #b45309); margin-top: 0.25rem; font-weight: 500;">⚠️ Test/Development Certificate</div>'
                 : "";
 
             let certDetails = "";
@@ -994,16 +994,16 @@
                         }
                     } catch {}
                     const defaultBadge = isDefault
-                        ? '<div style="font-size: 0.8rem; color: #059669; margin: 0.25rem 0 0.5rem;">✓ Default certificate</div>'
+                        ? '<div style="font-size: 0.8rem; color: var(--c-success-text, #047857); margin: 0.25rem 0 0.5rem;">✓ Default certificate</div>'
                         : "";
 
                     certDetails = `
             <div id="iaca-details-${index}" style="display: none; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid rgba(148,163,184,0.25);">
-              <div style="font-size: 0.85rem; color: #475569;">
+              <div style="font-size: 0.85rem; color: var(--c-text-secondary, #475569);">
                 ${defaultBadge}
                 <div style="margin-bottom: 0.5rem;">
                   <strong>Subject:</strong>
-                  <div style="color: #1e293b; font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.8rem; margin-top: 0.25rem; word-break: break-all; line-height: 1.4;">${
+                  <div style="color: var(--c-text, #1e293b); font-family: var(--font-mono, ui-monospace, monospace); font-size: 0.8rem; margin-top: 0.25rem; word-break: break-all; line-height: 1.4;">${
                       window.escapeHtml
                           ? window.escapeHtml(subjectDisplay)
                           : subjectDisplay
@@ -1011,32 +1011,32 @@
                 </div>
                 ${
                     cryptoLabel
-                        ? `<div style="margin-bottom: 0.5rem;"><strong>Crypto:</strong> <span style="color: #1e293b;">${cryptoLabel}</span></div>`
+                        ? `<div style="margin-bottom: 0.5rem;"><strong>Crypto:</strong> <span style="color: var(--c-text, #1e293b);">${cryptoLabel}</span></div>`
                         : ""
                 }
                 ${
                     validity.notBeforeDisplay
                         ? `<div style="margin-bottom: 0.5rem;">
-                                <strong>Valid From:</strong> <span style="color: #1e293b;">📅 ${validity.notBeforeDisplay}</span>
+                                <strong>Valid From:</strong> <span style="color: var(--c-text, #1e293b);">📅 ${validity.notBeforeDisplay}</span>
                 </div>`
                         : ""
                 }
                 ${
                     validity.notAfterDisplay
                         ? `<div style="margin-bottom: 0.5rem;">
-                                <strong>Valid Until:</strong> <span style="color: #1e293b;">📅 ${validity.notAfterDisplay}</span>
+                                <strong>Valid Until:</strong> <span style="color: var(--c-text, #1e293b);">📅 ${validity.notAfterDisplay}</span>
                 </div>`
                         : ""
                 }
                 <div style="margin-bottom: 0.5rem;">
                   <strong>SHA-256 Fingerprint:</strong> 
-                  <div style="font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.75rem; color: #1e293b; margin-top: 0.25rem; word-break: break-all;">${hexThumbprint}</div>
+                  <div style="font-family: var(--font-mono, ui-monospace, monospace); font-size: 0.75rem; color: var(--c-text, #1e293b); margin-top: 0.25rem; word-break: break-all;">${hexThumbprint}</div>
                 </div>
                 <div style="margin-top: 0.75rem;">
-                  <button onclick="viewIACAPEM(${index})" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: #0ea5e9;">
+                  <button onclick="viewIACAPEM(${index})" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: var(--c-accent, #0284c7);">
                     📄 View PEM
                   </button>
-                  <button onclick="copyIACAPEM(${index})" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: #059669;">
+                  <button onclick="copyIACAPEM(${index})" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: var(--c-green, #059669);">
                     📋 Copy PEM
                   </button>
                 </div>
@@ -1049,16 +1049,16 @@
             }
 
             html += `
-        <div style="background: #f8fafc; border: 1px solid rgba(148,163,184,0.25); border-radius: 8px; padding: 0.75rem; opacity: ${bgOpacity};">
+        <div style="background: var(--c-surface-alt, #f8fafc); border: 1px solid var(--c-border, rgba(148,163,184,0.25)); border-radius: 8px; padding: 0.75rem; opacity: ${bgOpacity};">
           <div style="display: flex; justify-content: space-between; align-items: start;">
             <div style="flex: 1;">
               <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <div style="font-weight: 600; color: #0f172a;">${
+                <div style="font-weight: 600; color: var(--c-text, #0f172a);">${
                     window.escapeHtml ? window.escapeHtml(iaca.name) : iaca.name
                 }</div>
                 <div style="font-size: 0.8rem; color: ${statusColor}; font-weight: 500;">${statusText}</div>
               </div>
-              <div style="font-size: 0.85rem; color: #64748b; margin-top: 0.25rem;">${
+              <div style="font-size: 0.85rem; color: var(--c-text-secondary, #64748b); margin-top: 0.25rem;">${
                   window.escapeHtml
                       ? window.escapeHtml(iaca.issuer)
                       : iaca.issuer
@@ -1068,19 +1068,19 @@
             <div style="display: flex; gap: 0.5rem; align-items: center;">
               ${
                   certDetails
-                      ? `<button onclick="toggleIACADetails(${index})" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: #64748b; display: inline-flex; align-items: center; gap: 0.35rem;">
+                      ? `<button onclick="toggleIACADetails(${index})" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: var(--c-button-neutral, #64748b); display: inline-flex; align-items: center; gap: 0.35rem;">
                 <span id="iaca-details-icon-${index}">▶</span> Details
               </button>`
                       : ""
               }
               <button onclick="toggleIACACert(${index})" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: ${
-                  isActive ? "#64748b" : "#059669"
+                  isActive ? "var(--c-button-neutral, #64748b)" : "var(--c-green, #059669)"
               };">
                 ${isActive ? "Deactivate" : "Activate"}
               </button>
               ${
                   !isDefault
-                      ? `<button onclick="removeIACACert(${index})" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: #dc2626;">Remove</button>`
+                      ? `<button onclick="removeIACACert(${index})" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background: var(--c-red, #dc2626);">Remove</button>`
                       : ""
               }
             </div>
@@ -1161,16 +1161,16 @@
                 "background: white; border-radius: 12px; padding: 1.5rem; max-width: 800px; max-height: 80vh; overflow: auto; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3);";
             content.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-          <h3 style="margin: 0; color: #0f172a;">${
+          <h3 style="margin: 0; color: var(--c-text, #0f172a);">${
               window.escapeHtml ? window.escapeHtml(iaca.name) : iaca.name
           }</h3>
-          <button onclick="this.closest('div').parentElement.parentElement.remove()" style="background: #dc2626; padding: 0.5rem 1rem; border-radius: 6px; border: none; color: white; cursor: pointer;">Close</button>
+          <button onclick="this.closest('div').parentElement.parentElement.remove()" style="background: var(--c-red, #dc2626); padding: 0.5rem 1rem; border-radius: 6px; border: none; color: white; cursor: pointer;">Close</button>
         </div>
-        <pre style="background: #f8fafc; padding: 1rem; border-radius: 8px; overflow-x: auto; font-family: 'SFMono-Regular','JetBrains Mono',ui-monospace,monospace; font-size: 0.85rem; color: #1e293b; white-space: pre-wrap; word-break: break-all;">${
+        <pre style="background: var(--c-surface-alt, #f8fafc); padding: 1rem; border-radius: 8px; overflow-x: auto; font-family: var(--font-mono, ui-monospace, monospace); font-size: 0.85rem; color: var(--c-text, #1e293b); white-space: pre-wrap; word-break: break-all;">${
             window.escapeHtml ? window.escapeHtml(iaca.pem) : iaca.pem
         }</pre>
         <div style="margin-top: 1rem;">
-          <button onclick="copyIACAPEM(${index}); this.textContent='✅ Copied!'; setTimeout(() => this.textContent='📋 Copy to Clipboard', 2000);" style="background: #059669; padding: 0.5rem 1rem; border-radius: 6px; border: none; color: white; cursor: pointer;">📋 Copy to Clipboard</button>
+          <button onclick="copyIACAPEM(${index}); this.textContent='✅ Copied!'; setTimeout(() => this.textContent='📋 Copy to Clipboard', 2000);" style="background: var(--c-green, #059669); padding: 0.5rem 1rem; border-radius: 6px; border: none; color: white; cursor: pointer;">📋 Copy to Clipboard</button>
         </div>
       `;
             modal.appendChild(content);
