@@ -1,0 +1,33 @@
+# mDoc Web Verifier
+
+> Free, open-source web reader and verifier for EUDI Wallets and ISO 18013-5 wallets. Open the page in a browser with Web Bluetooth (Chrome on desktop or Android, Edge, Brave, or Bluefy on iOS), scan the wallet's QR code, connect over Bluetooth Low Energy, and see each shared credential with its checks: issuer signature, trust chain to an IACA root, device authentication, data integrity and, for Photo ID, ICAO passive authentication. Everything runs in the browser; no data is sent to a server.
+
+Built by Stelau (https://www.stelau.com). Source code under the Apache 2.0 license: https://github.com/stelauconseil/mdoc-web-verifier
+
+## Pages
+
+- [mDoc reader](https://mdoc-web-verifier.stelau.com/): choose the credentials and attributes to request, scan the wallet's QR code, read and verify the response
+- [Visitor log](https://mdoc-web-verifier.stelau.com/visitor.html): register office visitors from their wallet; entries stay in the browser
+- [Attestation unlinkability test](https://mdoc-web-verifier.stelau.com/unlikability_test.html): requests minimal data several times and compares the device keys to show whether presentations from the same wallet can be linked
+
+## Supported credentials
+
+- mDL, mobile driving licence (`org.iso.18013.5.1.mDL`)
+- EU PID, Person Identification Data (`eu.europa.ec.eudi.pid.1`)
+- EU Age Verification (`eu.europa.ec.av.1`)
+- BIDA (`eu.europa.ec.eudi.bida.1`)
+- ISO 23220 Photo ID (`org.iso.23220.photoid.1`), including ICAO data groups for Digital Travel Credentials
+- mICOV, mVC, French CPS, student card, bicycle ID, and user-defined credentials described in CDDL
+
+## Verification
+
+- Issuer signature (COSE_Sign1, ECDSA on P-256/384/521 and Brainpool curves)
+- Certificate chain to a trusted IACA root (bundled roots, plus imported PEM files or VICAL lists)
+- Value digests of every data element
+- Device authentication (DeviceSigned, session transcript)
+- Optional reader authentication, including EU registration certificates (WRPRC)
+- ICAO 9303 passive authentication for Photo ID: data group hashes, EF.SOD signature by the Document Signer, Document Signer signed by a trusted CSCA
+
+## Docs
+
+- [README](https://github.com/stelauconseil/mdoc-web-verifier/blob/main/README.md): features, requirements, privacy, troubleshooting

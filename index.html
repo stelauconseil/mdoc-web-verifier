@@ -34,8 +34,6 @@
         />
         <meta name="author" content="Nicolas Chalanset" />
         <meta name="robots" content="index, follow" />
-        <meta name="language" content="English" />
-        <meta name="revisit-after" content="7 days" />
         <meta name="category" content="Technology" />
 
         <!-- Open Graph / Facebook -->
@@ -44,8 +42,7 @@
             property="og:url"
             content="https://mdoc-web-verifier.stelau.com/"
         />
-        <meta property="og:logo" content="https://mdoc-web-verifier.stelau.com/assets/icon-192.png" />
-        <meta property="og:site_name" content="Stelau mDoc Web Verifier" />
+                <meta property="og:site_name" content="Stelau mDoc Web Verifier" />
         <meta property="og:locale" content="en_US" />
         <meta
             property="og:title"
@@ -1543,47 +1540,41 @@
             {
                 "@context": "https://schema.org",
                 "@type": "WebApplication",
-                "name": "ISO 18013-5 Mobile Driver's License Reader",
-                "alternateName": "mDL Reader",
+                "name": "mDoc Web Verifier",
+                "alternateName": ["EUDI Wallet Reader", "ISO 18013-5 mDL Reader"],
                 "url": "https://mdoc-web-verifier.stelau.com/",
-                "description": "Free web-based ISO 18013-5 mobile Driver's License (mDL) reader and verifier with Web Bluetooth support, QR code scanning, and IACA certificate validation.",
-                "applicationCategory": "UtilityApplication",
-                "operatingSystem": "Web Browser (Chrome on desktop and Android, Edge, Brave, Bluefy on iOS)",
-                "offers": {
-                    "@type": "Offer",
-                    "price": "0",
-                    "priceCurrency": "USD"
-                },
+                "description": "Free web-based reader and verifier for EUDI Wallets and ISO 18013-5 wallets (PID, mDL, Photo ID, age verification). Scan the wallet's QR code, connect over Web Bluetooth, and check issuer signature, trust chain, device authentication and data integrity. Everything runs in the browser.",
+                "applicationCategory": "SecurityApplication",
+                "operatingSystem": "Web browser with Web Bluetooth: Chrome on desktop and Android, Edge, Brave, Bluefy on iOS",
+                "browserRequirements": "Requires HTTPS, Web Bluetooth and camera access",
+                "isAccessibleForFree": true,
+                "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" },
+                "license": "https://www.apache.org/licenses/LICENSE-2.0",
+                "codeRepository": "https://github.com/stelauconseil/mdoc-web-verifier",
+                "inLanguage": "en",
+                "keywords": "EUDI Wallet, EU Digital Identity Wallet, ISO 18013-5, mDL, mdoc, PID, Photo ID, age verification, eIDAS",
                 "featureList": [
-                    "ISO 18013-5 Compliance",
-                    "Web Bluetooth GATT Communication",
-                    "QR Code Scanning",
-                    "CBOR Encoding/Decoding",
-                    "AES-256-GCM Encryption",
-                    "X.509 Certificate Validation",
-                    "IACA Trust Anchor Support",
-                    "Mobile Driver's License Verification",
-                    "Device Engagement Processing"
+                    "Reads EUDI Wallets and ISO 18013-5 wallets over Bluetooth Low Energy",
+                    "Wallet QR code scanning (device engagement)",
+                    "Issuer signature verification (COSE_Sign1)",
+                    "Trust chain validation against IACA roots and VICAL lists",
+                    "Value digest integrity checks",
+                    "Device authentication",
+                    "Reader authentication, including EU registration certificates (WRPRC)",
+                    "ICAO 9303 passive authentication for Photo ID and Digital Travel Credentials",
+                    "Supports mDL, EU PID, EU Age Verification, Photo ID and user-defined credentials"
                 ],
-                "browserRequirements": "Requires HTTPS, Web Bluetooth API, Camera permission",
-                "screenshot": "/assets/og-image.png",
+                "screenshot": "https://mdoc-web-verifier.stelau.com/assets/og-image.png",
+                "image": "https://mdoc-web-verifier.stelau.com/assets/og-image.png",
                 "softwareVersion": "2.0",
                 "datePublished": "2025-01-01",
-                "dateModified": "2026-01-07",
-                "creator": {
+                "dateModified": "2026-11-01",
+                "author": { "@type": "Person", "name": "Nicolas Chalanset" },
+                "publisher": {
                     "@type": "Organization",
-                    "name": "ISO 18013-5 Web Reader"
-                },
-                "potentialAction": {
-                    "@type": "UseAction",
-                    "target": {
-                        "@type": "EntryPoint",
-                        "urlTemplate": "https://mdoc-web-verifier.stelau.com/",
-                        "actionPlatform": [
-                            "http://schema.org/DesktopWebPlatform",
-                            "http://schema.org/MobileWebPlatform"
-                        ]
-                    }
+                    "name": "Stelau",
+                    "url": "https://www.stelau.com",
+                    "logo": "https://mdoc-web-verifier.stelau.com/assets/icon-512.png"
                 }
             }
         </script>
