@@ -187,8 +187,8 @@
                     namespace,
             );
         } else if (requestType.startsWith("fr_hp_")) {
-            docType = "fr.ft.hp.1";
-            namespace = "fr.ft.hp.1";
+            docType = "fr.ft.hp.1.hpa";
+            namespace = "fr.ans.hp.1";
             log(
                 "🩺 Building French CPS request - docType: " +
                     docType +
@@ -600,7 +600,7 @@
                     name_at_birth: false,
                     given_name: false,
                     birth_date: false,
-                    sex: false,
+                    Sex: false,
                 };
                 frHpFields = {
                     numero_rpps: false,
@@ -625,7 +625,7 @@
                     name_at_birth: false,
                     given_name: false,
                     birth_date: false,
-                    sex: false,
+                    Sex: false,
                 };
                 frHpFields = {
                     numero_rpps: false,
@@ -666,7 +666,7 @@
         } else if (requestType.startsWith("fr_hp_")) {
             nameSpacesObj = {
                 "org.iso.23220.1": frHpIsoFields || {},
-                "fr.ft.hp.1": frHpFields || {},
+                "fr.ans.hp.1": frHpFields || {},
             };
         } else {
             nameSpacesObj = { [namespace]: fields };

@@ -128,8 +128,8 @@ Depending on your wallet, the main reader and example pages can work with:
 - **EU Age Verification** – `eu.europa.ec.av.1` (age‑only attestations such as `age_over_18`)
 - **Photo ID** – `org.iso.23220.photoid.1` (+ related ISO 23220 namespaces)
 - **mICOV** – `org.micov.1` (vaccination / test attestations)
-- **French CPS** – `fr.ft.hp.1` (Carte Professionnelle de Santé), available
-  in Basic and Full modes across the `org.iso.23220.1` and `fr.ft.hp.1`
+- **French CPS** – `fr.ft.hp.1.hpa` (Carte Professionnelle de Santé), available
+  in Basic and Full modes across the `org.iso.23220.1` and `fr.ans.hp.1`
   namespaces
 - **mVC** – `org.iso.7367.2.1.mVC` (vehicle card)
 - **Bicycle ID card** – `fr.idak.mbicycle.1` (bicycle owner and identification data)
