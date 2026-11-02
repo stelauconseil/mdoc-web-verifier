@@ -7526,7 +7526,15 @@
                 qrInput.focus();
             });
             document.getElementById("requestSection").addEventListener("change", (e) => {
-                if (e.target.name === "requestType") syncCredentialSelection();
+                if (e.target.name !== "requestType") return;
+                // One mode per credential type: checking one clears its siblings
+                if (e.target.checked) {
+                    e.target
+                        .closest(".radio-group, .user-credential-row")
+                        ?.querySelectorAll('input[name="requestType"]:checked')
+                        .forEach((cb) => { if (cb !== e.target) cb.checked = false; });
+                }
+                syncCredentialSelection();
             });
             // User-defined chips are re-rendered on add/edit/delete
             new MutationObserver(syncCredentialSelection).observe(
