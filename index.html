@@ -302,8 +302,8 @@
             /* ── Main container ────────────────────────────── */
             main {
                 max-width: 960px;
-                margin: -1.5rem auto 3rem;
-                padding: 0 1.25rem 3rem;
+                margin: -1.5rem auto 0;
+                padding: 0 1.25rem 1.5rem;
             }
 
             .browser-support {
@@ -393,33 +393,24 @@
                 color: var(--c-text);
             }
 
-            button.details-heading {
-                appearance: none;
-                padding: 0;
-                width: auto;
-                background: transparent;
-                border: 0;
+            .details-heading {
                 color: var(--c-text);
-                font: inherit;
                 font-weight: bold;
-                text-align: left;
                 cursor: pointer;
-                border-radius: 0;
-                box-shadow: none;
-                transform: none;
+                list-style: none;
+                user-select: none;
             }
-
-            button.details-heading:hover:not(:disabled) {
-                background: transparent;
-                color: var(--c-text);
-                box-shadow: none;
-                transform: none;
+            .details-heading::-webkit-details-marker {
+                display: none;
             }
-
-            button.details-heading:focus-visible {
-                outline: none;
-                text-decoration: underline;
-                text-underline-offset: 0.2em;
+            .details-heading h2 {
+                display: inline;
+                margin: 0;
+            }
+            .details-heading:focus-visible {
+                outline: 2px solid var(--c-accent);
+                outline-offset: 2px;
+                border-radius: 4px;
             }
 
             /* ── Typography helpers ────────────────────────── */
@@ -1035,16 +1026,17 @@
             /* ── Footer ────────────────────────────────────── */
             footer {
                 text-align: center;
-                padding: 2rem 1rem 3rem;
+                padding: 0.5rem 1rem 1.25rem;
                 color: var(--c-text-tertiary);
                 font-size: 0.85rem;
             }
 
             footer .footer-links {
                 display: flex;
-                flex-direction: column;
+                flex-wrap: wrap;
+                justify-content: center;
                 align-items: center;
-                gap: 0.6rem;
+                gap: 0.4rem 1.25rem;
                 font-size: 0.82rem;
             }
 
@@ -1104,42 +1096,6 @@
                     justify-content: center;
                 }
 
-                #requestSection .signer-section > div:first-child {
-                    align-items: flex-start !important;
-                }
-
-                #requestSection .signer-section > div:first-child > div {
-                    min-width: 0;
-                }
-
-                #requestSection .details-toggle {
-                    width: 40px;
-                    min-width: 40px;
-                    height: 40px;
-                    min-height: 40px;
-                    padding: 0 !important;
-                    flex: 0 0 40px;
-                    justify-content: center;
-                }
-
-                #requestSection .details-toggle > span:last-child {
-                    display: none;
-                }
-
-                .mobile-details-toggle {
-                    width: 44px;
-                    min-width: 44px;
-                    height: 44px;
-                    min-height: 44px;
-                    padding: 0 !important;
-                    flex: 0 0 44px;
-                    justify-content: center;
-                }
-
-                .mobile-details-toggle .details-toggle-label {
-                    display: none;
-                }
-
                 .button-grid {
                     flex-direction: column;
                 }
@@ -1167,8 +1123,8 @@
                 }
 
                 main {
-                    margin: -1rem auto 2rem;
-                    padding: 0 0.75rem 2rem;
+                    margin: -1rem auto 0;
+                    padding: 0 0.75rem 1rem;
                 }
 
                 #responseDisplay {
@@ -1349,18 +1305,130 @@
             }
 
             /* ── Disclosure: the title row toggles, a chevron shows state ── */
-            .mobile-details-toggle,
-            .details-toggle {
-                display: none !important;
-            }
-            button.details-heading {
-                display: inline-flex;
+            .details-heading {
+                display: flex;
                 align-items: center;
                 gap: 0.5rem;
                 min-height: 36px;
             }
+            .details-heading .summary-meta {
+                margin-left: auto;
+                font-weight: normal;
+                font-size: 0.85rem;
+            }
+            .cred-count {
+                font-size: 0.75rem;
+                font-weight: 600;
+                padding: 0.1rem 0.5rem;
+                border-radius: var(--radius-pill);
+                background: var(--c-accent);
+                color: #fff;
+            }
+            /* ── Progress steps ── */
+            .steps {
+                display: flex;
+                gap: 0.5rem;
+                list-style: none;
+                padding: 0;
+                margin: 1.25rem 0 1rem;
+                counter-reset: step;
+                font-size: 0.85rem;
+            }
+            .steps li {
+                counter-increment: step;
+                flex: 1;
+                border-top: 3px solid var(--c-border);
+                padding-top: 0.4rem;
+            }
+            .steps a {
+                color: var(--c-text-tertiary);
+                text-decoration: none;
+                font-weight: 600;
+            }
+            .steps a::before {
+                content: counter(step) ". ";
+            }
+            .steps li.done {
+                border-color: var(--c-green);
+            }
+            .steps li.done a {
+                color: var(--c-text-secondary);
+            }
+            .steps li[aria-current="step"] {
+                border-color: var(--c-accent);
+            }
+            .steps li[aria-current="step"] a {
+                color: var(--c-text);
+            }
+
+            /* ── Scan row extras ── */
+            .scan-row {
+                align-items: center;
+            }
+            button.ra-badge,
+            button.link-btn {
+                width: auto;
+                background: transparent;
+                color: var(--c-text-secondary);
+                font-weight: 500;
+                box-shadow: none;
+                transform: none;
+            }
+            button.ra-badge {
+                border: 1px solid var(--c-border-strong);
+                border-radius: var(--radius-pill);
+                padding: 0.3rem 0.8rem;
+                font-size: 0.8rem;
+            }
+            button.ra-badge.on {
+                border-color: var(--c-success-border);
+                background: var(--c-success-bg);
+                color: var(--c-success-text);
+            }
+            button.link-btn {
+                padding: 0;
+                margin-top: 0.6rem;
+                font-size: 0.85rem;
+                text-decoration: underline;
+                text-underline-offset: 0.2em;
+            }
+            button.ra-badge:hover:not(:disabled),
+            button.link-btn:hover:not(:disabled) {
+                background: transparent;
+                color: var(--c-text);
+                transform: none;
+                box-shadow: none;
+            }
+            button.ra-badge.on:hover:not(:disabled) {
+                background: var(--c-success-bg);
+            }
+            .results-foot {
+                display: flex;
+                justify-content: center;
+                margin-top: 1.25rem;
+            }
+            .results-foot button {
+                width: auto;
+            }
+            #responseTitle:focus {
+                outline: none;
+            }
+
+            /* Reader auth switch sits in the title row, outside the summary */
+            #readerAuthSection {
+                position: relative;
+            }
+            #readerAuthSection .disclosure-aside {
+                position: absolute;
+                top: 40px; /* vertically centred on the summary row */
+                right: 1.25rem;
+                z-index: 1;
+            }
+            #readerAuthSection summary {
+                padding-right: 6.5rem;
+            }
             @media (max-width: 640px) {
-                button.details-heading {
+                .details-heading {
                     min-height: 44px;
                 }
             }
@@ -1373,7 +1441,7 @@
                 margin-top: 0.25rem !important;
                 padding-bottom: 0.6rem;
             }
-            button.details-heading::before {
+            .details-heading::before {
                 content: "";
                 flex: none;
                 width: 0.45em;
@@ -1384,7 +1452,7 @@
                 transition: transform 0.2s var(--ease-out);
                 opacity: 0.7;
             }
-            button.details-heading[aria-expanded="true"]::before {
+            details[open] > .details-heading::before {
                 transform: rotate(45deg);
             }
 
@@ -1620,6 +1688,11 @@
         </header>
 
         <main>
+            <ol class="steps" aria-label="Progress">
+                <li data-step="1"><a href="#requestSection">Choose</a></li>
+                <li data-step="2"><a href="#startVerificationSection">Scan</a></li>
+                <li data-step="3"><a href="#responseSection">Results</a></li>
+            </ol>
             <section class="card" id="requestSection">
                 <h2>1. Choose Credentials</h2>
                 <p class="muted">
@@ -1627,44 +1700,9 @@
                     ask for several in one session, for example PID and mDL.
                 </p>
 
-                <div class="signer-section" style="margin-top: 20px; padding: 15px; background: var(--c-surface-alt); border-radius: 8px; border-left: 4px solid var(--c-accent);">
-                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-                        <button
-                            type="button"
-                            class="details-heading"
-                            aria-controls="identityCredentialsDetails"
-                            aria-expanded="false"
-                            onclick="toggleDetails('identityCredentialsDetails')"
-                        >
-                            Identity credentials
-                        </button>
-                        <button
-                            type="button"
-                            class="details-toggle"
-                            onclick="toggleDetails('identityCredentialsDetails')"
-                            aria-label="Show identity credentials"
-                            title="Show identity credentials"
-                            style="
-                                background: var(--c-chip);
-                                color: var(--c-text);
-                                border: 1px solid var(--c-chip-border);
-                                padding: 4px 10px;
-                                border-radius: 6px;
-                                cursor: pointer;
-                                font-size: 0.85rem;
-                                font-weight: 600;
-                                display: inline-flex;
-                                align-items: center;
-                                gap: 6px;
-                            "
-                            onmouseover="this.style.background='var(--c-chip-hover)'"
-                            onmouseout="this.style.background='var(--c-chip)'"
-                        >
-                            <span id="identityCredentialsDetails-icon">▶</span>
-                            <span>Details</span>
-                        </button>
-                    </div>
-                    <div id="identityCredentialsDetails" style="display: none; margin-top: 10px;">
+                <details class="signer-section" style="margin-top: 20px; padding: 15px; background: var(--c-surface-alt); border-radius: 8px; border-left: 4px solid var(--c-accent);" open>
+                    <summary class="details-heading">Identity credentials <span class="cred-count" hidden></span></summary>
+                    <div id="identityCredentialsDetails" style="margin-top: 10px;">
                         <div style="margin-bottom: 10px; margin-top: 0.25rem">
                             <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">EU PID (Person Identification Data)</strong>
                         </div>
@@ -1777,46 +1815,11 @@
                             </label>
                         </div>
                     </div>
-                </div>
+                </details>
 
-                <div class="signer-section" style="margin-top: 20px; padding: 15px; background: var(--c-surface-alt); border-radius: 8px; border-left: 4px solid var(--c-accent);">
-                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-                        <button
-                            type="button"
-                            class="details-heading"
-                            aria-controls="transportCredentialsDetails"
-                            aria-expanded="false"
-                            onclick="toggleDetails('transportCredentialsDetails')"
-                        >
-                            Transport credentials
-                        </button>
-                        <button
-                            type="button"
-                            class="details-toggle"
-                            onclick="toggleDetails('transportCredentialsDetails')"
-                            aria-label="Show transport credentials"
-                            title="Show transport credentials"
-                            style="
-                                background: var(--c-chip);
-                                color: var(--c-text);
-                                border: 1px solid var(--c-chip-border);
-                                padding: 4px 10px;
-                                border-radius: 6px;
-                                cursor: pointer;
-                                font-size: 0.85rem;
-                                font-weight: 600;
-                                display: inline-flex;
-                                align-items: center;
-                                gap: 6px;
-                            "
-                            onmouseover="this.style.background='var(--c-chip-hover)'"
-                            onmouseout="this.style.background='var(--c-chip)'"
-                        >
-                            <span id="transportCredentialsDetails-icon">▶</span>
-                            <span>Details</span>
-                        </button>
-                    </div>
-                    <div id="transportCredentialsDetails" style="display: none; margin-top: 10px;">
+                <details class="signer-section" style="margin-top: 20px; padding: 15px; background: var(--c-surface-alt); border-radius: 8px; border-left: 4px solid var(--c-accent);">
+                    <summary class="details-heading">Transport credentials <span class="cred-count" hidden></span></summary>
+                    <div id="transportCredentialsDetails" style="margin-top: 10px;">
                         <div style="margin-bottom: 10px; margin-top: 0.25rem">
                             <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">mDL (mobile Driver's License)</strong>
                         </div>
@@ -1892,46 +1895,11 @@
                         </div>
 
                     </div>
-                </div>
+                </details>
 
-                <div class="signer-section" style="margin-top: 20px; padding: 15px; background: var(--c-surface-alt); border-radius: 8px; border-left: 4px solid var(--c-accent);">
-                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-                        <button
-                            type="button"
-                            class="details-heading"
-                            aria-controls="medicalCredentialsDetails"
-                            aria-expanded="false"
-                            onclick="toggleDetails('medicalCredentialsDetails')"
-                        >
-                            Medical credentials
-                        </button>
-                        <button
-                            type="button"
-                            class="details-toggle"
-                            onclick="toggleDetails('medicalCredentialsDetails')"
-                            aria-label="Show medical credentials"
-                            title="Show medical credentials"
-                            style="
-                                background: var(--c-chip);
-                                color: var(--c-text);
-                                border: 1px solid var(--c-chip-border);
-                                padding: 4px 10px;
-                                border-radius: 6px;
-                                cursor: pointer;
-                                font-size: 0.85rem;
-                                font-weight: 600;
-                                display: inline-flex;
-                                align-items: center;
-                                gap: 6px;
-                            "
-                            onmouseover="this.style.background='var(--c-chip-hover)'"
-                            onmouseout="this.style.background='var(--c-chip)'"
-                        >
-                            <span id="medicalCredentialsDetails-icon">▶</span>
-                            <span>Details</span>
-                        </button>
-                    </div>
-                    <div id="medicalCredentialsDetails" style="display: none; margin-top: 10px;">
+                <details class="signer-section" style="margin-top: 20px; padding: 15px; background: var(--c-surface-alt); border-radius: 8px; border-left: 4px solid var(--c-accent);">
+                    <summary class="details-heading">Medical credentials <span class="cred-count" hidden></span></summary>
+                    <div id="medicalCredentialsDetails" style="margin-top: 10px;">
                         <div style="margin-bottom: 10px; margin-top: 0.25rem">
                             <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em"
                                 >mICOV (mobile International Certificate of
@@ -1973,46 +1941,11 @@
                             </label>
                         </div>
                     </div>
-                </div>
+                </details>
 
-                <div class="signer-section" style="margin-top: 20px; padding: 15px; background: var(--c-surface-alt); border-radius: 8px; border-left: 4px solid var(--c-accent);">
-                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-                        <button
-                            type="button"
-                            class="details-heading"
-                            aria-controls="studentCredentialsDetails"
-                            aria-expanded="false"
-                            onclick="toggleDetails('studentCredentialsDetails')"
-                        >
-                            Student credentials
-                        </button>
-                        <button
-                            type="button"
-                            class="details-toggle"
-                            onclick="toggleDetails('studentCredentialsDetails')"
-                            aria-label="Show student credentials"
-                            title="Show student credentials"
-                            style="
-                                background: var(--c-chip);
-                                color: var(--c-text);
-                                border: 1px solid var(--c-chip-border);
-                                padding: 4px 10px;
-                                border-radius: 6px;
-                                cursor: pointer;
-                                font-size: 0.85rem;
-                                font-weight: 600;
-                                display: inline-flex;
-                                align-items: center;
-                                gap: 6px;
-                            "
-                            onmouseover="this.style.background='var(--c-chip-hover)'"
-                            onmouseout="this.style.background='var(--c-chip)'"
-                        >
-                            <span id="studentCredentialsDetails-icon">▶</span>
-                            <span>Details</span>
-                        </button>
-                    </div>
-                    <div id="studentCredentialsDetails" style="display: none; margin-top: 10px;">
+                <details class="signer-section" style="margin-top: 20px; padding: 15px; background: var(--c-surface-alt); border-radius: 8px; border-left: 4px solid var(--c-accent);">
+                    <summary class="details-heading">Student credentials <span class="cred-count" hidden></span></summary>
+                    <div id="studentCredentialsDetails" style="margin-top: 10px;">
                         <div style="margin-bottom: 10px; margin-top: 0.25rem">
                             <strong style="font-size: 0.9rem; color: var(--c-text-secondary); letter-spacing: 0.01em">FR Student Card</strong>
                         </div>
@@ -2027,32 +1960,11 @@
                             </label>
                         </div>
                     </div>
-                </div>
+                </details>
 
-                <div class="signer-section user-credential-editor" style="margin-top: 20px; padding: 15px; background: var(--c-surface-alt); border-radius: 8px; border-left: 4px solid var(--c-green);">
-                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-                        <button
-                            type="button"
-                            class="details-heading"
-                            aria-controls="userCredentialsDetails"
-                            aria-expanded="false"
-                            onclick="toggleDetails('userCredentialsDetails')"
-                        >
-                            User-defined credentials
-                        </button>
-                        <button
-                            type="button"
-                            class="details-toggle"
-                            onclick="toggleDetails('userCredentialsDetails')"
-                            aria-label="Show user-defined credentials"
-                            title="Show user-defined credentials"
-                            style="background: var(--c-success-bg); color: var(--c-success-text); border: 1px solid var(--c-success-border); padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;"
-                        >
-                            <span id="userCredentialsDetails-icon">▶</span>
-                            <span>Details</span>
-                        </button>
-                    </div>
-                    <div id="userCredentialsDetails" style="display: none; margin-top: 10px;">
+                <details class="signer-section user-credential-editor" style="margin-top: 20px; padding: 15px; background: var(--c-surface-alt); border-radius: 8px; border-left: 4px solid var(--c-green);">
+                    <summary class="details-heading">User-defined credentials <span class="cred-count" hidden></span></summary>
+                    <div id="userCredentialsDetails" style="margin-top: 10px;">
                         <p class="muted" style="font-size: 0.85rem;">
                             Paste a supported CDDL profile. It is stored only in this browser.
                             Required claims are regular members; prefix optional claims with <code>?</code>.
@@ -2082,7 +1994,7 @@
                         <p id="userCredentialStatus" class="muted" role="status" aria-live="polite" style="min-height: 1.25rem; margin: 0.5rem 0;"></p>
                         <div id="userDefinedCredentialList"></div>
                     </div>
-                </div>
+                </details>
             </section>
 
             <section class="card" id="startVerificationSection">
@@ -2130,12 +2042,15 @@
                             </nav>
                         </aside>
                     </div>
-                <div class="row">
-                    <button id="btnScan">Scan QR Code</button>
+                <p id="selectionSummary" class="muted" role="status" aria-live="polite" hidden></p>
+                <div class="row scan-row">
+                    <button id="btnScan" aria-describedby="credentialWarning">Scan QR Code</button>
+                    <button type="button" id="readerAuthBadge" class="ra-badge" title="Open reader authentication settings">Reader authentication: off</button>
                 </div>
                 <p id="credentialWarning" class="muted" style="display: none; margin: 0.5rem 0 0.75rem 0; color: var(--c-warning-text)">
-                    First select one or more credentials to request
+                    Select at least one credential above to start
                 </p>
+                <button type="button" id="btnManualQr" class="link-btn">No camera? Paste an mdoc: URI instead</button>
                 <div class="scanner">
                     <div class="video-frame">
                         <video id="video" playsinline muted></video>
@@ -2161,8 +2076,11 @@
             </section>
 
             <section class="card" id="responseSection" style="display: none">
-                <h2>3. Results</h2>
+                <h2 id="responseTitle" tabindex="-1">3. Results</h2>
                 <div id="responseDisplay"></div>
+                <div class="results-foot">
+                    <button type="button" id="btnNewVerification">New Verification</button>
+                </div>
             </section>
 
 
@@ -2230,44 +2148,11 @@
             </div>
             <div class="side-panel__body">
             <section class="card" id="logsSection">
-                <div
-                    style="
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: center;
-                        gap: 8px;
-                    "
-                >
-                    <h2 style="margin: 0">
-                        <button
-                            type="button"
-                            class="details-heading"
-                            aria-controls="logsDetails"
-                            aria-expanded="false"
-                            onclick="toggleDetails('logsDetails')"
-                        >
-                            Activity Log
-                        </button>
-                    </h2>
-                    <button
-                        onclick="toggleDetails('logsDetails')"
-                        class="secondary mobile-details-toggle"
-                        aria-label="Show activity log details"
-                        title="Show activity log details"
-                        style="
-                            display: inline-flex;
-                            align-items: center;
-                            gap: 6px;
-                            padding: 6px 10px;
-                        "
-                    >
-                        <span id="logsDetails-icon">▶</span>
-                        <span class="details-toggle-label">Details</span>
-                    </button>
-                </div>
+                <details>
+                    <summary class="details-heading"><h2>Activity Log</h2></summary>
                 <div
                     id="logsDetails"
-                    style="display: none; margin-top: 0.75rem"
+                    style="margin-top: 0.75rem"
                 >
                     <label
                         style="
@@ -2293,45 +2178,13 @@
                         aria-label="Session activity log"
                     ></div>
                 </div>
+                </details>
             </section>
             <section class="card" id="qrSection">
-                <div
-                    style="
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: center;
-                        gap: 8px;
-                    "
-                >
-                    <h2 style="margin: 0">
-                        <button
-                            type="button"
-                            class="details-heading"
-                            aria-controls="qrDetails"
-                            aria-expanded="false"
-                            onclick="toggleDetails('qrDetails')"
-                        >
-                            Device Engagement
-                        </button>
-                    </h2>
-                    <button
-                        onclick="toggleDetails('qrDetails')"
-                        class="secondary mobile-details-toggle"
-                        aria-label="Show device engagement information"
-                        title="Show device engagement information"
-                        style="
-                            display: inline-flex;
-                            align-items: center;
-                            gap: 6px;
-                            padding: 6px 10px;
-                        "
-                    >
-                        <span id="qrDetails-icon">▶</span>
-                        <span class="details-toggle-label">Details</span>
-                    </button>
-                </div>
+                <details>
+                    <summary class="details-heading"><h2>Device Engagement</h2></summary>
 
-                <div id="qrDetails" style="display: none; margin-top: 0.75rem">
+                <div id="qrDetails" style="margin-top: 0.75rem">
                     <div class="status-panel">
                         <p>
                             <strong>Status:</strong>
@@ -2388,6 +2241,7 @@
                         </div>
                     </div>
                 </div>
+                </details>
             </section>
             </div>
         </dialog>
@@ -2400,27 +2254,8 @@
             </div>
             <div class="side-panel__body">
             <section class="card" id="readerAuthSection">
-                <div
-                    style="
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: center;
-                        gap: 8px;
-                    "
-                >
-                    <h2 style="margin: 0">
-                        <button
-                            type="button"
-                            class="details-heading"
-                            aria-controls="readerAuthDetails"
-                            aria-expanded="false"
-                            onclick="toggleDetails('readerAuthDetails')"
-                        >
-                            Reader Authentication
-                        </button>
-                    </h2>
-                    <div style="display: flex; align-items: center; gap: 10px">
-                        <label
+                <div class="disclosure-aside">
+                    <label
                             style="
                                 display: flex;
                                 align-items: center;
@@ -2437,23 +2272,9 @@
                                 <span class="ra-slider"></span>
                             </span>
                         </label>
-                        <button
-                            onclick="toggleDetails('readerAuthDetails')"
-                            class="secondary mobile-details-toggle"
-                            aria-label="Show reader authentication details"
-                            title="Show reader authentication details"
-                            style="
-                                display: inline-flex;
-                                align-items: center;
-                                gap: 6px;
-                                padding: 6px 10px;
-                            "
-                        >
-                            <span id="readerAuthDetails-icon">▶</span>
-                            <span class="details-toggle-label">Details</span>
-                        </button>
-                    </div>
                 </div>
+                <details>
+                    <summary class="details-heading"><h2>Reader Authentication</h2></summary>
                 <p class="muted" style="margin-top: 0.5rem">
                     Sign your requests so the wallet can show the holder who is
                     asking for their data. Each request is signed with your
@@ -2463,7 +2284,7 @@
 
                 <div
                     id="readerAuthDetails"
-                    style="display: none; margin-top: 0.75rem"
+                    style="margin-top: 0.75rem"
                 >
                     <div
                         style="
@@ -2697,50 +2518,15 @@
                         </div>
                     </div>
                 </div>
+                </details>
             </section>
             <section class="card" id="iacaSection">
-                <div
-                    style="
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: center;
-                        gap: 8px;
-                    "
-                >
-                    <h2 style="margin: 0">
-                        <button
-                            type="button"
-                            class="details-heading"
-                            aria-controls="iacaDetails"
-                            aria-expanded="false"
-                            onclick="toggleDetails('iacaDetails')"
-                        >
-                            Issuer Certificates (IACA)
-                        </button>
-                    </h2>
-                    <div style="display: flex; align-items: center; gap: 10px">
-                        <span
+                <details>
+                    <summary class="details-heading"><h2>Issuer Certificates (IACA)</h2> <span
                             id="iacaSummaryCounts"
-                            class="muted"
+                            class="muted summary-meta"
                             >Installed: Live 0 • Test 0</span
-                        >
-                        <button
-                            onclick="toggleDetails('iacaDetails')"
-                            class="secondary mobile-details-toggle"
-                            aria-label="Show issuer certificate management details"
-                            title="Show issuer certificate management details"
-                            style="
-                                display: inline-flex;
-                                align-items: center;
-                                gap: 6px;
-                                padding: 6px 10px;
-                            "
-                        >
-                            <span id="iacaDetails-icon">▶</span>
-                            <span class="details-toggle-label">Details</span>
-                        </button>
-                    </div>
-                </div>
+                        ></summary>
                 <p class="muted" style="margin-top: 0.5rem">
                     Manage Issuing Authority Certification Authority (IACA)
                     certificates for signature verification. These are used to
@@ -2749,7 +2535,7 @@
 
                 <div
                     id="iacaDetails"
-                    style="display: none; margin-top: 0.75rem"
+                    style="margin-top: 0.75rem"
                 >
                     <!-- Move Add New and VICAL to top -->
                     <div style="margin-top: 0.5rem">
@@ -2960,46 +2746,11 @@
                         </div>
                     </div>
                 </div>
+                </details>
             </section>
             <section class="card" id="cscaSection">
-                <div
-                    style="
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: center;
-                        gap: 8px;
-                    "
-                >
-                    <h2 style="margin: 0">
-                        <button
-                            type="button"
-                            class="details-heading"
-                            aria-controls="cscaDetails"
-                            aria-expanded="false"
-                            onclick="toggleDetails('cscaDetails')"
-                        >
-                            Passport Trust List (CSCA)
-                        </button>
-                    </h2>
-                    <div style="display: flex; align-items: center; gap: 10px">
-                        <span id="cscaSummaryCount" class="muted"></span>
-                        <button
-                            onclick="toggleDetails('cscaDetails')"
-                            class="secondary mobile-details-toggle"
-                            aria-label="Show passport trust list details"
-                            title="Show passport trust list details"
-                            style="
-                                display: inline-flex;
-                                align-items: center;
-                                gap: 6px;
-                                padding: 6px 10px;
-                            "
-                        >
-                            <span id="cscaDetails-icon">▶</span>
-                            <span class="details-toggle-label">Details</span>
-                        </button>
-                    </div>
-                </div>
+                <details>
+                    <summary class="details-heading"><h2>Passport Trust List (CSCA)</h2> <span id="cscaSummaryCount" class="muted summary-meta"></span></summary>
                 <p class="muted" style="margin-top: 0.5rem">
                     Country Signing CA certificates used for ICAO passive
                     authentication of travel document data groups (DG1, DG2,
@@ -3009,7 +2760,7 @@
 
                 <div
                     id="cscaDetails"
-                    style="display: none; margin-top: 0.75rem"
+                    style="margin-top: 0.75rem"
                 >
                     <div
                         class="row"
@@ -3053,6 +2804,7 @@
                         </button>
                     </div>
                 </div>
+                </details>
             </section>
             </div>
         </dialog>
@@ -3184,27 +2936,6 @@
             // Expose CBOR globally for external modules
             window.CBOR = CBOR;
 
-            // Simple global toggler for collapsible sections (used by inline onclick)
-            function toggleDetails(id) {
-                try {
-                    const el = document.getElementById(id);
-                    if (!el) return;
-                    const visible = el.style.display !== "none";
-                    el.style.display = visible ? "none" : "block";
-                    const icon = document.getElementById(`${id}-icon`);
-                    if (icon) icon.textContent = visible ? "▶" : "▼";
-                    document
-                        .querySelectorAll(`[aria-controls="${id}"]`)
-                        .forEach((trigger) => {
-                            trigger.setAttribute(
-                                "aria-expanded",
-                                String(!visible),
-                            );
-                        });
-                } catch {}
-            }
-            window.toggleDetails = toggleDetails;
-
             // ==== Side panels ====
             // Session Log stays non-modal so it can stay open during a test; Settings is modal.
             function openPanel(id, modal) {
@@ -3233,8 +2964,7 @@
                 const panel = document.getElementById("logPanel");
                 if (panel.open) return panel.close();
                 openPanel("logPanel", false);
-                const log = document.getElementById("logsDetails");
-                if (log && log.style.display === "none") toggleDetails("logsDetails");
+                document.getElementById("logsDetails").closest("details").open = true;
             });
             document
                 .getElementById("btnOpenSettings")
@@ -3386,6 +3116,10 @@
                 try {
                     if (!responseSectionEl) return;
                     responseSectionEl.style.display = "block";
+                    syncSteps();
+                    document
+                        .getElementById("responseTitle")
+                        ?.focus({ preventScroll: true });
                     // Smoothly scroll into view
                     try {
                         responseSectionEl.scrollIntoView({
@@ -3711,6 +3445,7 @@
                 try {
                     if (responseSectionEl)
                         responseSectionEl.style.display = "none";
+                    syncSteps();
                 } catch {}
                 try {
                     if (logEl) logEl.innerHTML = "";
@@ -5006,19 +4741,10 @@
 
                             html += `
                     <div id="${overallStatusId}" hidden></div>
-          <div class="signer-section" style="margin-top: 20px; padding: 15px; background: var(--c-surface-alt); border-radius: 8px; border-left: 4px solid var(--c-accent);">
-            <div style="display:flex; justify-content:space-between; align-items:center; gap: 8px;">
-              <button
-                type="button"
-                class="details-heading"
-                aria-controls="${detailsId}"
-                aria-expanded="false"
-                onclick="toggleDetails('${detailsId}')"
-                style="color: var(--c-accent);"
-              >Technical Details</button>
-            </div>
+          <details class="signer-section" style="margin-top: 20px; padding: 15px; background: var(--c-surface-alt); border-radius: 8px; border-left: 4px solid var(--c-accent);">
+            <summary class="details-heading" style="color: var(--c-accent);">Technical Details</summary>
 
-            <div id="${detailsId}" style="display:none; margin-top: 10px;">
+            <div id="${detailsId}" style="margin-top: 10px;">
                             <div class="data-item"><div class="data-label" style="white-space: nowrap;">Issuer Signature</div><div class="data-value"></div></div>
                             <div class="data-item"><div class="data-label">Signature</div><div class="data-value" id="${sigStatusId}">… verifying</div></div>
                             <div class="data-item"><div class="data-label">Chain</div><div class="data-value" id="${chainStatusId}">… validating</div></div>
@@ -5086,7 +4812,7 @@
                       : ""
               }
             </div>
-          </div>
+          </details>
         `;
                         }
 
@@ -7666,8 +7392,8 @@
                 if (btnScan) {
                     btnScan.dataset.mode = "scan";
                     btnScan.classList.remove("wallet-found");
-                    btnScan.disabled = false;
                     btnScan.textContent = "Scan QR Code";
+                    syncCredentialSelection();
                 }
 
                 console.log("BLE connection state reset");
@@ -7738,6 +7464,76 @@
                 setCredentialWarning("");
                 return true;
             }
+
+            // Progress steps: 1 until something is picked, 2 until results show, then 3.
+            function syncSteps() {
+                const current =
+                    responseSectionEl.style.display !== "none"
+                        ? 3
+                        : document.querySelector('input[name="requestType"]:checked')
+                          ? 2
+                          : 1;
+                document.querySelectorAll(".steps li").forEach((li) => {
+                    const n = Number(li.dataset.step);
+                    li.classList.toggle("done", n < current);
+                    if (n === current) li.setAttribute("aria-current", "step");
+                    else li.removeAttribute("aria-current");
+                });
+            }
+
+            // Per-group counters, "Requesting: …" summary, and Scan disabled until something is picked.
+            function chipLabel(cb) {
+                const text = cb.closest("label")?.textContent.trim() || cb.value;
+                const row = cb.closest(".user-credential-row")?.querySelector("strong");
+                return row ? `${row.textContent.trim()} ${text}` : text;
+            }
+            function syncCredentialSelection() {
+                const requestSection = document.getElementById("requestSection");
+                requestSection.querySelectorAll("details.signer-section").forEach((group) => {
+                    const n = group.querySelectorAll('input[name="requestType"]:checked').length;
+                    const badge = group.querySelector(".cred-count");
+                    badge.hidden = n === 0;
+                    badge.textContent = `${n} selected`;
+                });
+                const checked = [...document.querySelectorAll('input[name="requestType"]:checked')];
+                const summary = document.getElementById("selectionSummary");
+                summary.hidden = checked.length === 0;
+                summary.textContent = `Requesting: ${checked.map(chipLabel).join(", ")}`;
+                if (!btnScan.dataset.mode || btnScan.dataset.mode === "scan") {
+                    btnScan.disabled = checked.length === 0;
+                    setCredentialWarning(checked.length ? "" : "Select at least one credential above to start");
+                }
+                syncSteps();
+            }
+
+            document.getElementById("btnNewVerification").addEventListener("click", () => {
+                try {
+                    disconnectBLE();
+                } catch {}
+                resetResponseAndLog();
+                statusEl.textContent = "Idle";
+                history.replaceState(null, "", location.pathname + location.search);
+                document
+                    .getElementById("startVerificationSection")
+                    .scrollIntoView({ behavior: "smooth", block: "start" });
+                if (!btnScan.disabled) btnScan.focus({ preventScroll: true });
+            });
+
+            // Fallback when there is no camera: the manual payload field lives in the Session Log panel.
+            document.getElementById("btnManualQr").addEventListener("click", () => {
+                openPanel("logPanel", false);
+                document.getElementById("qrDetails").closest("details").open = true;
+                qrInput.focus();
+            });
+            document.getElementById("requestSection").addEventListener("change", (e) => {
+                if (e.target.name === "requestType") syncCredentialSelection();
+            });
+            // User-defined chips are re-rendered on add/edit/delete
+            new MutationObserver(syncCredentialSelection).observe(
+                document.getElementById("userDefinedCredentialList"),
+                { childList: true },
+            );
+            syncCredentialSelection();
 
             btnScan.addEventListener("click", async () => {
                 if (btnScan.dataset.mode === "connect") {
@@ -8421,6 +8217,20 @@
 
             // Initialize on load
             initReaderAuthUI();
+
+            // Reader auth state next to the Scan button; opens its settings.
+            const readerAuthBadge = document.getElementById("readerAuthBadge");
+            function syncReaderAuthBadge() {
+                const on = !!enableReaderAuth?.checked;
+                readerAuthBadge.textContent = `Reader authentication: ${on ? "on" : "off"}`;
+                readerAuthBadge.classList.toggle("on", on);
+            }
+            enableReaderAuth?.addEventListener("change", syncReaderAuthBadge);
+            readerAuthBadge.addEventListener("click", () => {
+                openPanel("settingsPanel", true);
+                document.querySelector("#readerAuthSection details").open = true;
+            });
+            syncReaderAuthBadge();
             // Live-update CN preview as the user pastes/edits the certificate
             readerCertificate?.addEventListener("input", () => {
                 try {
