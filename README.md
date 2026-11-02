@@ -1,10 +1,11 @@
 # ISO 18013-5 Web Verifier
 
-This site lets you try ISO 18013-5 mobile IDs (mDL / mDoc) directly in your browser:
+This site lets you test an EUDI Wallet or any ISO 18013-5 wallet (mDL / mDoc) from your computer, directly in the browser:
 
 - Scan a wallet’s Device Engagement QR code
 - Connect over Web Bluetooth
-- See the verified data returned by your wallet
+- See the data returned by your wallet and a verdict for each credential
+- Sign your requests with a reader access certificate (reader authentication)
 - Add your own ISO 18013-5 credential definitions from CDDL
 
 No account, server, or local install is required. Everything runs in your browser.
@@ -25,24 +26,50 @@ You do **not** need to be a developer or to understand CBOR/COSE to use the basi
 
 ### 1. Main mDL / mDoc reader (home page)
 
-The home page (index.html) is a general-purpose ISO 18013-5 reader.
+The home page (index.html) is a general-purpose ISO 18013-5 reader. A progress bar at the top shows the three steps: **Choose**, **Scan**, **Results**.
 
 High‑level flow:
 
 1. Open the site over HTTPS in a supported browser (Chrome on desktop or
    Android, Edge or Brave on desktop, or Bluefy on iOS).
-2. Select one or more digital credentials to request.
-3. Click **Scan QR Code** and point the camera at the wallet’s Device Engagement QR, or paste an `mdoc://` URI.
-4. When the QR code is recognized, the green **Wallet found, click to continue** button appears.
-5. Click that button and allow Bluetooth access when prompted.
-6. Approve the request in your wallet. After receiving the response, the reader disconnects and the button returns to **Scan QR Code**.
-7. Review the returned docType, namespaces, attributes, and verification results.
+2. **Choose credentials.** Credentials are grouped by family (Identity, Transport, Medical, Student, User-defined). Expand a group and tick one or more credentials; each group shows how many are selected, and the line above the Scan button lists everything that will be requested. The **Scan QR Code** button stays disabled until at least one credential is selected.
+3. **Scan.** Click **Scan QR Code** and point the camera at the wallet’s Device Engagement QR code. No camera? Use **Paste an mdoc: URI instead** below the button.
+4. When the QR code is recognised, the button turns green and reads **Connect to Wallet**. Click it and allow Bluetooth access when prompted. If the connection fails, the button stays on **Connect to Wallet** so you can retry with the same QR code.
+5. Approve the request in your wallet.
+6. **Results.** Each returned credential gets a verdict (**Credential verified**, **Verified, with warnings** or **Verification failed**) with a checklist: issuer signature, certificate chain, device authentication and data integrity. Below it you find the returned namespaces and attributes, and a **Technical Details** section (issuer signature, MSO, document signer certificate, ICAO passive authentication when present).
+7. Click **New Verification** at the bottom of the results to start again with the same credential selection.
 
 Notes:
 
 - Works with wallets that support **Server Peripheral over BLE** as defined in ISO 18013‑5.
 - Built-in and user-defined credentials can be selected together in the same request.
-- You can see per‑document verification status and the raw values if you want to inspect them.
+- The badge next to the Scan button shows whether reader authentication is on; click it to open its settings.
+- Light and dark themes follow your system setting.
+
+#### Session Log panel
+
+The **Session Log** button in the top bar opens a side panel that can stay open during a test:
+
+- **Activity Log**: every step of the session, with an option to log verbose details to the browser console.
+- **Device Engagement**: the parsed QR payload (status, service UUID, BLE address), the BLE packet size (MTU, 244 bytes by default, lower it to 20 if the connection is unstable), and a field to paste an `mdoc:` URI by hand (from the clipboard or a laser scanner).
+
+#### Settings panel
+
+The **Settings** button opens:
+
+- **Reader Authentication** (see below)
+- **Issuer Certificates (IACA)**: trusted issuer roots, PEM import, VICAL import, reset to defaults
+- **Passport Trust List (CSCA)**: country signing CAs for ICAO passive authentication
+
+#### Reader authentication
+
+Turn on **Reader Authentication** in Settings to sign each request (ISO 18013-5 ReaderAuth), so the wallet can show the holder who is asking for their data:
+
+1. Paste your **reader access certificate** (PEM) and the matching **private key** (PEM, PKCS#8 or SEC1 EC key). The reader name (certificate Common Name) is displayed once the certificate is read.
+2. Optionally, turn on **Registration certificate (WRPRC)** and import the EU wallet-relying party registration certificate (binary CWT file up to 256 KiB, or pasted as base64 / base64url). It tells the wallet which data you are registered to request, and why, and must be issued for the reader access certificate above.
+3. Click **Save Reader Settings**. **Remove Saved Key and Certificates** deletes them from the browser.
+
+The private key is stored **unencrypted** in the browser's `localStorage`. Use test keys only; production keys belong in secure hardware (HSM, TPM).
 
 ### 2. Visitor Log (visitor.html)
 
@@ -56,7 +83,7 @@ What it does:
 
 How to use it:
 
-1. Open `visitor.html` (or use the **Go to → Visitor log** menu on the home page).
+1. Open `visitor.html`.
 2. Click **Scan QR Code** and scan the wallet’s Device Engagement QR.
 3. Approve the request in the wallet.
 4. The visitor is added to the log; scanning again can update their time‑out.
@@ -75,7 +102,7 @@ What it tests:
 
 How to use it:
 
-1. Open `unlikability_test.html` (or use the **Go to → Unlinkability test** menu on the home page).
+1. Open `unlikability_test.html`.
 2. Choose what to request:
     - **EU PID : nationality**
     - **AV : age_over_18**
@@ -118,14 +145,14 @@ to a server.
 
 To add and request a credential:
 
-1. Open **User-defined credentials** on the main page.
+1. Expand **User-defined credentials** on the main page.
 2. Paste a supported CDDL profile.
-3. Click **Add credential**.
+3. Click **Add Credential**.
 4. Select **Basic** to request only mandatory claims, or **Full** to request all
    declared claims. The credential can be combined with any built-in credential.
 5. Scan the wallet QR code and complete the normal presentation flow.
 
-Saved definitions remain available after a page reload. Use **Edit** to load a definition back into the editor, then **Save changes** to update it. Editing can change the display name, docType, namespaces, claims, and formats. Use **Cancel editing** to discard editor changes or **Delete** to remove the locally stored definition. Clearing the browser's site data also removes these profiles.
+Saved definitions remain available after a page reload. Use **Edit** to load a definition back into the editor, then **Save Changes** to update it. Editing can change the display name, docType, namespaces, claims, and formats. Use **Cancel Editing** to discard editor changes or **Delete** to remove the locally stored definition. Clearing the browser's site data also removes these profiles.
 
 #### Supported CDDL profile
 
@@ -214,6 +241,7 @@ This verifier implements comprehensive security controls per ISO 18013-5:
 - Session keys live only in browser memory and are cleared when you reload or close the page
 - The **Visitor Log** and **Unlinkability Test** pages store data only in your browser (local storage) for your own experiments
 - User-defined CDDL credential profiles are stored only in the browser's `localStorage` and can be edited, deleted, or removed by clearing the site's data
+- Reader authentication keys and certificates are stored only in the browser's `localStorage` (the private key unencrypted, see above)
 - **No data is sent to any backend by this app**
 
 ### Trust Anchors
@@ -229,9 +257,10 @@ This verifier implements comprehensive security controls per ISO 18013-5:
 
 If you are familiar with mDL / mDoc internals, the main page also includes:
 
-- VICAL (Verified Issuer CA List) import for issuer CA certificates
+- VICAL (Verified Issuer CA List) import for issuer CA certificates (Settings → Issuer Certificates)
 - COSE_Sign1 verification with X.509 trust anchors
-- Classic MSO viewer and detailed verification status per document
+- Full MSO structure viewer and per-document technical details in the results
+- Reader authentication with an optional WRPRC registration certificate (Settings → Reader Authentication)
 
 You can import issuer CA lists either from a file or from a URI. When importing from a URI, the app understands CBOR/COSE/CWT or JSON payloads and shows which issuers were imported or skipped.
 
@@ -243,7 +272,10 @@ You can import issuer CA lists either from a file or from a URI. When importing 
   and open it with Chrome on desktop or Android, Edge or Brave on desktop, or
   Bluefy on iOS.
 - **No prompt on the wallet**: ensure the requested document type and fields are supported by your wallet.
-- **BLE disconnects often**: some wallets intentionally disconnect between operations; simply scan and reconnect.
+- **BLE disconnects often**: some wallets intentionally disconnect between operations; simply scan and reconnect. If it keeps failing, lower the BLE MTU in Session Log → Device Engagement.
+- **Connection failed after the scan**: click **Connect to Wallet** again; the same QR code can be reused while the wallet still shows it.
+- **Scan QR Code is greyed out**: select at least one credential first.
+- **Reader authentication errors**: check that the private key matches the reader access certificate; the key must be an EC key in PKCS#8 or SEC1 PEM format.
 - **Import of issuer lists fails**: download the file and use import‑from‑file on the main page instead of URI import.
 
 ---
