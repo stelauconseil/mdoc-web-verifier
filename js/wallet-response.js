@@ -923,6 +923,50 @@
             }
         }
 
+        const PID_SEX_LABELS = {
+            0: "not known",
+            1: "male",
+            2: "female",
+            3: "other",
+            4: "inter",
+            5: "diverse",
+            6: "open",
+            9: "not applicable",
+        };
+
+        const formatPidSex = (value) => {
+            const toCode = (v) => {
+                if (typeof v === "number" && Number.isFinite(v)) return v;
+                if (typeof v === "string" && /^\d+$/.test(v.trim())) {
+                    return Number.parseInt(v.trim(), 10);
+                }
+                return null;
+            };
+            const code = toCode(value);
+            if (code === null) return String(value ?? "");
+            const label = PID_SEX_LABELS[code];
+            return label ? `${code} (${label})` : String(code);
+        };
+
+        const normalizePlaceOfBirth = (value) => {
+            const decoded = unwrapTaggedOrCbor(value);
+            if (!decoded || typeof decoded !== "object") return null;
+            const obj = convertToJSON(decoded);
+            if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+                return null;
+            }
+            const country = obj.country;
+            const locality = obj.locality;
+            const out = {};
+            if (typeof country === "string" && country.trim()) {
+                out.country = country.trim();
+            }
+            if (typeof locality === "string" && locality.trim()) {
+                out.locality = locality.trim();
+            }
+            return Object.keys(out).length ? out : obj;
+        };
+
         const valueToEntry = (
             elementIdentifier,
             elementValue,
@@ -954,6 +998,32 @@
                 entry.raw = convertToJSON(elementValue);
             } catch (_) {
                 entry.raw = null;
+            }
+
+            const normalizedIdentifier = String(
+                elementIdentifier ?? "",
+            ).toLowerCase();
+
+            if (normalizedIdentifier === "sex") {
+                entry.valueKind = "text";
+                entry.text = formatPidSex(elementValue);
+                return entry;
+            }
+
+            if (
+                normalizedIdentifier === "place_of_birth" ||
+                normalizedIdentifier === "birth_place"
+            ) {
+                const place = normalizePlaceOfBirth(elementValue);
+                if (place) {
+                    entry.valueKind = "object";
+                    try {
+                        entry.text = JSON.stringify(place);
+                    } catch {
+                        entry.text = String(place);
+                    }
+                    return entry;
+                }
             }
 
             // Tagged values

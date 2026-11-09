@@ -48,9 +48,10 @@
         // Authentication failures must stop the request instead of sending it unsigned.
         if (authenticate) {
             for (const docRequest of deviceRequest.docRequests) {
-                docRequest.readerAuth = await readerAuth.signReaderAuthentication(
-                    docRequest.itemsRequest.value,
-                );
+                docRequest.readerAuth =
+                    await readerAuth.signReaderAuthentication(
+                        docRequest.itemsRequest.value,
+                    );
             }
             log(
                 `🔏 Added Reader Authentication to ${deviceRequest.docRequests.length} document(s)`,
@@ -115,7 +116,11 @@
             log(
                 `🧩 Building user-defined ${mode} request - docType: ${definition.docType}`,
             );
-            return createDocRequest(definition.docType, nameSpacesObj, requestInfo);
+            return createDocRequest(
+                definition.docType,
+                nameSpacesObj,
+                requestInfo,
+            );
         }
         if (requestType?.startsWith("user_defined:")) {
             throw new Error(
@@ -254,7 +259,7 @@
                     weight: false,
                     eye_colour: false,
                     hair_colour: false,
-                    birth_place: false,
+                    place_of_birth: false,
                     resident_address: false,
                     portrait_capture_date: false,
                     age_in_years: false,
@@ -283,7 +288,8 @@
                     family_name: false,
                     given_name: false,
                     birth_date: false,
-                    birth_place: false,
+                    place_of_birth: false,
+                    sex: false,
                     nationality: false,
                     portrait: false,
                 };
@@ -300,7 +306,7 @@
                     family_name: false,
                     given_name: false,
                     birth_date: false,
-                    birth_place: false,
+                    place_of_birth: false,
                     nationality: false,
                     portrait: false,
                     resident_address: false,
