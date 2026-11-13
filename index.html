@@ -1558,8 +1558,8 @@
                 white-space: nowrap;
             }
 
-            /* Camera frame only while the camera runs or a transfer is in progress */
-            .video-frame:not(:has(video[data-live])):not(:has(.verification-progress.is-visible)) {
+            /* Camera frame only while the camera runs */
+            .video-frame:not(:has(video[data-live])) {
                 display: none;
             }
             .log:empty::before {
